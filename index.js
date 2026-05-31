@@ -3,17 +3,35 @@ import {
     GatewayIntentBits,
     Partials,
     Events,
-    EmbedBuilder,
-    ActionRowBuilder,
-    ButtonBuilder,
-    ButtonStyle,
-    PermissionFlagsBits,
-    ChannelType,
 } from "discord.js";
 import http from 'node:http';
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
-// ==================== DATABASE SIMPLES ====================
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// ==================== FIND SRC PATH ====================
+let SRC_PATH = path.join(__dirname, "src");
+let ALT_SRC_PATH = path.join(__dirname, "src", "src");
+
+// Verificar qual estrutura existe
+const hasDirectSrc = fs.existsSync(path.join(SRC_PATH, "events", "interactionCreate.js"));
+const hasNestedSrc = fs.existsSync(path.join(ALT_SRC_PATH, "events", "interactionCreate.js"));
+
+if (hasNestedSrc && !hasDirectSrc) {
+    console.log("[Init] Usando estrutura aninhada: src/src/");
+    SRC_PATH = ALT_SRC_PATH;
+} else {
+    console.log("[Init] Usando estrutura direta: src/");
+}
+
+function src(file) {
+    return path.join(SRC_PATH, file);
+}
+
+// ==================== DATABASE ====================
 const DB_FILE = "./tickets.json";
 let db = { tickets: {}, messages: {}, acceptedRules: [], avaliacoes: {} };
 
@@ -22,7 +40,7 @@ function loadDB() {
         try {
             db = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
         } catch (e) {
-            console.error("Erro ao carregar DB:", e.message);
+            console.error("[DB] Erro ao carregar:", e.message);
         }
     }
 }
@@ -39,7 +57,7 @@ async function saveDB() {
     try {
         await fs.promises.writeFile(DB_FILE, JSON.stringify(db, null, 2));
     } catch (e) {
-        console.error("Erro ao guardar DB:", e.message);
+        console.error("[DB] Erro ao guardar:", e.message);
     } finally {
         saving = false;
         if (pendingSave) {
@@ -51,22 +69,16 @@ async function saveDB() {
 
 loadDB();
 
+// Export db e saveDB para os outros modulos
+export { db, saveDB };
+
 // ==================== VALIDAR ENV VARS ====================
 const requiredEnv = ["TOKEN", "CLIENT_ID", "GUILD_ID"];
 const missing = requiredEnv.filter(e => !process.env[e]);
 if (missing.length > 0) {
-    console.error("Variaveis em falta:", missing.join(", "));
+    console.error("[Init] Variaveis em falta:", missing.join(", "));
     process.exit(1);
 }
-
-const CONFIG = {
-    GUILD_ID: process.env.GUILD_ID,
-    CARGO_STAFF: process.env.CARGO_STAFF || "",
-    CANAL_LOGS: process.env.CANAL_LOGS || "",
-    CANAL_AVALIACOES: process.env.CANAL_AVALIACOES || "",
-    CATEGORIA_TICKETS_GERAL: process.env.CATEGORIA_TICKETS_GERAL || "",
-    CATEGORIA_TICKETS_RECRUTAMENTO: process.env.CATEGORIA_TICKETS_RECRUTAMENTO || "",
-};
 
 // ==================== CLIENT SETUP ====================
 const client = new Client({
@@ -82,211 +94,144 @@ const client = new Client({
     partials: [Partials.Channel, Partials.Message, Partials.GuildMember],
 });
 
-// ==================== TICKET SYSTEM (INLINE) ====================
-const cooldown = new Set();
+// ==================== SAFE IMPORT ====================
+const moduleCache = new Map();
 
-async function createTicket(interaction, type, label) {
-    const guild = await client.guilds.fetch(CONFIG.GUILD_ID).catch(() => null);
-    if (!guild) {
-        return interaction.reply({ content: "Erro: servidor nao encontrado.", flags: 64 });
-    }
-    const user = interaction.user;
+async function safeImport(filePath) {
+    const fullPath = src(filePath);
 
-    if (cooldown.has(user.id)) {
-        return interaction.reply({ content: "Espera 3 segundos...", flags: 64 });
+    if (moduleCache.has(fullPath)) {
+        return moduleCache.get(fullPath);
     }
 
-    const existingTicket = Object.values(db.tickets).find(
-        (t) => t.userId === user.id && !t.closed
-    );
-    if (existingTicket) {
-        return interaction.reply({ content: "Ja tens um ticket aberto!", flags: 64 });
+    try {
+        const mod = await import("file://" + fullPath);
+        moduleCache.set(fullPath, mod);
+        console.log("[Import] OK:", filePath);
+        return mod;
+    } catch (e) {
+        console.log("[Import] ERRO:", filePath, "-", e.message);
+        return {};
     }
-
-    cooldown.add(user.id);
-    setTimeout(() => cooldown.delete(user.id), 3000);
-
-    const typePrefix = type === "recrutamento" ? "rec" : 
-                       type === "bugs" ? "bug" : 
-                       type === "denuncia" ? "den" : 
-                       type === "suporte" ? "sup" : 
-                       type === "criador" ? "cri" : 
-                       type === "ajuda" ? "ajd" : "tk";
-
-    const channelName = `${typePrefix}-${user.username}-${user.id.slice(0, 4)}`
-        .toLowerCase()
-        .replace(/[^a-z0-9-]/g, "")
-        .substring(0, 25);
-
-    let categoria = type === "recrutamento" ? CONFIG.CATEGORIA_TICKETS_RECRUTAMENTO : CONFIG.CATEGORIA_TICKETS_GERAL;
-
-    const channelData = {
-        name: channelName,
-        type: ChannelType.GuildText,
-        permissionOverwrites: [
-            { id: guild.id, type: 0, deny: [PermissionFlagsBits.ViewChannel] },
-            { id: user.id, type: 1, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
-        ],
-    };
-
-    if (CONFIG.CARGO_STAFF) {
-        channelData.permissionOverwrites.push({
-            id: CONFIG.CARGO_STAFF,
-            type: 0,
-            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
-        });
-    }
-
-    if (categoria) {
-        const cat = await guild.channels.fetch(categoria).catch(() => null);
-        if (cat) channelData.parent = categoria;
-    }
-
-    const channel = await guild.channels.create(channelData);
-
-    const ticketId = Date.now().toString();
-    db.tickets[ticketId] = {
-        id: ticketId,
-        channelId: channel.id,
-        userId: user.id,
-        username: user.username,
-        type: type,
-        label: label,
-        openedAt: new Date().toISOString(),
-        closedAt: null,
-        claimedBy: null,
-        claimedByName: null,
-        closedBy: null,
-        closedByName: null,
-        callActive: false,
-        callChannelId: null,
-        rating: null,
-        panelMessageId: null,
-    };
-    await saveDB();
-
-    const embed = new EmbedBuilder()
-        .setTitle("Sistema de Ticket | Portugal Alfa Community")
-        .setDescription([
-            `Motivo: ${label}`,
-            `Assumido: Aguardando staff...`,
-            "",
-            `Ola ${user.username}, aguarde ser atendido.`,
-        ].join("\n"))
-        .setColor(0x262af1);
-
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`assumir_${ticketId}`).setLabel("Assumir").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId(`painel_${ticketId}`).setLabel("Painel Staff").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId(`sair_${ticketId}`).setLabel("Sair").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`deletar_${ticketId}`).setLabel("Fechar").setStyle(ButtonStyle.Danger),
-    );
-
-    await channel.send({ content: `${user.username}`, embeds: [embed], components: [row] });
-
-    await interaction.reply({
-        content: `Ticket criado: ${channel}`,
-        flags: 64,
-    });
 }
 
-// ==================== INTERACTION HANDLER (INLINE) ====================
-client.on(Events.InteractionCreate, async (interaction) => {
-    try {
-        if (interaction.isButton()) {
-            const customId = interaction.customId;
-
-            if (customId.startsWith("ticket_")) {
-                const type = customId.replace("ticket_", "");
-                const labels = {
-                    recrutamento: "Recrutamento PAT",
-                    bugs: "Reportar Bug",
-                    denuncia: "Denuncia",
-                    suporte: "Suporte Tecnico",
-                    criador: "Criador de Conteudo",
-                    ajuda: "Ajuda Geral",
-                };
-                await createTicket(interaction, type, labels[type] || "Ticket");
-                return;
-            }
-
-            if (customId.startsWith("assumir_")) {
-                const ticketId = customId.split("_")[1];
-                const ticket = db.tickets[ticketId];
-                if (!ticket) return interaction.reply({ content: "Ticket nao encontrado.", flags: 64 });
-                if (ticket.claimedBy) return interaction.reply({ content: "Ja assumido.", flags: 64 });
-
-                ticket.claimedBy = interaction.user.id;
-                ticket.claimedByName = interaction.user.username;
-                await saveDB();
-                await interaction.reply({ content: `Assumido por ${interaction.user.username}`, flags: 64 });
-                return;
-            }
-
-            if (customId.startsWith("deletar_")) {
-                const ticketId = customId.split("_")[1];
-                const ticket = db.tickets[ticketId];
-                if (!ticket) return interaction.reply({ content: "Ticket nao encontrado.", flags: 64 });
-
-                ticket.closedBy = interaction.user.id;
-                ticket.closedByName = interaction.user.username;
-                ticket.closedAt = new Date().toISOString();
-                ticket.closed = true;
-                await saveDB();
-
-                await interaction.reply({ content: "Ticket fechado. A apagar em 10 segundos..." });
-                setTimeout(async () => {
-                    await interaction.channel.delete().catch(() => {});
-                }, 10000);
-                return;
-            }
-
-            if (customId.startsWith("sair_")) {
-                const ticketId = customId.split("_")[1];
-                const ticket = db.tickets[ticketId];
-                if (!ticket) return;
-                if (ticket.userId !== interaction.user.id) {
-                    return interaction.reply({ content: "So o criador pode sair.", flags: 64 });
-                }
-                await interaction.channel.permissionOverwrites.delete(interaction.user.id);
-                await interaction.reply({ content: "Saiu do ticket.", flags: 64 });
-                return;
-            }
-        }
-
-        if (interaction.isChatInputCommand()) {
-            if (interaction.commandName === "ajuda") {
-                await interaction.reply({
-                    content: "Comando de ajuda em desenvolvimento.",
-                    flags: 64,
-                });
-            }
-        }
-    } catch (error) {
-        console.error("Erro na interacao:", error.message);
-    }
-});
-
-// ==================== READY ====================
+// ==================== EVENT HANDLERS ====================
 client.once(Events.ClientReady, async () => {
-    console.log("Bot online: " + client.user.tag);
+    console.log("[Ready] Bot online:", client.user.tag);
+
+    const ext = await safeImport("services/externalLogs.js");
+    if (ext.setExternalClient) ext.setExternalClient(client);
+
+    const ready = await safeImport("events/ready.js");
+    if (ready.handleReady) await ready.handleReady(client);
+
     client.user.setPresence({
         activities: [{ name: '/ajuda | Portugal Alfa Community', type: 0 }],
         status: 'online',
     });
 });
 
+client.on(Events.GuildMemberAdd, async (member) => {
+    const evt = await safeImport("events/guildMemberAdd.js");
+    if (evt.handleGuildMemberAdd) await evt.handleGuildMemberAdd(member, client);
+
+    const ext = await safeImport("services/externalLogs.js");
+    if (ext.logExternalMemberJoin) await ext.logExternalMemberJoin(member);
+});
+
+client.on(Events.GuildMemberRemove, async (member) => {
+    const evt = await safeImport("events/guildMemberRemove.js");
+    if (evt.handleGuildMemberRemove) await evt.handleGuildMemberRemove(member, client);
+
+    const ext = await safeImport("services/externalLogs.js");
+    if (ext.logExternalMemberLeave) await ext.logExternalMemberLeave(member);
+});
+
+client.on(Events.InteractionCreate, async (interaction) => {
+    console.log("[Interaction] Tipo:", interaction.type, "CustomID:", interaction.customId || "N/A");
+
+    const evt = await safeImport("events/interactionCreate.js");
+    if (evt.handleInteractionCreate) {
+        await evt.handleInteractionCreate(interaction, client);
+    } else {
+        console.log("[Interaction] handleInteractionCreate NAO ENCONTRADO!");
+    }
+});
+
+client.on(Events.MessageCreate, async (message) => {
+    const evt = await safeImport("events/messageCreate.js");
+    if (evt.handleMessageCreate) await evt.handleMessageCreate(message, client);
+});
+
+client.on(Events.MessageDelete, async (message) => {
+    const evt = await safeImport("events/messageDelete.js");
+    if (evt.handleMessageDelete) await evt.handleMessageDelete(message, client);
+
+    const ext = await safeImport("services/externalLogs.js");
+    if (ext.logExternalMessageDelete) await ext.logExternalMessageDelete(message);
+});
+
+client.on(Events.MessageUpdate, async (oldMessage, newMessage) => {
+    const evt = await safeImport("events/messageUpdate.js");
+    if (evt.handleMessageUpdate) await evt.handleMessageUpdate(oldMessage, newMessage, client);
+
+    const ext = await safeImport("services/externalLogs.js");
+    if (ext.logExternalMessageEdit) await ext.logExternalMessageEdit(oldMessage, newMessage);
+});
+
+client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+    if (oldState.channelId === newState.channelId) return;
+    const ext = await safeImport("services/externalLogs.js");
+    if (newState.channel && ext.logExternalVoiceJoin) await ext.logExternalVoiceJoin(newState.member, newState.channel);
+    if (oldState.channel && ext.logExternalVoiceLeave) await ext.logExternalVoiceLeave(oldState.member, oldState.channel);
+});
+
+client.on(Events.ChannelCreate, async (channel) => {
+    const ext = await safeImport("services/externalLogs.js");
+    if (ext.logExternalChannelCreate) await ext.logExternalChannelCreate(channel);
+});
+
+client.on(Events.ChannelDelete, async (channel) => {
+    const ext = await safeImport("services/externalLogs.js");
+    if (ext.logExternalChannelDelete) await ext.logExternalChannelDelete(channel);
+});
+
+client.on(Events.GuildRoleCreate, async (role) => {
+    const ext = await safeImport("services/externalLogs.js");
+    if (ext.logExternalRoleCreate) await ext.logExternalRoleCreate(role);
+});
+
+client.on(Events.GuildRoleDelete, async (role) => {
+    const ext = await safeImport("services/externalLogs.js");
+    if (ext.logExternalRoleDelete) await ext.logExternalRoleDelete(role);
+});
+
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+    const ext = await safeImport("services/externalLogs.js");
+    if (ext.logExternalMemberUpdate) await ext.logExternalMemberUpdate(oldMember, newMember);
+});
+
+client.on(Events.GuildBanAdd, async (ban) => {
+    const ext = await safeImport("services/externalLogs.js");
+    if (ext.logExternalMemberBan) await ext.logExternalMemberBan(ban);
+});
+
+client.on(Events.GuildBanRemove, async (ban) => {
+    const ext = await safeImport("services/externalLogs.js");
+    if (ext.logExternalMemberUnban) await ext.logExternalMemberUnban(ban.user);
+});
+
 // ==================== ERROR HANDLING ====================
 client.on(Events.Error, (error) => {
-    console.error("Erro Discord:", error.message);
+    console.error("[Discord] Erro:", error.message);
 });
 
 process.on('unhandledRejection', (error) => {
-    console.error("Unhandled Rejection:", error.message);
+    console.error("[Process] Unhandled Rejection:", error.message);
 });
 
 process.on('uncaughtException', (error) => {
-    console.error("Uncaught Exception:", error.message);
+    console.error("[Process] Uncaught Exception:", error.message);
 });
 
 // ==================== WEB SERVER ====================
