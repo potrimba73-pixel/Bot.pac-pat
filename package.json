@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "discord.js": "^14.14.1",
-    "discord.js-html-transcript": "^3.0.0",
+    "discord-html-transcripts": "3.2.0",
     "@octokit/rest": "^20.1.1",
     "js-base64": "^3.7.7",
     "axios": "^1.6.0"
