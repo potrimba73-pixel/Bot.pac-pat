@@ -1,0 +1,32 @@
+{
+  "name": "pac-bot",
+  "type": "module",
+  "version": "2.1.0",
+  "description": "Portugal Alfa Community Bot - Sistema de Tickets e Assistente Inteligente",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "deploy": "node src/commands/register.js"
+  },
+  "engines": {
+    "node": ">=18.0.0 <24.0.0"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "discord.js-html-transcript": "^3.0.0",
+    "@octokit/rest": "^20.1.1",
+    "js-base64": "^3.7.7",
+    "axios": "^1.6.0"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "tickets",
+    "portugal-alfa",
+    "trucky",
+    "ets2"
+  ],
+  "author": "Diego",
+  "license": "MIT"
+}
