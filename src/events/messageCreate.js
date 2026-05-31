@@ -38,11 +38,8 @@ export async function handleMessageCreate(message, client) {
         const user = await client.users.fetch(ticket.userId).catch(() => null);
         if (user) {
             await user.send(
-                "Olá, tem um staff a chamar-te num ticket.
-
-" +
-                "Link: https://discord.com/channels/" + CONFIG.GUILD_ID + "/" + ticket.channelId
-            ).catch(() => message.reply("Erro DM."));
+    `Olá, tem um staff a chamar-te num ticket.\n\nLink: https://discord.com/channels/${CONFIG.GUILD_ID}/${ticket.channelId}`
+).catch(() => message.reply("Erro DM."));
             await message.reply("Usuário notificado!");
         }
     }
