@@ -5,78 +5,20 @@ import {
     Events,
 } from "discord.js";
 import http from 'node:http';
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// ==================== FIND SRC PATH ====================
-let SRC_PATH = path.join(__dirname, "src");
-let ALT_SRC_PATH = path.join(__dirname, "src", "src");
-
-// Verificar qual estrutura existe
-const hasDirectSrc = fs.existsSync(path.join(SRC_PATH, "events", "interactionCreate.js"));
-const hasNestedSrc = fs.existsSync(path.join(ALT_SRC_PATH, "events", "interactionCreate.js"));
-
-if (hasNestedSrc && !hasDirectSrc) {
-    console.log("[Init] Usando estrutura aninhada: src/src/");
-    SRC_PATH = ALT_SRC_PATH;
-} else {
-    console.log("[Init] Usando estrutura direta: src/");
-}
-
-function src(file) {
-    return path.join(SRC_PATH, file);
-}
-
-// ==================== DATABASE ====================
-const DB_FILE = "./tickets.json";
-let db = { tickets: {}, messages: {}, acceptedRules: [], avaliacoes: {} };
-
-function loadDB() {
-    if (fs.existsSync(DB_FILE)) {
-        try {
-            db = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
-        } catch (e) {
-            console.error("[DB] Erro ao carregar:", e.message);
-        }
-    }
-}
-
-let saving = false;
-let pendingSave = false;
-
-async function saveDB() {
-    if (saving) {
-        pendingSave = true;
-        return;
-    }
-    saving = true;
-    try {
-        await fs.promises.writeFile(DB_FILE, JSON.stringify(db, null, 2));
-    } catch (e) {
-        console.error("[DB] Erro ao guardar:", e.message);
-    } finally {
-        saving = false;
-        if (pendingSave) {
-            pendingSave = false;
-            await saveDB();
-        }
-    }
-}
-
-loadDB();
-
-// Export db e saveDB para os outros modulos
-export { db, saveDB };
+import { loadDB, db } from "./src/utils/db.js";
+import { handleReady } from "./src/events/ready.js";
+import { handleGuildMemberAdd } from "./src/events/guildMemberAdd.js";
+import { handleGuildMemberRemove } from "./src/events/guildMemberRemove.js";
+import { handleInteractionCreate } from "./src/events/interactionCreate.js";
+import { handleMessageCreate } from "./src/events/messageCreate.js";
+import { handleMessageDelete } from "./src/events/messageDelete.js";
+import { handleMessageUpdate } from "./src/events/messageUpdate.js";
 
 // ==================== VALIDAR ENV VARS ====================
 const requiredEnv = ["TOKEN", "CLIENT_ID", "GUILD_ID"];
 const missing = requiredEnv.filter(e => !process.env[e]);
 if (missing.length > 0) {
-    console.error("[Init] Variaveis em falta:", missing.join(", "));
+    console.error("Variaveis em falta:", missing.join(", "));
     process.exit(1);
 }
 
@@ -94,147 +36,109 @@ const client = new Client({
     partials: [Partials.Channel, Partials.Message, Partials.GuildMember],
 });
 
-// ==================== SAFE IMPORT ====================
-const moduleCache = new Map();
+// ==================== LOAD DATABASE ====================
+loadDB();
 
-async function safeImport(filePath) {
-    const fullPath = src(filePath);
+// ==================== EVENTS ====================
+client.once(Events.ClientReady, () => handleReady(client));
 
-    if (moduleCache.has(fullPath)) {
-        return moduleCache.get(fullPath);
-    }
+client.on(Events.GuildMemberAdd, (member) => handleGuildMemberAdd(member, client));
 
+client.on(Events.GuildMemberRemove, (member) => handleGuildMemberRemove(member, client));
+
+client.on(Events.InteractionCreate, (interaction) => handleInteractionCreate(interaction, client));
+
+client.on(Events.MessageCreate, (message) => handleMessageCreate(message, client));
+
+client.on(Events.MessageDelete, (message) => handleMessageDelete(message, client));
+
+client.on(Events.MessageUpdate, (oldMessage, newMessage) => handleMessageUpdate(oldMessage, newMessage, client));
+
+// Voice state updates for external logging
+client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+    if (oldState.channelId === newState.channelId) return;
     try {
-        const mod = await import("file://" + fullPath);
-        moduleCache.set(fullPath, mod);
-        console.log("[Import] OK:", filePath);
-        return mod;
-    } catch (e) {
-        console.log("[Import] ERRO:", filePath, "-", e.message);
-        return {};
-    }
-}
+        const { logExternalVoiceJoin, logExternalVoiceLeave } = await import("./src/services/externalLogs.js");
+        if (newState.channel) logExternalVoiceJoin(newState.member, newState.channel);
+        if (oldState.channel) logExternalVoiceLeave(oldState.member, oldState.channel);
+    } catch (e) {}
+});
 
-// ==================== EVENT HANDLERS ====================
-client.once(Events.ClientReady, async () => {
-    console.log("[Ready] Bot online:", client.user.tag);
+// Channel events for external logging
+client.on(Events.ChannelCreate, async (channel) => {
+    try {
+        const { logExternalChannelCreate } = await import("./src/services/externalLogs.js");
+        logExternalChannelCreate(channel);
+    } catch (e) {}
+});
 
-    const ext = await safeImport("services/externalLogs.js");
-    if (ext.setExternalClient) ext.setExternalClient(client);
+client.on(Events.ChannelDelete, async (channel) => {
+    try {
+        const { logExternalChannelDelete } = await import("./src/services/externalLogs.js");
+        logExternalChannelDelete(channel);
+    } catch (e) {}
+});
 
-    const ready = await safeImport("events/ready.js");
-    if (ready.handleReady) await ready.handleReady(client);
+// Role events for external logging
+client.on(Events.GuildRoleCreate, async (role) => {
+    try {
+        const { logExternalRoleCreate } = await import("./src/services/externalLogs.js");
+        logExternalRoleCreate(role);
+    } catch (e) {}
+});
 
+client.on(Events.GuildRoleDelete, async (role) => {
+    try {
+        const { logExternalRoleDelete } = await import("./src/services/externalLogs.js");
+        logExternalRoleDelete(role);
+    } catch (e) {}
+});
+
+// Member update for external logging
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+    try {
+        const { logExternalMemberUpdate } = await import("./src/services/externalLogs.js");
+        logExternalMemberUpdate(oldMember, newMember);
+    } catch (e) {}
+});
+
+// Ban/Unban for external logging
+client.on(Events.GuildBanAdd, async (ban) => {
+    try {
+        const { logExternalMemberBan } = await import("./src/services/externalLogs.js");
+        logExternalMemberBan(ban);
+    } catch (e) {}
+});
+
+client.on(Events.GuildBanRemove, async (ban) => {
+    try {
+        const { logExternalMemberUnban } = await import("./src/services/externalLogs.js");
+        logExternalMemberUnban(ban.user);
+    } catch (e) {}
+});
+
+// ===== BOT STATUS =====
+client.on(Events.ClientReady, async () => {
     client.user.setPresence({
-        activities: [{ name: '/ajuda | Portugal Alfa Community', type: 0 }],
+        activities: [{ name: '/ajuda novo comando!', type: 0 }],
         status: 'online',
     });
 });
 
-client.on(Events.GuildMemberAdd, async (member) => {
-    const evt = await safeImport("events/guildMemberAdd.js");
-    if (evt.handleGuildMemberAdd) await evt.handleGuildMemberAdd(member, client);
-
-    const ext = await safeImport("services/externalLogs.js");
-    if (ext.logExternalMemberJoin) await ext.logExternalMemberJoin(member);
-});
-
-client.on(Events.GuildMemberRemove, async (member) => {
-    const evt = await safeImport("events/guildMemberRemove.js");
-    if (evt.handleGuildMemberRemove) await evt.handleGuildMemberRemove(member, client);
-
-    const ext = await safeImport("services/externalLogs.js");
-    if (ext.logExternalMemberLeave) await ext.logExternalMemberLeave(member);
-});
-
-client.on(Events.InteractionCreate, async (interaction) => {
-    console.log("[Interaction] Tipo:", interaction.type, "CustomID:", interaction.customId || "N/A");
-
-    const evt = await safeImport("events/interactionCreate.js");
-    if (evt.handleInteractionCreate) {
-        await evt.handleInteractionCreate(interaction, client);
-    } else {
-        console.log("[Interaction] handleInteractionCreate NAO ENCONTRADO!");
-    }
-});
-
-client.on(Events.MessageCreate, async (message) => {
-    const evt = await safeImport("events/messageCreate.js");
-    if (evt.handleMessageCreate) await evt.handleMessageCreate(message, client);
-});
-
-client.on(Events.MessageDelete, async (message) => {
-    const evt = await safeImport("events/messageDelete.js");
-    if (evt.handleMessageDelete) await evt.handleMessageDelete(message, client);
-
-    const ext = await safeImport("services/externalLogs.js");
-    if (ext.logExternalMessageDelete) await ext.logExternalMessageDelete(message);
-});
-
-client.on(Events.MessageUpdate, async (oldMessage, newMessage) => {
-    const evt = await safeImport("events/messageUpdate.js");
-    if (evt.handleMessageUpdate) await evt.handleMessageUpdate(oldMessage, newMessage, client);
-
-    const ext = await safeImport("services/externalLogs.js");
-    if (ext.logExternalMessageEdit) await ext.logExternalMessageEdit(oldMessage, newMessage);
-});
-
-client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
-    if (oldState.channelId === newState.channelId) return;
-    const ext = await safeImport("services/externalLogs.js");
-    if (newState.channel && ext.logExternalVoiceJoin) await ext.logExternalVoiceJoin(newState.member, newState.channel);
-    if (oldState.channel && ext.logExternalVoiceLeave) await ext.logExternalVoiceLeave(oldState.member, oldState.channel);
-});
-
-client.on(Events.ChannelCreate, async (channel) => {
-    const ext = await safeImport("services/externalLogs.js");
-    if (ext.logExternalChannelCreate) await ext.logExternalChannelCreate(channel);
-});
-
-client.on(Events.ChannelDelete, async (channel) => {
-    const ext = await safeImport("services/externalLogs.js");
-    if (ext.logExternalChannelDelete) await ext.logExternalChannelDelete(channel);
-});
-
-client.on(Events.GuildRoleCreate, async (role) => {
-    const ext = await safeImport("services/externalLogs.js");
-    if (ext.logExternalRoleCreate) await ext.logExternalRoleCreate(role);
-});
-
-client.on(Events.GuildRoleDelete, async (role) => {
-    const ext = await safeImport("services/externalLogs.js");
-    if (ext.logExternalRoleDelete) await ext.logExternalRoleDelete(role);
-});
-
-client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
-    const ext = await safeImport("services/externalLogs.js");
-    if (ext.logExternalMemberUpdate) await ext.logExternalMemberUpdate(oldMember, newMember);
-});
-
-client.on(Events.GuildBanAdd, async (ban) => {
-    const ext = await safeImport("services/externalLogs.js");
-    if (ext.logExternalMemberBan) await ext.logExternalMemberBan(ban);
-});
-
-client.on(Events.GuildBanRemove, async (ban) => {
-    const ext = await safeImport("services/externalLogs.js");
-    if (ext.logExternalMemberUnban) await ext.logExternalMemberUnban(ban.user);
-});
-
 // ==================== ERROR HANDLING ====================
 client.on(Events.Error, (error) => {
-    console.error("[Discord] Erro:", error.message);
+    console.error("Erro do cliente Discord:", error);
 });
 
 process.on('unhandledRejection', (error) => {
-    console.error("[Process] Unhandled Rejection:", error.message);
+    console.error("Unhandled Rejection:", error);
 });
 
 process.on('uncaughtException', (error) => {
-    console.error("[Process] Uncaught Exception:", error.message);
+    console.error("Uncaught Exception:", error);
 });
 
-// ==================== WEB SERVER ====================
+// ==================== WEB SERVER (RENDER) ====================
 http.createServer((req, res) => {
     const ticketsAbertos = Object.values(db.tickets || {}).filter(t => !t.closed).length;
     res.writeHead(200, { 'Content-Type': 'text/plain' });
