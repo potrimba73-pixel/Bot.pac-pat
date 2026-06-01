@@ -1,4 +1,4 @@
-import discordTranscripts from "discord.js-html-transcript";
+import discordTranscripts from "discord-html-transcripts";
 import { Octokit } from "@octokit/rest";
 import { Base64 } from "js-base64";
 
