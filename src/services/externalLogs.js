@@ -22,7 +22,7 @@ export async function logExternalSearch(user, query, results) {
             .setDescription(`${user.tag} fez uma pesquisa.`)
             .addFields(
                 { name: "Query", value: query.substring(0, 1024), inline: false },
-                { name: "Resultados", value: String(results), inline: true }
+                { name: "Resultados", value: results ? String(results) : "Nenhum", inline: true }
             )
             .setColor(0x0099ff)
             .setTimestamp();
