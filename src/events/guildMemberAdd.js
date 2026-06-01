@@ -1,29 +1,29 @@
-import { Events, EmbedBuilder } from "discord.js";
 import { CONFIG } from "../config/index.js";
-import { db } from "../utils/db.js";
+import { db, saveDB } from "../utils/db.js";
+import { logMemberJoin } from "../services/recruitmentLogs.js";
+import { logExternalMemberJoin } from "../services/externalLogs.js";
 
-export async function handleMessageUpdate(oldMessage, newMessage, client) {
-    if (newMessage.author?.bot) return;
-    if (oldMessage.content === newMessage.content) return;
-    if (!newMessage.guild) return;
+export async function handleGuildMemberAdd(member, client) {
+    const userId = member.id;
+    const guildId = member.guild.id;
 
-    try {
-        const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
-        if (!logChannel) return;
+    // Log externo
+    await logExternalMemberJoin(member);
 
-        const embed = new EmbedBuilder()
-            .setTitle("✏️ Mensagem Editada")
-            .addFields(
-                { name: "Autor", value: `<@${newMessage.author.id}>`, inline: true },
-                { name: "Canal", value: `<#${newMessage.channel.id}>`, inline: true },
-                { name: "Antes", value: oldMessage.content?.substring(0, 1024) || "*Vazio*", inline: false },
-                { name: "Depois", value: newMessage.content?.substring(0, 1024) || "*Vazio*", inline: false }
-            )
-            .setColor(0xffff00)
-            .setTimestamp();
-
-        await logChannel.send({ embeds: [embed] });
-    } catch (err) {
-        console.error("[MessageUpdate] Erro:", err.message);
+    // Log for recruitment server
+    if (guildId === CONFIG.GUILD_ID_RECRUTAMENTO) {
+        await logMemberJoin(member, client);
     }
+
+    if (guildId !== CONFIG.GUILD_ID) return;
+
+    console.log(`Novo membro entrou: ${member.user.tag} (${userId})`);
+
+    if (db.acceptedRules.includes(userId)) {
+        db.acceptedRules = db.acceptedRules.filter((id) => id !== userId);
+        saveDB();
+        console.log(`Registo antigo limpo para ${member.user.tag}`);
+    }
+
+    console.log(`${member.user.tag} pode clicar em Aceitar Regras`);
 }
