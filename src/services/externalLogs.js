@@ -12,6 +12,26 @@ function getLogChannel(channelId) {
     return externalClient.channels.fetch(channelId).catch(() => null);
 }
 
+// ========== SEARCH LOG ==========
+export async function logExternalSearch(user, query, results) {
+    try {
+        const logChannel = await getLogChannel(CONFIG.CANAL_LOGS);
+        if (!logChannel) return;
+        const embed = new EmbedBuilder()
+            .setTitle("🔍 Pesquisa Realizada")
+            .setDescription(`${user.tag} fez uma pesquisa.`)
+            .addFields(
+                { name: "Query", value: query.substring(0, 1024), inline: false },
+                { name: "Resultados", value: String(results), inline: true }
+            )
+            .setColor(0x0099ff)
+            .setTimestamp();
+        await logChannel.send({ embeds: [embed] });
+    } catch (err) {
+        console.error("[ExternalLogs] Erro ao logar pesquisa:", err.message);
+    }
+}
+
 // ========== MEMBER EVENTS ==========
 export async function logExternalMemberJoin(member) {
     try {
