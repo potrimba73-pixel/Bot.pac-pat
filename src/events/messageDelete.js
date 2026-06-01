@@ -1,21 +1,27 @@
+import { Events, EmbedBuilder } from "discord.js";
 import { CONFIG } from "../config/index.js";
-import { logExternalMessageDelete } from "../services/externalLogs.js";
-import { messageCache } from "./messageCreate.js";
+import { db } from "../utils/db.js";
 
 export async function handleMessageDelete(message, client) {
-    if (message.author && message.author.bot) return;
+    if (message.author?.bot) return;
     if (!message.guild) return;
 
-    // Log externo
-    await logExternalMessageDelete(message);
+    try {
+        const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
+        if (!logChannel) return;
 
-    // Log for recruitment server
-    if (message.guild.id === CONFIG.GUILD_ID_RECRUTAMENTO) {
-        const { logMessageDelete } = await import("../services/recruitmentLogs.js");
-        await logMessageDelete(message, client);
-    }
+        const embed = new EmbedBuilder()
+            .setTitle("🗑️ Mensagem Apagada")
+            .addFields(
+                { name: "Autor", value: `<@${message.author?.id || "Desconhecido"}>`, inline: true },
+                { name: "Canal", value: `<#${message.channel.id}>`, inline: true },
+                { name: "Conteúdo", value: message.content?.substring(0, 1024) || "*Vazio/Embed*", inline: false }
+            )
+            .setColor(0xff0000)
+            .setTimestamp();
 
-    if (messageCache.has(message.id)) {
-        messageCache.delete(message.id);
+        await logChannel.send({ embeds: [embed] });
+    } catch (err) {
+        console.error("[MessageDelete] Erro:", err.message);
     }
 }
