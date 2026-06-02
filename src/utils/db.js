@@ -1,4 +1,3 @@
-import { MongoClient } from "mongodb";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -8,12 +7,28 @@ const MONGO_URI = process.env.MONGO_URI || null;
 const DB_NAME = process.env.MONGO_DB_NAME || "pac_bot";
 const LOCAL_DB_PATH = process.env.LOCAL_DB_PATH || "./tickets.json";
 
+// Tentar importar mongodb dinamicamente (para não crashar se não estiver instalado)
+let MongoClient = null;
+if (USE_MONGODB && MONGO_URI) {
+    try {
+        const mongo = await import("mongodb");
+        MongoClient = mongo.MongoClient;
+        console.log("[DB] MongoDB importado com sucesso.");
+    } catch (err) {
+        console.warn("[DB] MongoDB não instalado. A usar JSON local.");
+        console.warn("[DB] Para usar MongoDB, corre: npm install mongodb");
+    }
+}
+
 // Cache em memória
 export let db = {
     tickets: {},
     cooldowns: {},
     transcripts: {},
     settings: {},
+    acceptedRules: [],
+    messages: {},
+    avaliacoes: {},
 };
 
 let mongoClient = null;
@@ -23,7 +38,7 @@ const SAVE_INTERVAL = 30000; // 30 segundos
 
 // ==================== MONGODB ====================
 async function connectMongo() {
-    if (!USE_MONGODB || !MONGO_URI) return false;
+    if (!MongoClient || !MONGO_URI) return false;
     try {
         mongoClient = new MongoClient(MONGO_URI, {
             maxPoolSize: 5,
@@ -44,7 +59,7 @@ async function connectMongo() {
 async function loadFromMongo() {
     if (!mongoDb) return;
     try {
-        const collections = ["tickets", "cooldowns", "transcripts", "settings"];
+        const collections = ["tickets", "cooldowns", "transcripts", "settings", "acceptedRules", "messages", "avaliacoes"];
         for (const col of collections) {
             const docs = await mongoDb.collection(col).find({}).toArray();
             const data = {};
@@ -52,7 +67,13 @@ async function loadFromMongo() {
                 const key = doc._key || doc._id?.toString();
                 if (key) data[key] = doc.data || doc;
             });
-            db[col] = data;
+            // Para arrays (acceptedRules), usar formato especial
+            if (col === "acceptedRules") {
+                const arrDoc = docs.find(d => d._key === "array");
+                db[col] = arrDoc?.data || [];
+            } else {
+                db[col] = data;
+            }
         }
         console.log("[DB] Dados carregados do MongoDB.");
     } catch (err) {
@@ -65,6 +86,17 @@ async function saveToMongo() {
     try {
         for (const [colName, data] of Object.entries(db)) {
             const collection = mongoDb.collection(colName);
+
+            // Arrays precisam de tratamento especial
+            if (Array.isArray(data)) {
+                await collection.updateOne(
+                    { _key: "array" },
+                    { $set: { _key: "array", data: data, updatedAt: new Date() } },
+                    { upsert: true }
+                );
+                continue;
+            }
+
             const ops = Object.entries(data).map(([key, value]) => ({
                 updateOne: {
                     filter: { _key: key },
@@ -88,6 +120,8 @@ function loadLocal() {
             const raw = fs.readFileSync(LOCAL_DB_PATH, "utf-8");
             const parsed = JSON.parse(raw);
             db = { ...db, ...parsed };
+            // Garantir que acceptedRules é sempre array
+            if (!Array.isArray(db.acceptedRules)) db.acceptedRules = [];
             console.log("[DB] Dados carregados do JSON local.");
         } else {
             console.log("[DB] Ficheiro JSON não encontrado, a criar novo.");
@@ -108,7 +142,7 @@ function saveLocal() {
 
 // ==================== API PÚBLICA ====================
 export async function loadDB() {
-    if (USE_MONGODB && MONGO_URI) {
+    if (USE_MONGODB && MongoClient && MONGO_URI) {
         const connected = await connectMongo();
         if (connected) {
             await loadFromMongo();
