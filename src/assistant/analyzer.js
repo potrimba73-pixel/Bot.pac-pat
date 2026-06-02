@@ -1,174 +1,138 @@
-import {
-    EmbedBuilder,
-    ActionRowBuilder,
-    ButtonBuilder,
-    ButtonStyle,
-} from "discord.js";
+import { ChannelType, PermissionsBitField } from "discord.js";
 import { ASSISTANT_CONFIG } from "../config/index.js";
-import { encontrarRespostaFAQ } from "../database/faq.js";
 import { assistantMemory } from "../services/ajuda.js";
-import { MessageAnalyzer } from "./analyzer.js";
 
-// Helper para gerar Custom IDs seguros (max 100 chars)
-function safeCustomId(prefix, messageId, extra = "") {
-    const base = `${prefix}_${messageId}`;
-    if (extra) {
-        const hash = simpleHash(extra).toString(36).substring(0, 8);
-        return `${base}_${hash}`.substring(0, 100);
+// Cache de histórico com TTL
+const HISTORY_CACHE_TTL = 3600000; // 1 hora
+let lastHistoryFetch = 0;
+
+export class MessageAnalyzer {
+    constructor(client) {
+        this.client = client;
+        this.rateLimitQueue = [];
     }
-    return base.substring(0, 100);
-}
 
-function simpleHash(str) {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        const char = str.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash;
+    // Rate limit helper para evitar 429
+    async rateLimitDelay() {
+        const now = Date.now();
+        this.rateLimitQueue = this.rateLimitQueue.filter(t => now - t < 1000);
+        if (this.rateLimitQueue.length >= 5) {
+            await new Promise(r => setTimeout(r, 1000));
+        }
+        this.rateLimitQueue.push(now);
     }
-    return Math.abs(hash);
-}
 
-export async function handleSmartResponse(message, client) {
-    if (message.author.bot) return;
-    if (!ASSISTANT_CONFIG.ALLOWED_CHANNELS.includes(message.channel.id)) return;
-    if (assistantMemory.isOnCooldown(message.author.id)) return;
+    async fetchExpertHistory(guild, userId, limit = 50) { // REDUZIDO de 200 para 50
+        // Cache: só atualiza a cada 1 hora
+        if (Date.now() - lastHistoryFetch < HISTORY_CACHE_TTL && assistantMemory.diegoHistory?.length > 0) {
+            return assistantMemory.diegoHistory;
+        }
 
-    const contentLower = message.content.toLowerCase();
-
-    // ===== IMPROVED FILTERING =====
-    const questionWords = ["como", "onde", "quando", "porque", "pq", "?", "ajuda", "help", "dúvida", "duvida", "sabe", "sabes", "consegues", "podes", "posso", "qual", "quais"];
-    const isQuestion = questionWords.some(qw => contentLower.includes(qw));
-
-    const gameKeywords = ["ets2", "ats", "truck", "trucky", "truckersmp", "mod", "skin", "comboio", "convoy", "servidor", "recrutamento", "pat", "vtc", "km", "viagem", "carga", "ets", "american truck", "euro truck"];
-    const isGameRelated = gameKeywords.some(kw => contentLower.includes(kw));
-
-    const techKeywords = ["configurar", "instalar", "problema", "erro", "crash", "lag", "fps", "grafico", "vr", "volante", "g29", "g920", "shifter", "camera", "mod", "dlc", "save", "perfil", "steam", "workshop"];
-    const isTechRelated = techKeywords.some(kw => contentLower.includes(kw));
-
-    const mentionsDiego = message.mentions.users.has(ASSISTANT_CONFIG.EXPERT_USER_ID);
-
-    const shouldRespond = (isQuestion && (isGameRelated || isTechRelated)) || mentionsDiego;
-    if (!shouldRespond) return;
-
-    assistantMemory.setCooldown(message.author.id);
-
-    const question = message.content.replace(/<@!?\d+>/g, "").trim();
-
-    // 1. Tentar FAQ primeiro
-    const faqResposta = encontrarRespostaFAQ(question);
-    if (faqResposta.found) {
-        const embed = new EmbedBuilder()
-            .setTitle(faqResposta.titulo)
-            .setDescription(faqResposta.texto)
-            .setColor(0x00ff00)
-            .setFooter({ text: "🤖 Resposta automática — Info pode não estar 100% atualizada" })
-            .setTimestamp();
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(safeCustomId("smart_helpful", message.id))
-                .setLabel("✅ Resolveu!")
-                .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-                .setCustomId(safeCustomId("smart_not_helpful", message.id))
-                .setLabel("❌ Não é isto")
-                .setStyle(ButtonStyle.Danger),
-            new ButtonBuilder()
-                .setCustomId(safeCustomId("smart_search", message.id, question))
-                .setLabel("🔍 Pesquisar na net")
-                .setStyle(ButtonStyle.Primary)
+        const history = [];
+        const textChannels = guild.channels.cache.filter(
+            c => c.type === ChannelType.GuildText && 
+                 c.permissionsFor(this.client.user)?.has(PermissionsBitField.Flags.ViewChannel)
         );
 
-        try {
-            const sent = await message.reply({
-                embeds: [embed],
-                components: [row]
-            });
+        // Limitar a 5 canais mais ativos para evitar overload
+        const channelsToFetch = Array.from(textChannels.values()).slice(0, 5);
 
-            assistantMemory.pendingSearches.set(message.id, {
-                question: question,
-                messageId: sent.id,
-                channelId: message.channel.id
-            });
-        } catch (err) {
-            console.error("[SmartResponse] Erro ao enviar FAQ:", err.message);
-        }
-        return;
-    }
+        for (const channel of channelsToFetch) {
+            try {
+                await this.rateLimitDelay();
 
-    // 2. Tentar histórico do Diego
-    try {
-        const analyzer = new MessageAnalyzer(client);
-        const similar = analyzer.findSimilarResponses(question);
+                // Verificar permissão de leitura de histórico
+                if (!channel.permissionsFor(this.client.user)?.has(PermissionsBitField.Flags.ReadMessageHistory)) {
+                    continue;
+                }
 
-        if (similar.length > 0) {
-            const best = similar[0];
-            let texto = "💡 **Baseado no que o <@" + ASSISTANT_CONFIG.EXPERT_USER_ID + "> já respondeu:**\n\n";
-            texto += "> " + best.content + "\n\n";
+                const messages = await channel.messages.fetch({ limit: 50 }); // REDUZIDO de 100
+                const expertMsgs = messages.filter(m => m.author.id === userId && m.content.length > 10);
 
-            if (best.hasLinks.length > 0) {
-                texto += "🔗 **Links mencionados:**\n";
-                best.hasLinks.forEach(link => {
-                    texto += "• " + link + "\n";
+                expertMsgs.forEach(msg => {
+                    const allMsgs = Array.from(messages.values())
+                        .sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+                    const idx = allMsgs.findIndex(m => m.id === msg.id);
+
+                    const context = [];
+                    if (idx > 0) {
+                        context.push({
+                            author: allMsgs[idx-1].author.username,
+                            content: allMsgs[idx-1].content.substring(0, 200) // Limitar tamanho
+                        });
+                    }
+                    context.push({
+                        author: msg.author.username,
+                        content: msg.content.substring(0, 500) // Limitar tamanho
+                    });
+
+                    history.push({
+                        content: msg.content.substring(0, 500),
+                        channel: channel.name,
+                        timestamp: msg.createdTimestamp,
+                        context,
+                        hasLinks: this.extractLinks(msg.content),
+                        isHelpful: this.isHelpfulMessage(msg.content)
+                    });
                 });
-                texto += "\n";
+            } catch (e) {
+                // Silencioso — não floodar logs com erros de permissão
+                if (e.code !== 50001 && e.code !== 50013) { // Ignorar Missing Access/Permissions
+                    console.log(`[Analyzer] Erro em ${channel.name}:`, e.message);
+                }
             }
-
-            texto += "⚠️ *Esta resposta foi baseada no histórico de mensagens. Pode não estar 100% atualizada.*";
-
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId(safeCustomId("smart_helpful", message.id))
-                    .setLabel("✅ Resolveu!")
-                    .setStyle(ButtonStyle.Success),
-                new ButtonBuilder()
-                    .setCustomId(safeCustomId("smart_not_helpful", message.id))
-                    .setLabel("❌ Não é isto")
-                    .setStyle(ButtonStyle.Danger),
-                new ButtonBuilder()
-                    .setCustomId(safeCustomId("smart_search", message.id, question))
-                    .setLabel("🔍 Pesquisar na net")
-                    .setStyle(ButtonStyle.Primary)
-            );
-
-            const sent = await message.reply({ content: texto, components: [row] });
-
-            assistantMemory.pendingSearches.set(message.id, {
-                question: question,
-                messageId: sent.id,
-                channelId: message.channel.id
-            });
-            return;
         }
-    } catch (err) {
-        console.error("[SmartResponse] Erro no analyzer:", err.message);
+
+        history.sort((a, b) => b.timestamp - a.timestamp);
+        assistantMemory.diegoHistory = history.slice(0, limit);
+        lastHistoryFetch = Date.now();
+        return assistantMemory.diegoHistory;
     }
 
-    // 3. Se não encontrou nada, sugere pesquisa
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(safeCustomId("smart_do_search", message.id, question))
-            .setLabel("🔍 Pesquisar na internet")
-            .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-            .setCustomId("smart_cancel")
-            .setLabel("✖️ Cancelar")
-            .setStyle(ButtonStyle.Secondary)
-    );
+    extractLinks(content) {
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        return content.match(urlRegex) || [];
+    }
 
-    try {
-        const sent = await message.reply({
-            content: "🤔 **Não encontrei nenhuma resposta no histórico nem no FAQ.**\n\nQueres que eu **pesquise na internet** por: "" + question + ""?",
-            components: [row]
+    isHelpfulMessage(content) {
+        const helpIndicators = [
+            "podes", "posso", "ajuda", "configurar", "instalar",
+            "link", "vídeo", "tutorial", "faz assim", "tenta",
+            "precisas de", "baixa", "download", "mod", "plugin",
+            "usa", "experimenta", "tens que", "deves", "recomendo"
+        ];
+        return helpIndicators.some(word => content.toLowerCase().includes(word));
+    }
+
+    findSimilarResponses(question) {
+        const history = assistantMemory.diegoHistory;
+        if (!history || history.length === 0) return [];
+
+        const questionLower = question.toLowerCase();
+        const qWords = questionLower.split(/\s+/).filter(w => w.length > 3);
+        if (qWords.length === 0) return [];
+
+        const scored = history.map(h => {
+            let score = 0;
+            const contentLower = h.content.toLowerCase();
+
+            qWords.forEach(word => {
+                if (contentLower.includes(word)) score += 3;
+            });
+
+            if (h.isHelpful) score += 5;
+            if (h.hasLinks.length > 0) score += 4;
+
+            h.context.forEach(ctx => {
+                qWords.forEach(word => {
+                    if (ctx.content.toLowerCase().includes(word)) score += 2;
+                });
+            });
+
+            return { ...h, score };
         });
 
-        assistantMemory.pendingSearches.set(message.id, {
-            question: question,
-            messageId: sent.id,
-            channelId: message.channel.id
-        });
-    } catch (err) {
-        console.error("[SmartResponse] Erro ao enviar sugestão:", err.message);
+        scored.sort((a, b) => b.score - a.score);
+        return scored.filter(s => s.score > 5).slice(0, 3);
     }
 }
