@@ -1,22 +1,53 @@
-import { ChannelType } from "discord.js";
+import { ChannelType, PermissionsBitField } from "discord.js";
 import { ASSISTANT_CONFIG } from "../config/index.js";
 import { assistantMemory } from "../services/ajuda.js";
+
+// Cache de histórico com TTL
+const HISTORY_CACHE_TTL = 3600000; // 1 hora
+let lastHistoryFetch = 0;
 
 export class MessageAnalyzer {
     constructor(client) {
         this.client = client;
+        this.rateLimitQueue = [];
     }
 
-    async fetchExpertHistory(guild, userId, limit = 200) {
+    // Rate limit helper para evitar 429
+    async rateLimitDelay() {
+        const now = Date.now();
+        this.rateLimitQueue = this.rateLimitQueue.filter(t => now - t < 1000);
+        if (this.rateLimitQueue.length >= 5) {
+            await new Promise(r => setTimeout(r, 1000));
+        }
+        this.rateLimitQueue.push(now);
+    }
+
+    async fetchExpertHistory(guild, userId, limit = 50) { // REDUZIDO de 200 para 50
+        // Cache: só atualiza a cada 1 hora
+        if (Date.now() - lastHistoryFetch < HISTORY_CACHE_TTL && assistantMemory.diegoHistory?.length > 0) {
+            return assistantMemory.diegoHistory;
+        }
+
         const history = [];
         const textChannels = guild.channels.cache.filter(
-            c => c.type === ChannelType.GuildText
+            c => c.type === ChannelType.GuildText && 
+                 c.permissionsFor(this.client.user)?.has(PermissionsBitField.Flags.ViewChannel)
         );
 
-        for (const [, channel] of textChannels) {
+        // Limitar a 5 canais mais ativos para evitar overload
+        const channelsToFetch = Array.from(textChannels.values()).slice(0, 5);
+
+        for (const channel of channelsToFetch) {
             try {
-                const messages = await channel.messages.fetch({ limit: 100 });
-                const expertMsgs = messages.filter(m => m.author.id === userId);
+                await this.rateLimitDelay();
+
+                // Verificar permissão de leitura de histórico
+                if (!channel.permissionsFor(this.client.user)?.has(PermissionsBitField.Flags.ReadMessageHistory)) {
+                    continue;
+                }
+
+                const messages = await channel.messages.fetch({ limit: 50 }); // REDUZIDO de 100
+                const expertMsgs = messages.filter(m => m.author.id === userId && m.content.length > 10);
 
                 expertMsgs.forEach(msg => {
                     const allMsgs = Array.from(messages.values())
@@ -27,16 +58,16 @@ export class MessageAnalyzer {
                     if (idx > 0) {
                         context.push({
                             author: allMsgs[idx-1].author.username,
-                            content: allMsgs[idx-1].content
+                            content: allMsgs[idx-1].content.substring(0, 200) // Limitar tamanho
                         });
                     }
                     context.push({
                         author: msg.author.username,
-                        content: msg.content
+                        content: msg.content.substring(0, 500) // Limitar tamanho
                     });
 
                     history.push({
-                        content: msg.content,
+                        content: msg.content.substring(0, 500),
                         channel: channel.name,
                         timestamp: msg.createdTimestamp,
                         context,
@@ -45,12 +76,16 @@ export class MessageAnalyzer {
                     });
                 });
             } catch (e) {
-                console.log(`Erro ao buscar ${channel.name}:`, e.message);
+                // Silencioso — não floodar logs com erros de permissão
+                if (e.code !== 50001 && e.code !== 50013) { // Ignorar Missing Access/Permissions
+                    console.log(`[Analyzer] Erro em ${channel.name}:`, e.message);
+                }
             }
         }
 
         history.sort((a, b) => b.timestamp - a.timestamp);
         assistantMemory.diegoHistory = history.slice(0, limit);
+        lastHistoryFetch = Date.now();
         return assistantMemory.diegoHistory;
     }
 
@@ -71,10 +106,11 @@ export class MessageAnalyzer {
 
     findSimilarResponses(question) {
         const history = assistantMemory.diegoHistory;
-        if (history.length === 0) return [];
+        if (!history || history.length === 0) return [];
 
         const questionLower = question.toLowerCase();
         const qWords = questionLower.split(/\s+/).filter(w => w.length > 3);
+        if (qWords.length === 0) return [];
 
         const scored = history.map(h => {
             let score = 0;
