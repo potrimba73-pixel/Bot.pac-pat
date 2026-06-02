@@ -17,7 +17,9 @@
     "discord-html-transcripts": "^3.2.0",
     "@octokit/rest": "^20.1.1",
     "js-base64": "^3.7.7",
-    "axios": "^1.7.0",
+    "axios": "^1.7.0"
+  },
+  "optionalDependencies": {
     "mongodb": "^6.8.0"
   },
   "keywords": [
