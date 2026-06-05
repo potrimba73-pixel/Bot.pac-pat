@@ -1,119 +1,163 @@
-import {
-  EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
-  PermissionFlagsBits, ChannelType,
-} from "discord.js";
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import { CONFIG } from "../config/index.js";
 import { db, saveDB } from "../utils/db.js";
-import { safeEditReply } from "../utils/safeReply.js";
+import { gerarTranscript } from "../utils/transcript.js";
 
-export async function sendPainelChamada(channel, ticketId, interaction) {
-  const ticket = db.tickets[ticketId];
-  const embed = new EmbedBuilder()
-    .setTitle(`${CONFIG.EMOJI_PAINEL} Painel de Staff`)
-    .setDescription([
-      `${CONFIG.EMOJI_INFO} Selecione a opção desejada abaixo.`,
-      "",
-      `${CONFIG.EMOJI_CALL} **Call:** ${ticket.callActive ? "Ativa" : "Não iniciada"}`
-    ].join("\n"))
-    .setColor(0x262af1);
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`criar_call_${ticketId}`).setLabel(`${CONFIG.EMOJI_CALL} Criar Call`).setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(`apagar_call_${ticketId}`).setLabel(`${CONFIG.EMOJI_FECHAR} Apagar Call`).setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId(`chamar_membro_${ticketId}`).setLabel(`${CONFIG.EMOJI_CHAMAR} Chamar Membro`).setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId(`add_user_${ticketId}`).setLabel(`${CONFIG.EMOJI_ADD} Adicionar`).setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`remove_user_${ticketId}`).setLabel(`${CONFIG.EMOJI_REMOVE} Remover`).setStyle(ButtonStyle.Secondary),
-  );
-  if (interaction) {
-    await safeEditReply(interaction, { embeds: [embed], components: [row], flags: 64 });
-  } else {
-    await channel.send({ embeds: [embed], components: [row] });
-  }
-}
-
-export async function criarCall(interaction, ticketId, client) {
+export async function sendLog(ticketId, action, client) {
   const ticket = db.tickets[ticketId];
   if (!ticket) return;
-  let existingCall = null;
-  if (ticket.callChannelId) {
-    existingCall = await interaction.guild.channels.fetch(ticket.callChannelId).catch(() => null);
-  }
-  if (ticket.callActive && existingCall) {
-    return safeEditReply(interaction, { content: `${CONFIG.EMOJI_WARNING} Já existe uma call ativa.`, flags: 64 });
-  }
-  const callData = {
-    name: `call-${ticket.username}`, type: ChannelType.GuildVoice,
-    parent: interaction.channel.parentId || undefined,
-    permissionOverwrites: [
-      { id: interaction.guild.id, type: 0, deny: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] },
-      { id: ticket.userId, type: 1, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
-      { id: CONFIG.CARGO_STAFF, type: 0, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
-    ],
-  };
-  if (!callData.parent) delete callData.parent;
-  const channel = await interaction.guild.channels.create(callData);
-  ticket.callActive = true;
-  ticket.callChannelId = channel.id;
-  await saveDB();
-  await safeEditReply(interaction, { content: `${CONFIG.EMOJI_SUCCESS} Call criada: ${channel}`, flags: 64 });
-}
+  const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
+  if (!logChannel) return;
 
-export async function apagarCall(interaction, ticketId, client) {
-  const ticket = db.tickets[ticketId];
-  if (!ticket || !ticket.callActive) {
-    return safeEditReply(interaction, { content: `${CONFIG.EMOJI_WARNING} Não existe call ativa.`, flags: 64 });
-  }
-  const mainGuild = await client.guilds.fetch(CONFIG.GUILD_ID).catch(() => null);
-  if (!mainGuild) {
-    return safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Erro: Não consegui aceder ao servidor principal.`, flags: 64 });
-  }
-  const callChannel = await mainGuild.channels.fetch(ticket.callChannelId).catch(() => null);
-  if (callChannel) await callChannel.delete();
-  ticket.callActive = false;
-  ticket.callChannelId = null;
-  await saveDB();
-  await safeEditReply(interaction, { content: `${CONFIG.EMOJI_SUCCESS} Call apagada.`, flags: 64 });
-}
+  const dataAbertura = new Date(ticket.openedAt).toLocaleString("pt-PT", {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Lisbon'
+  });
 
-export async function chamarMembro(interaction, ticketId, client) {
-  const ticket = db.tickets[ticketId];
-  if (!ticket) return;
-  try {
-    const user = await client.users.fetch(ticket.userId).catch(() => null);
-    if (!user) {
-      return safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Não foi possível encontrar o utilizador.`, flags: 64 });
+  if (action === "open") {
+    const embed = new EmbedBuilder()
+      .setTitle(`${CONFIG.EMOJI_TICKET} Logs System - #${ticketId}`)
+      .setDescription([
+        `${CONFIG.EMOJI_USER} Usuário que abriu:`,
+        `${ticket.username} (${ticket.userId})`,
+        "",
+        `${CONFIG.EMOJI_INFO} Tipo: ${ticket.label}`,
+        "",
+        `${CONFIG.EMOJI_TICKET} Vá para o ticket pressionando o botão abaixo`
+      ].join("\n"))
+      .setColor(0x262af1).setTimestamp();
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TICKET} Ticket Aberto`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${CONFIG.GUILD_ID}/${ticket.channelId}`),
+    );
+    await logChannel.send({ embeds: [embed], components: [row] });
+  } else if (action === "claim") {
+    const embed = new EmbedBuilder()
+      .setTitle(`${CONFIG.EMOJI_TICKET} Logs System - #${ticketId}`)
+      .setDescription([
+        `${CONFIG.EMOJI_USER} Usuário que abriu:`,
+        `${ticket.username} (${ticket.userId})`,
+        "",
+        `${CONFIG.EMOJI_STAFF} Assumido por:`,
+        `${ticket.claimedByName} (${ticket.claimedBy})`,
+        "",
+        `${CONFIG.EMOJI_INFO} Tipo: ${ticket.label}`
+      ].join("\n"))
+      .setColor(0x262af1).setTimestamp();
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TICKET} Ticket Aberto`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${CONFIG.GUILD_ID}/${ticket.channelId}`),
+    );
+    await logChannel.send({ embeds: [embed], components: [row] });
+  } else if (action === "close") {
+    const dataFechamento = new Date(ticket.closedAt).toLocaleString("pt-PT", {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Lisbon'
+    });
+    const recrutadoText = ticket.recrutado !== null ? `Recrutado: ${ticket.recrutado ? "Sim" : "Não"}` : "";
+    const fotoText = ticket.fotoNome ? `Foto: ${ticket.fotoNome}` : "";
+    const truckyText = ticket.truckyNome ? `Trucky: ${ticket.truckyNome}` : "";
+
+    // GERAR TRANSCRIPT COMO FICHEIRO HTML DIRETO
+    let transcriptAttachment = null;
+    const ticketChannel = await client.channels.fetch(ticket.channelId).catch(() => null);
+    if (ticketChannel) {
+      transcriptAttachment = await gerarTranscript(ticketChannel, ticketId);
     }
-    const staffMember = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
-    const staffName = staffMember ? staffMember.displayName || staffMember.user.username : interaction.user.username;
 
     const embed = new EmbedBuilder()
-      .setTitle(`${CONFIG.EMOJI_CHAMAR} Staff a Chamar!`)
+      .setTitle(`${CONFIG.EMOJI_FECHAR} Ticket Fechado - #${ticketId}`)
       .setDescription([
-        `Olá ${user.username}!`,
-        "",
-        `Um membro da staff está a chamar-te no teu ticket <#${ticket.channelId}>.`,
-        "",
-        `${CONFIG.EMOJI_INFO} Motivo: ${ticket.label}`,
-        `${CONFIG.EMOJI_STAFF} Staff: ${staffName}`,
-        "",
-        `${CONFIG.EMOJI_TIME} Importante: Responde o mais breve possível!`
-      ].join("\n"))
-      .setColor(0x00ff88)
-      .setTimestamp()
+        `${CONFIG.EMOJI_USER} Usuário que abriu:`, `${ticket.username}`, "",
+        `${CONFIG.EMOJI_STAFF} Assumido por:`, ticket.claimedByName || "Ninguém", "",
+        `${CONFIG.EMOJI_STAFF} Fechado por:`, `${ticket.closedByName}`, "",
+        `${CONFIG.EMOJI_INFO} Informações Adicionais:`, `Abertura: ${dataAbertura}`, `Fechamento: ${dataFechamento}`, `Tipo: ${ticket.label}`, recrutadoText, truckyText, fotoText
+      ].filter(Boolean).join("\n"))
+      .setColor(0x262af1).setTimestamp()
       .setFooter({ text: "Portugal Alfa Community", iconURL: client.user?.displayAvatarURL() });
 
+    // Enviar embed + ficheiro HTML
+    if (transcriptAttachment) {
+      await logChannel.send({
+        embeds: [embed],
+        files: [transcriptAttachment.attachment]
+      });
+    } else {
+      await logChannel.send({ embeds: [embed] });
+    }
+  }
+}
+
+export async function enviarLogAvaliacao(ticket, estrelas, mensagem, user, client) {
+  try {
+    const canalAvaliacoes = await client.channels.fetch(CONFIG.CANAL_AVALIACOES).catch(() => null);
+    if (!canalAvaliacoes) return;
+    const dataAvaliacao = new Date().toLocaleString("pt-PT", {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Lisbon'
+    });
+    const estrelasTexto = `${CONFIG.EMOJI_STAR}`.repeat(estrelas) + ` (${estrelas}/5)`;
+    const embed = new EmbedBuilder()
+      .setTitle(`${CONFIG.EMOJI_STAR} Portugal Alfa Community - Avaliação Recebida`)
+      .setDescription([
+        `${CONFIG.EMOJI_USER} Usuário: ${user.username}`,
+        "",
+        `${CONFIG.EMOJI_TICKET} Ticket: #${ticket.id}`,
+        `${CONFIG.EMOJI_INFO} Tipo: ${ticket.label || "N/A"}`,
+        "",
+        `${CONFIG.EMOJI_STAR} Avaliação`,
+        estrelasTexto,
+        "",
+        `${CONFIG.EMOJI_STAFF} Atendido por`,
+        ticket.claimedByName || "Ninguém",
+        "",
+        `${CONFIG.EMOJI_EDIT} Mensagem`,
+        mensagem || "Nenhuma mensagem adicionada.",
+        "",
+        `${CONFIG.EMOJI_TIME} Horário: ${dataAvaliacao}`
+      ].join("\n"))
+      .setColor(0xFFD700).setTimestamp();
+    await canalAvaliacoes.send({ embeds: [embed] });
+  } catch (error) {
+    console.error("Erro ao enviar log de avaliação:", error);
+  }
+}
+
+export async function enviarAvaliacaoDM(ticket, client) {
+  try {
+    const user = await client.users.fetch(ticket.userId).catch(() => null);
+    if (!user) return;
+    const dataFechamento = new Date(ticket.closedAt).toLocaleString("pt-PT", {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Lisbon'
+    });
+
+    const embed = new EmbedBuilder()
+      .setTitle(`${CONFIG.EMOJI_STAR} Ticket Fechado`)
+      .setDescription([
+        `${CONFIG.EMOJI_INFO} Seu ticket foi fechado com sucesso, avalie nosso atendimento clicando nas estrelas abaixo.`,
+        "",
+        `${CONFIG.EMOJI_TICKET} Ticket: #${ticket.id}`,
+        `${CONFIG.EMOJI_INFO} Tipo: ${ticket.label || "N/A"}`,
+        "",
+        `${CONFIG.EMOJI_STAFF} Fechado por:`,
+        ticket.closedByName,
+        "",
+        `${CONFIG.EMOJI_TIME} Fechado em:`,
+        dataFechamento,
+        "",
+        `${CONFIG.EMOJI_TICKET} Caso necessário, não hesite em abrir ticket novamente!`
+      ].join("\n"))
+      .setColor(0xFF0000);
+
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TICKET} Ir para o Ticket`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${CONFIG.GUILD_ID}/${ticket.channelId}`),
+      new ButtonBuilder().setCustomId(`avaliar_1_${ticket.id}`).setLabel("1⭐").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`avaliar_2_${ticket.id}`).setLabel("2⭐").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`avaliar_3_${ticket.id}`).setLabel("3⭐").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`avaliar_4_${ticket.id}`).setLabel("4⭐").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`avaliar_5_${ticket.id}`).setLabel("5⭐").setStyle(ButtonStyle.Secondary),
     );
 
     await user.send({ embeds: [embed], components: [row] });
-
-    await interaction.channel.send({
-      content: `${CONFIG.EMOJI_CHAMAR} ${interaction.user.username} chamou <@${user.id}> no privado.`,
-    });
-
-    await safeEditReply(interaction, { content: `${CONFIG.EMOJI_SUCCESS} Mensagem enviada para ${user.username} no privado!`, flags: 64 });
   } catch (error) {
-    console.error("Erro ao chamar membro:", error);
-    await safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Erro ao enviar mensagem no privado. O utilizador pode ter DMs desativadas.`, flags: 64 });
+    console.error("Erro ao enviar avaliação por DM:", error);
   }
 }
