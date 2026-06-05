@@ -11,8 +11,8 @@ export async function sendPainelChamada(channel, ticketId, interaction) {
   const embed = new EmbedBuilder()
     .setTitle(`${CONFIG.EMOJI_PAINEL} Painel de Staff`)
     .setDescription([
-      `${CONFIG.EMOJI_INFO} Selecione a opção desejada abaixo.`, 
-      "", 
+      `${CONFIG.EMOJI_INFO} Selecione a opção desejada abaixo.`,
+      "",
       `${CONFIG.EMOJI_CALL} **Call:** ${ticket.callActive ? "Ativa" : "Não iniciada"}`
     ].join("\n"))
     .setColor(0x262af1);
@@ -95,7 +95,7 @@ export async function chamarMembro(interaction, ticketId, client) {
         `${CONFIG.EMOJI_INFO} Motivo: ${ticket.label}`,
         `${CONFIG.EMOJI_STAFF} Staff: ${staffName}`,
         "",
-        `${CONFIG.EMOJI_TIME} Importante: Responde o mais breve possível!`,
+        `${CONFIG.EMOJI_TIME} Importante: Responde o mais breve possível!`
       ].join("\n"))
       .setColor(0x00ff88)
       .setTimestamp()
@@ -108,7 +108,7 @@ export async function chamarMembro(interaction, ticketId, client) {
     await user.send({ embeds: [embed], components: [row] });
 
     await interaction.channel.send({
-      content: `${CONFIG.EMOJI_CHAMAR} ${interaction.user.username} chamou ${user.username} no privado.`,
+      content: `${CONFIG.EMOJI_CHAMAR} ${interaction.user.username} chamou <@${user.id}> no privado.`,
     });
 
     await safeEditReply(interaction, { content: `${CONFIG.EMOJI_SUCCESS} Mensagem enviada para ${user.username} no privado!`, flags: 64 });
