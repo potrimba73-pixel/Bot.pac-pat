@@ -359,18 +359,18 @@ export async function handleInteractionCreate(interaction, client) {
             return;
         }
 
-        // RECRUTAMENTO - ACEITAR/RECUSAR REGRAS
-        if (customId.startsWith("aceitar_regras_rec_")) {
-            await interaction.deferUpdate();
-            const parts = customId.split("_");
-            const userId = parts[3];
-            const nomeTrucky = parts.slice(4).join("_");
-            if (interaction.user.id !== userId) {
-                return interaction.editReply({ content: "Não podes aceitar por outra pessoa!", components: [] });
-            }
-            await criarTicketRecrutamento(interaction, client, nomeTrucky);
-            return;
-        }
+// RECRUTAMENTO - ACEITAR/RECUSAR REGRAS
+if (customId.startsWith("aceitar_regras_rec_")) {
+  await interaction.deferUpdate();
+  const parts = customId.split("_");
+  const userId = parts[3];
+  const nomeTrucky = parts.slice(4).join("_");
+  if (interaction.user.id !== userId) {
+    return interaction.editReply({ content: "Não podes aceitar por outra pessoa!", components: [] });
+  }
+  await criarTicketRecrutamento(interaction, client, nomeTrucky);
+  return;
+}
         if (customId.startsWith("recusar_regras_rec_")) {
             await interaction.deferUpdate();
             const userId = customId.split("_")[3];
