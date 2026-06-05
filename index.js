@@ -3,7 +3,6 @@ import {
   GatewayIntentBits,
   Partials,
   Events,
-  Options,
 } from "discord.js";
 import http from 'node:http';
 import { loadDB, db } from "./src/utils/db.js";
@@ -14,6 +13,7 @@ import { handleInteractionCreate } from "./src/events/interactionCreate.js";
 import { handleMessageCreate } from "./src/events/messageCreate.js";
 import { handleMessageDelete } from "./src/events/messageDelete.js";
 import { handleMessageUpdate } from "./src/events/messageUpdate.js";
+import { setExternalClient } from "./src/services/externalLogs.js";
 
 // ==================== VALIDAR ENV VARS ====================
 const requiredEnv = ["TOKEN", "CLIENT_ID", "GUILD_ID"];
@@ -47,7 +47,10 @@ const client = new Client({
 loadDB();
 
 // ==================== EVENTS ====================
-client.once(Events.ClientReady, () => handleReady(client));
+client.once(Events.ClientReady, () => {
+  handleReady(client);
+  setExternalClient(client);
+});
 
 client.on(Events.GuildMemberAdd, (member) => handleGuildMemberAdd(member, client));
 
