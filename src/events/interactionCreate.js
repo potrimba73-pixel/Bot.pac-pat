@@ -52,12 +52,11 @@ export async function handleInteractionCreate(interaction, client) {
   }
 
   // ========== COMANDOS DE BARRA ==========
-  if (interaction.isChatInputCommand()) {
-    // /apagar
-    if (interaction.commandName === "apagar") {
-      if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Apenas administradores podem usar este comando.`, flags: 64 });
-      }
+  if (interaction.commandName === "apagar") {
+  const { handleApagarCommand } = await import("../commands/apagar.js");
+  await handleApagarCommand(interaction);
+  return;
+}
       const canaisInput = interaction.options.getString("canais");
       const guild = interaction.guild;
       let canaisParaApagar = [];
