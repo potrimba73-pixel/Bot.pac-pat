@@ -1,6 +1,7 @@
 import {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   ModalBuilder, TextInputBuilder, TextInputStyle, PermissionFlagsBits,
+  StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
 } from "discord.js";
 import { CONFIG } from "../config/index.js";
 import { db, saveDB } from "../utils/db.js";
@@ -9,6 +10,7 @@ import { updateTicketEmbed, criarTicketRecrutamento, handleTruckyVerification } 
 import { sendPainelChamada, criarCall, apagarCall, chamarMembro } from "../services/calls.js";
 import { sendLog, enviarLogAvaliacao, enviarAvaliacaoDM } from "../services/logs.js";
 import { handleAjudaCommand, handleAjudaProcurar, handleAjudaModal, assistantMemory } from "../services/ajuda.js";
+import { gerarTranscript } from "../utils/transcript.js";
 
 // Cooldown para painel membro (5 minutos = 300000ms)
 const painelMembroCooldown = new Map();
@@ -49,11 +51,62 @@ export async function handleInteractionCreate(interaction, client) {
       await handleTruckyVerification(interaction, client);
       return;
     }
+    if (interaction.customId.startsWith("modal_chamar_staff_")) {
+      const ticketId = interaction.customId.split("_")[3];
+      const ticket = db.tickets[ticketId];
+      if (!ticket) {
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Ticket não encontrado.`, flags: 64 });
+      }
+      const staffId = interaction.fields.getTextInputValue("staff_id");
+      const nota = interaction.fields.getTextInputValue("nota_staff") || "Sem nota adicional";
+
+      await interaction.deferReply({ flags: 64 });
+
+      try {
+        const staffUser = await client.users.fetch(staffId).catch(() => null);
+        if (!staffUser) {
+          return safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Staff não encontrada.`, flags: 64 });
+        }
+
+        const embed = new EmbedBuilder()
+          .setTitle(`${CONFIG.EMOJI_CHAMAR} Staff a Chamar!`)
+          .setDescription([
+            `Olá ${staffUser.username}!`,
+            "",
+            `Um membro da staff está a chamar-te no teu ticket <#${ticket.channelId}>.`,
+            "",
+            `${CONFIG.EMOJI_INFO} Motivo: ${ticket.label}`,
+            `${CONFIG.EMOJI_STAFF} Staff: ${interaction.user.username}`,
+            `${CONFIG.EMOJI_EDIT} Nota: ${nota}`,
+            "",
+            `${CONFIG.EMOJI_TIME} Importante: Responde o mais breve possível!`
+          ].join("\n"))
+          .setColor(0x00ff88)
+          .setTimestamp()
+          .setFooter({ text: "Portugal Alfa Community", iconURL: client.user?.displayAvatarURL() });
+
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TICKET} Ir para o Ticket`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${CONFIG.GUILD_ID}/${ticket.channelId}`),
+        );
+
+        await staffUser.send({ embeds: [embed], components: [row] });
+
+        await interaction.channel.send({
+          content: `${CONFIG.EMOJI_CHAMAR} ${interaction.user.username} chamou ${staffUser} no privado.`,
+        });
+
+        await safeEditReply(interaction, { content: `${CONFIG.EMOJI_SUCCESS} ${staffUser.username} foi notificado no privado!`, flags: 64 });
+      } catch (error) {
+        console.error("Erro ao chamar staff:", error);
+        await safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Erro ao enviar mensagem no privado. A staff pode ter DMs desativadas.`, flags: 64 });
+      }
+      return;
+    }
   }
 
   // ========== COMANDOS DE BARRA ==========
   if (interaction.isChatInputCommand()) {
-    // /apagar - CORRIGIDO com TXT + HTML
+    // /apagar
     if (interaction.commandName === "apagar") {
       if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
         return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Apenas administradores.`, flags: 64 });
@@ -80,7 +133,6 @@ export async function handleInteractionCreate(interaction, client) {
           const messages = await canal.messages.fetch({ limit: 100 });
           const botMessages = messages.filter((msg) => msg.author.id === client.user.id);
 
-          // Criar TXT antes de apagar
           let txtContent = `TRANSCRIPT - MENSAGENS DO BOT APAGADAS\n`;
           txtContent += `================================\n`;
           txtContent += `Canal: #${canal.name}\n`;
@@ -93,28 +145,24 @@ export async function handleInteractionCreate(interaction, client) {
             const data = new Date(msg.createdTimestamp).toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" });
             txtContent += `[${data}] ${msg.author.tag}: ${msg.content || "(sem texto)"}\n`;
             if (msg.attachments.size > 0) {
-              txtContent += `  [Anexos: ${msg.attachments.map(a => a.name).join(", ")}]\n`;
+              txtContent += ` [Anexos: ${msg.attachments.map(a => a.name).join(", ")}]\n`;
             }
             txtContent += `\n`;
           }
 
-          // Apagar
           for (const msg of botMessages.values()) {
             await msg.delete().catch(() => {});
             totalApagadas++;
             await new Promise((r) => setTimeout(r, 100));
           }
 
-          // Gerar HTML
           let htmlAttachment = null;
           try {
-            const { gerarTranscript } = await import("../utils/transcript.js");
             htmlAttachment = await gerarTranscript(canal, `apagado-${canal.id}-${Date.now()}`);
           } catch (e) {
             console.error("Erro ao gerar HTML:", e);
           }
 
-          // Enviar ficheiros no canal
           const files = [];
           files.push({ attachment: Buffer.from(txtContent, "utf-8"), name: `apagado-${canal.name}-${Date.now()}.txt` });
           if (htmlAttachment) {
@@ -131,7 +179,6 @@ export async function handleInteractionCreate(interaction, client) {
         }
       }
 
-      // Limpar DB
       if (!canaisInput) {
         db.messages = {};
       } else {
@@ -150,7 +197,7 @@ export async function handleInteractionCreate(interaction, client) {
       saveDB();
 
       const resposta = [
-        `${CONFIG.EMOJI_BROOM} Limpeza concluida!`,
+        `${CONFIG.EMOJI_BROOM} Limpeza concluída!`,
         `${CONFIG.EMOJI_CHECK} Total: ${totalApagadas} mensagens`,
         `${CONFIG.EMOJI_FILE} Transcripts (TXT + HTML) enviados em cada canal`,
         ...(erros.length > 0 ? [`${CONFIG.EMOJI_WARNING} Erros: ${erros.length}`] : []),
@@ -174,13 +221,57 @@ export async function handleInteractionCreate(interaction, client) {
       const quantidade = interaction.options.getInteger("quantidade");
       const motivo = interaction.options.getString("motivo") || "Sem motivo especificado";
       await interaction.deferReply({ flags: 64 });
+
       const messages = await interaction.channel.messages.fetch({ limit: quantidade });
+
+      // Gerar TXT transcript ANTES de apagar
+      let txtContent = `TRANSCRIPT - MENSAGENS APAGADAS\n`;
+      txtContent += `================================\n`;
+      txtContent += `Canal: #${interaction.channel.name}\n`;
+      txtContent += `Apagado por: ${interaction.user.tag}\n`;
+      txtContent += `Motivo: ${motivo}\n`;
+      txtContent += `Quantidade: ${messages.size}\n`;
+      txtContent += `Data: ${new Date().toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" })}\n`;
+      txtContent += `================================\n\n`;
+
+      const msgsArray = Array.from(messages.values()).reverse();
+      for (const msg of msgsArray) {
+        const data = new Date(msg.createdTimestamp).toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" });
+        txtContent += `[${data}] ${msg.author.tag}: ${msg.content || "(sem texto)"}\n`;
+        if (msg.attachments.size > 0) {
+          txtContent += ` [Anexos: ${msg.attachments.map(a => a.name).join(", ")}]\n`;
+        }
+        txtContent += `\n`;
+      }
+
+      // Gerar HTML transcript
+      let htmlAttachment = null;
+      try {
+        htmlAttachment = await gerarTranscript(interaction.channel, `limpo-${interaction.channel.id}-${Date.now()}`);
+      } catch (e) {
+        console.error("Erro ao gerar HTML transcript:", e);
+      }
+
+      // Apagar mensagens
       for (const msg of messages.values()) {
         if (msg.deletable) {
           await msg.delete().catch(() => {});
         }
       }
-      await interaction.editReply({ content: `${CONFIG.EMOJI_BROOM} ${quantidade} mensagens apagadas!\n${CONFIG.EMOJI_INFO} Motivo: ${motivo}\n${CONFIG.EMOJI_FILE} Transcript guardado no sistema.`, flags: 64 });
+
+      // Enviar ficheiros no canal
+      const files = [];
+      files.push({ attachment: Buffer.from(txtContent, "utf-8"), name: `limpo-${interaction.channel.name}-${Date.now()}.txt` });
+      if (htmlAttachment) {
+        files.push(htmlAttachment.attachment);
+      }
+
+      await interaction.channel.send({
+        content: `${CONFIG.EMOJI_BROOM} ${quantidade} mensagens apagadas por ${interaction.user.tag}\n${CONFIG.EMOJI_INFO} Motivo: ${motivo}`,
+        files: files
+      }).catch(() => {});
+
+      await interaction.editReply({ content: `${CONFIG.EMOJI_BROOM} ${quantidade} mensagens apagadas!\n${CONFIG.EMOJI_INFO} Motivo: ${motivo}\n${CONFIG.EMOJI_FILE} Transcript guardado no canal.`, flags: 64 });
       return;
     }
 
@@ -193,7 +284,7 @@ export async function handleInteractionCreate(interaction, client) {
           `${CONFIG.EMOJI_TIME} Ping: ${client.ws.ping}ms`,
           `${CONFIG.EMOJI_TICKET} Tickets abertos: ${Object.values(db.tickets).filter(t => !t.closed).length}`,
           `${CONFIG.EMOJI_USER} Membros: ${interaction.guild.memberCount}`,
-          `${CONFIG.EMOJI_TIME} Online desde: <t:${Math.floor(client.readyTimestamp / 1000)}:R>`
+          `${CONFIG.EMOJI_TIME} Online desde: `
         ].join("\n"))
         .setColor(0x00ff00)
         .setTimestamp();
@@ -238,6 +329,53 @@ export async function handleInteractionCreate(interaction, client) {
         new ButtonBuilder().setCustomId(`deletar_${ticket.id}`).setLabel(`${CONFIG.EMOJI_FECHAR} Fechar Ticket`).setStyle(ButtonStyle.Danger),
       );
       await interaction.editReply({ content: panelText, components: [row1, row2, row3], flags: 64 });
+      return;
+    }
+
+    // /painelmembro
+    if (interaction.commandName === "painelmembro") {
+      const ticket = Object.values(db.tickets).find(
+        t => t.channelId === interaction.channel.id && !t.closed
+      );
+      if (!ticket) {
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Este canal não é um ticket ativo.`, flags: 64 });
+      }
+      if (ticket.userId !== interaction.user.id) {
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Apenas o criador do ticket pode usar este comando.`, flags: 64 });
+      }
+
+      // Buscar staff members com cargo staff
+      const guild = interaction.guild;
+      const staffRole = await guild.roles.fetch(CONFIG.CARGO_STAFF).catch(() => null);
+      if (!staffRole) {
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Cargo de staff não encontrado.`, flags: 64 });
+      }
+
+      const staffMembers = staffRole.members.map(m => m).sort((a, b) => a.user.username.localeCompare(b.user.username));
+      if (staffMembers.length === 0) {
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Nenhuma staff online encontrada.`, flags: 64 });
+      }
+
+      const options = staffMembers.slice(0, 25).map(m => 
+        new StringSelectMenuOptionBuilder()
+          .setLabel(m.user.username)
+          .setDescription(`Chamar ${m.user.username}`)
+          .setValue(m.user.id)
+          .setEmoji(CONFIG.EMOJI_STAFF)
+      );
+
+      const row = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`painelmembro_select_${ticket.id}`)
+          .setPlaceholder("Seleciona um membro da staff...")
+          .addOptions(options)
+      );
+
+      await interaction.reply({ 
+        content: `${CONFIG.EMOJI_PAINEL} Escolhe qual staff pretendes chamar:`,
+        components: [row], 
+        flags: 64 
+      });
       return;
     }
 
@@ -320,7 +458,7 @@ export async function handleInteractionCreate(interaction, client) {
             `${CONFIG.EMOJI_USER} Criador: ${ticket.username}`,
             `${CONFIG.EMOJI_INFO} Canal: <#${ticket.channelId}>`,
             "",
-            `${CONFIG.EMOJI_QUESTION} Queres passar o controlo?`,
+            `${CONFIG.EMOJI_QUESTION} Queres passar o controlo?`
           ].join("\n"))
           .setColor(0xff9800)
           .setTimestamp();
@@ -362,6 +500,60 @@ export async function handleInteractionCreate(interaction, client) {
       };
       const { createTicket } = await import("../services/tickets.js");
       await createTicket(interaction, type, labels[type], client);
+    } else if (interaction.customId.startsWith("painelmembro_select_")) {
+      const ticketId = interaction.customId.split("_")[2];
+      const ticket = db.tickets[ticketId];
+      if (!ticket) {
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Ticket não encontrado.`, flags: 64 });
+      }
+
+      const staffId = interaction.values[0];
+      const staffUser = await client.users.fetch(staffId).catch(() => null);
+      if (!staffUser) {
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Staff não encontrada.`, flags: 64 });
+      }
+
+      const now = Date.now();
+      const lastUse = painelMembroCooldown.get(interaction.user.id);
+      if (lastUse && (now - lastUse) < 300000) {
+        const remaining = Math.ceil((300000 - (now - lastUse)) / 1000);
+        const minutes = Math.floor(remaining / 60);
+        const seconds = remaining % 60;
+        return interaction.reply({
+          content: `${CONFIG.EMOJI_TIME} Aguarda ${minutes}m ${seconds}s antes de chamar a staff novamente.`,
+          flags: 64
+        });
+      }
+      painelMembroCooldown.set(interaction.user.id, now);
+
+      // Modal para nota opcional
+      const modal = new ModalBuilder()
+        .setCustomId(`modal_chamar_staff_${ticketId}`)
+        .setTitle(`${CONFIG.EMOJI_CHAMAR} Chamar Staff`);
+
+      const inputStaffId = new TextInputBuilder()
+        .setCustomId("staff_id")
+        .setLabel("ID da Staff (não alterar)")
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setValue(staffId)
+        .setMaxLength(50);
+
+      const inputNota = new TextInputBuilder()
+        .setCustomId("nota_staff")
+        .setLabel("Nota / Motivo (opcional)")
+        .setPlaceholder("Deixa uma nota para a staff...")
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(false)
+        .setMaxLength(500);
+
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(inputStaffId),
+        new ActionRowBuilder().addComponents(inputNota),
+      );
+
+      await interaction.showModal(modal);
+      return;
     }
     return;
   }
@@ -510,10 +702,10 @@ export async function handleInteractionCreate(interaction, client) {
       await safeEditReply(interaction, { content: `${CONFIG.EMOJI_SUCCESS} Ticket assumido com sucesso!`, flags: 64 });
       return;
     }
-    if (customId.startsWith("painel_")) {
-      await interaction.reply({ 
-        content: `${CONFIG.EMOJI_INFO} Usa o comando **/painelstaff** para aceder ao painel de staff.`, 
-        flags: 64 
+    if (customId.startsWith("painel_staff_")) {
+      await interaction.reply({
+        content: `${CONFIG.EMOJI_INFO} Usa o comando **/painelstaff** para aceder ao painel de staff.`,
+        flags: 64
       });
       return;
     }
@@ -521,35 +713,57 @@ export async function handleInteractionCreate(interaction, client) {
       const ticketId = customId.split("_")[2];
       const ticket = db.tickets[ticketId];
       if (!ticket) return;
+
+      // Verificar se é o criador do ticket
+      if (ticket.userId !== interaction.user.id) {
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Apenas o criador do ticket pode usar o painel membro.`, flags: 64 });
+      }
+
       const now = Date.now();
       const lastUse = painelMembroCooldown.get(interaction.user.id);
       if (lastUse && (now - lastUse) < 300000) {
         const remaining = Math.ceil((300000 - (now - lastUse)) / 1000);
         const minutes = Math.floor(remaining / 60);
         const seconds = remaining % 60;
-        return interaction.reply({ 
-          content: `${CONFIG.EMOJI_TIME} Aguarda ${minutes}m ${seconds}s antes de chamar a staff novamente.`, 
-          flags: 64 
+        return interaction.reply({
+          content: `${CONFIG.EMOJI_TIME} Aguarda ${minutes}m ${seconds}s antes de chamar a staff novamente.`,
+          flags: 64
         });
       }
       painelMembroCooldown.set(interaction.user.id, now);
-      try {
-        const staffRole = await interaction.guild.roles.fetch(CONFIG.CARGO_STAFF).catch(() => null);
-        if (staffRole) {
-          await interaction.channel.send({
-            content: `${CONFIG.EMOJI_CHAMAR} ${staffRole} — ${interaction.user.username} esta a pedir ajuda no ticket!`,
-          });
-        }
-        await interaction.reply({ 
-          content: `${CONFIG.EMOJI_SUCCESS} Staff notificada! Aguarda resposta...`, 
-          flags: 64 
-        });
-      } catch (e) {
-        await interaction.reply({ 
-          content: `${CONFIG.EMOJI_ERROR} Erro ao notificar staff.`, 
-          flags: 64 
-        });
+
+      // Buscar staff members
+      const guild = interaction.guild;
+      const staffRole = await guild.roles.fetch(CONFIG.CARGO_STAFF).catch(() => null);
+      if (!staffRole) {
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Cargo de staff não encontrado.`, flags: 64 });
       }
+
+      const staffMembers = staffRole.members.map(m => m).sort((a, b) => a.user.username.localeCompare(b.user.username));
+      if (staffMembers.length === 0) {
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Nenhuma staff encontrada.`, flags: 64 });
+      }
+
+      const options = staffMembers.slice(0, 25).map(m => 
+        new StringSelectMenuOptionBuilder()
+          .setLabel(m.user.username)
+          .setDescription(`Chamar ${m.user.username}`)
+          .setValue(m.user.id)
+          .setEmoji(CONFIG.EMOJI_STAFF)
+      );
+
+      const row = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`painelmembro_select_${ticketId}`)
+          .setPlaceholder("Seleciona um membro da staff...")
+          .addOptions(options)
+      );
+
+      await interaction.reply({ 
+        content: `${CONFIG.EMOJI_PAINEL} Escolhe qual staff pretendes chamar:`,
+        components: [row], 
+        flags: 64 
+      });
       return;
     }
     if (customId.startsWith("deletar_")) {
@@ -573,7 +787,6 @@ export async function handleInteractionCreate(interaction, client) {
       let transcriptAttachment = null;
       const ticketChannel = await client.channels.fetch(ticket.channelId).catch(() => null);
       if (ticketChannel) {
-        const { gerarTranscript } = await import("../utils/transcript.js");
         transcriptAttachment = await gerarTranscript(ticketChannel, ticketId);
         if (transcriptAttachment) {
           ticket.transcriptUrl = transcriptAttachment.fileName;
@@ -589,13 +802,13 @@ export async function handleInteractionCreate(interaction, client) {
             "",
             `${CONFIG.EMOJI_TIME} Aguardando decisao da staff...`,
             "",
-            `${CONFIG.EMOJI_QUESTION} O utilizador foi recrutado?`,
+            `${CONFIG.EMOJI_QUESTION} O utilizador foi recrutado?`
           ].join("\n"))
           .setColor(0xFFA500);
         const rowRecrutamento = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId(`recrutado_sim_${ticketId}`).setLabel(`${CONFIG.EMOJI_RECRUTADO} Sim - Recrutado`).setStyle(ButtonStyle.Success),
           new ButtonBuilder().setCustomId(`recrutado_nao_${ticketId}`).setLabel(`${CONFIG.EMOJI_NAO_RECRUTADO} Nao - Nao Recrutado`).setStyle(ButtonStyle.Danger),
-          new ButtonBuilder().setCustomId(`fechar_definitivo_${ticketId}`).setLabel(`${CONFIG.EMOJI_FECHAR_DEF} Fechar Definitivo`).setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(`fechar_definitivo_${ticketId}`).setLabel(`${CONFIG.EMOJI_FECHAR_DEF} Fechar Definitivo (Não Recrutamento)`).setStyle(ButtonStyle.Secondary),
         );
         await interaction.channel.send({ embeds: [embedRecrutamento], components: [rowRecrutamento] });
         ticket.closedBy = interaction.user.id;
@@ -666,19 +879,33 @@ export async function handleInteractionCreate(interaction, client) {
       const ticketId = customId.split("_")[2];
       const ticket = db.tickets[ticketId];
       if (!ticket) return;
+
       const mainGuild = await client.guilds.fetch(CONFIG.GUILD_ID).catch(() => null);
       if (!mainGuild) return;
+
       const member = await mainGuild.members.fetch(ticket.userId).catch(() => null);
       if (member && CONFIG.CARGO_RECRUTADO) {
         await member.roles.add(CONFIG.CARGO_RECRUTADO).catch(console.error);
       }
       ticket.recrutado = true;
+      ticket.closedBy = interaction.user.id;
+      ticket.closedByName = interaction.user.username;
+      ticket.closedAt = new Date().toISOString();
+      ticket.closed = true;
       saveDB();
+
       const ticketChannel = await mainGuild.channels.fetch(ticket.channelId).catch(() => null);
       if (ticketChannel) {
-        await ticketChannel.send(`${CONFIG.EMOJI_SUCCESS} Utilizador recrutado com sucesso!`);
+        await ticketChannel.send(`${CONFIG.EMOJI_SUCCESS} Utilizador recrutado com sucesso! Ticket será fechado em 10 segundos...`);
       }
+
       await sendLog(ticketId, "close", client);
+      await enviarAvaliacaoDM(ticket, client);
+
+      setTimeout(async () => {
+        const ch = await mainGuild.channels.fetch(ticket.channelId).catch(() => null);
+        if (ch) await ch.delete().catch(() => {});
+      }, 10000);
       return;
     }
     if (customId.startsWith("recrutado_nao_")) {
@@ -686,16 +913,29 @@ export async function handleInteractionCreate(interaction, client) {
       const ticketId = customId.split("_")[2];
       const ticket = db.tickets[ticketId];
       if (!ticket) return;
+
       ticket.recrutado = false;
+      ticket.closedBy = interaction.user.id;
+      ticket.closedByName = interaction.user.username;
+      ticket.closedAt = new Date().toISOString();
+      ticket.closed = true;
       saveDB();
+
       const mainGuild = await client.guilds.fetch(CONFIG.GUILD_ID).catch(() => null);
       if (mainGuild) {
         const ticketChannel = await mainGuild.channels.fetch(ticket.channelId).catch(() => null);
         if (ticketChannel) {
-          await ticketChannel.send(`${CONFIG.EMOJI_CROSS} Utilizador nao foi recrutado.`);
+          await ticketChannel.send(`${CONFIG.EMOJI_CROSS} Utilizador não foi recrutado. Ticket será fechado em 10 segundos...`);
         }
       }
+
       await sendLog(ticketId, "close", client);
+      await enviarAvaliacaoDM(ticket, client);
+
+      setTimeout(async () => {
+        const ch = await client.channels.fetch(ticket.channelId).catch(() => null);
+        if (ch) await ch.delete().catch(() => {});
+      }, 10000);
       return;
     }
     if (customId.startsWith("fechar_definitivo_")) {
@@ -709,6 +949,13 @@ export async function handleInteractionCreate(interaction, client) {
         return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Apenas staff.`, flags: 64 });
       }
       await interaction.deferUpdate();
+
+      ticket.closedBy = interaction.user.id;
+      ticket.closedByName = interaction.user.username;
+      ticket.closedAt = new Date().toISOString();
+      ticket.closed = true;
+      saveDB();
+
       const dataFechamento = new Date().toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" });
       const embedFechamento = new EmbedBuilder()
         .setTitle(`${CONFIG.EMOJI_LOCK} Ticket Fechado Definitivamente`)
