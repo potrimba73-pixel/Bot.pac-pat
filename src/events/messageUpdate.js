@@ -8,26 +8,33 @@ export async function handleMessageUpdate(oldMessage, newMessage, client) {
   if (oldMessage.content === newMessage.content) return;
   if (!newMessage.guild) return;
 
-  // Log local
-  try {
-    const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
-    if (logChannel) {
-      const embed = new EmbedBuilder()
-        .setTitle("✏️ Mensagem Editada")
-        .addFields(
-          { name: "Autor", value: `<@${newMessage.author.id}>`, inline: true },
-          { name: "Canal", value: `<#${newMessage.channel.id}>`, inline: true },
-          { name: "Antes", value: oldMessage.content?.substring(0, 1024) || "*Vazio*", inline: false },
-          { name: "Depois", value: newMessage.content?.substring(0, 1024) || "*Vazio*", inline: false }
-        )
-        .setColor(0xffff00)
-        .setTimestamp();
-      await logChannel.send({ embeds: [embed] });
+  // Verificar se é um canal de ticket - se for, NÃO enviar log local
+  const isTicketChannel = Object.values(db.tickets || {}).some(
+    t => t.channelId === newMessage.channel.id && !t.closed
+  );
+
+  // Log local APENAS se NÃO for canal de ticket
+  if (!isTicketChannel) {
+    try {
+      const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
+      if (logChannel) {
+        const embed = new EmbedBuilder()
+          .setTitle("✏️ Mensagem Editada")
+          .addFields(
+            { name: "Autor", value: `<@${newMessage.author.id}>`, inline: true },
+            { name: "Canal", value: `<#${newMessage.channel.id}>`, inline: true },
+            { name: "Antes", value: oldMessage.content?.substring(0, 1024) || "*Vazio*", inline: false },
+            { name: "Depois", value: newMessage.content?.substring(0, 1024) || "*Vazio*", inline: false }
+          )
+          .setColor(0xffff00)
+          .setTimestamp();
+        await logChannel.send({ embeds: [embed] });
+      }
+    } catch (err) {
+      console.error("[MessageUpdate] Erro log local:", err.message);
     }
-  } catch (err) {
-    console.error("[MessageUpdate] Erro log local:", err.message);
   }
 
-  // Log externo (servidor 1510401803974475947)
+  // Log externo (servidor 1510401803974475947) - SEMPRE
   await logExternalMessageUpdate(oldMessage, newMessage);
 }
