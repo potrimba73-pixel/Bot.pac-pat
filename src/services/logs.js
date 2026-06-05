@@ -1,7 +1,7 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import { CONFIG } from "../config/index.js";
 import { db, saveDB } from "../utils/db.js";
-import { gerarTranscript, enviarTranscriptComoFicheiro } from "../utils/transcript.js";
+import { gerarTranscript } from "../utils/transcript.js";
 
 export async function sendLog(ticketId, action, client) {
   const ticket = db.tickets[ticketId];
@@ -55,14 +55,11 @@ export async function sendLog(ticketId, action, client) {
     const recrutadoText = ticket.recrutado !== null ? `Recrutado: ${ticket.recrutado ? "Sim" : "Não"}` : "";
     const fotoText = ticket.fotoNome ? `Foto: ${ticket.fotoNome}` : "";
 
+    // GERAR TRANSCRIPT COMO FICHEIRO HTML DIRETO
+    let transcriptAttachment = null;
     const ticketChannel = await client.channels.fetch(ticket.channelId).catch(() => null);
-    let transcriptData = null;
     if (ticketChannel) {
-      transcriptData = await gerarTranscript(ticketChannel, ticketId);
-      if (transcriptData) {
-        ticket.transcriptUrl = transcriptData.url;
-        await saveDB();
-      }
+      transcriptAttachment = await gerarTranscript(ticketChannel, ticketId);
     }
 
     const embed = new EmbedBuilder()
@@ -76,23 +73,15 @@ export async function sendLog(ticketId, action, client) {
       .setColor(0x262af1).setTimestamp()
       .setFooter({ text: "Portugal Alfa Community", iconURL: client.user?.displayAvatarURL() });
 
-    const row = new ActionRowBuilder();
-
-    // Enviar transcript como ficheiro HTML no log
-    if (transcriptData) {
-      try {
-        const fileResult = await enviarTranscriptComoFicheiro(logChannel, ticketId, client);
-        if (fileResult) {
-          row.addComponents(
-            new ButtonBuilder().setLabel(`${CONFIG.EMOJI_FILE} Ver Transcript`).setStyle(ButtonStyle.Link).setURL(fileResult.url),
-          );
-        }
-      } catch (e) {
-        console.error("Erro ao enviar transcript:", e);
-      }
+    // Enviar embed + ficheiro HTML
+    if (transcriptAttachment) {
+      await logChannel.send({ 
+        embeds: [embed], 
+        files: [transcriptAttachment.attachment] 
+      });
+    } else {
+      await logChannel.send({ embeds: [embed] });
     }
-
-    await logChannel.send({ embeds: [embed], components: row.components.length > 0 ? [row] : [] });
   }
 }
 
@@ -136,9 +125,6 @@ export async function enviarAvaliacaoDM(ticket, client) {
       day: '2-digit', month: '2-digit', year: 'numeric',
       hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Lisbon'
     });
-
-    // Criar emojis de estrelas para os botoes
-    const starEmojis = ["⭐", "⭐⭐", "⭐⭐⭐", "⭐⭐⭐⭐", "⭐⭐⭐⭐⭐"];
 
     const embed = new EmbedBuilder()
       .setTitle(`${CONFIG.EMOJI_STAR} Ticket Fechado`)
