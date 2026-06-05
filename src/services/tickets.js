@@ -10,64 +10,62 @@ import { sendLog } from "./logs.js";
 const cooldown = new Set();
 
 const REGRAS_RECRUTAMENTO = [
-  "Máx. 100 km/h sempre – simulação real acima de tudo.",
+  "Max. 100 km/h sempre – simulacao real acima de tudo.",
   "Respeito total entre membros e jogadores.",
   "Comboios = disciplina + pontualidade.",
-  "Cumprir 15.000 KM/mês (≈ 500 km/dia).",
+  "Cumprir 15.000 KM/mes (aprox 500 km/dia).",
   "Foco no ranking nacional respeitando os 0 aos 100 km/h.",
   "Trucky App instalado e ativo.",
-  "Aqui a estrada é amizade, não competição.",
+  "Aqui a estrada e amizade, nao competicao.",
 ];
 
 export async function createTicket(interaction, type, label, client) {
-  // Determinar qual servidor estamos
   const isRecrutamentoGuild = interaction.guildId === CONFIG.GUILD_ID_RECRUTAMENTO;
   const targetGuildId = isRecrutamentoGuild ? CONFIG.GUILD_ID_RECRUTAMENTO : CONFIG.GUILD_ID;
-  
+
   const guild = await client.guilds.fetch(targetGuildId).catch(() => null);
   if (!guild) {
     return safeEditReply(interaction, { 
-      content: "Erro: Não consegui aceder ao servidor. Verifica se o bot está nos dois servidores.", 
+      content: "Erro: Nao consegui aceder ao servidor. Verifica se o bot esta nos dois servidores.", 
       flags: 64 
     });
   }
-  
+
   const user = interaction.user;
-  
+
   if (type === "recrutamento") {
     return await iniciarFluxoRecrutamento(interaction, client);
   }
-  
+
   return await criarTicketNormal(interaction, type, label, client, guild, user);
 }
 
 async function iniciarFluxoRecrutamento(interaction, client) {
   const user = interaction.user;
-  
-  // Verificar se já tem ticket de recrutamento aberto em QUALQUER servidor
+
   const existingTicket = Object.values(db.tickets).find(
     (t) => t.userId === user.id && !t.closed && t.type === "recrutamento",
   );
-  
+
   if (existingTicket) {
     return safeEditReply(interaction, { 
-      content: "Já tens um processo de recrutamento em aberto!", 
+      content: "Ja tens um processo de recrutamento em aberto!", 
       flags: 64 
     });
   }
-  
+
   const modal = new ModalBuilder()
     .setCustomId(`modal_trucky_${user.id}_${Date.now()}`)
-    .setTitle("Verificação - Trucky App");
-    
+    .setTitle("Verificacao - Trucky App");
+
   const inputTrucky = new TextInputBuilder()
     .setCustomId("trucky_instalado")
-    .setLabel("Tens o Trucky App instalado? (Sim/Não)")
-    .setPlaceholder("Escreve: Sim ou Não")
+    .setLabel("Tens o Trucky App instalado? (Sim/Nao)")
+    .setPlaceholder("Escreve: Sim ou Nao")
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
     .setMaxLength(10);
-    
+
   const inputNome = new TextInputBuilder()
     .setCustomId("trucky_nome")
     .setLabel("Nome de utilizador no Trucky")
@@ -75,25 +73,22 @@ async function iniciarFluxoRecrutamento(interaction, client) {
     .setStyle(TextInputStyle.Short)
     .setRequired(false)
     .setMaxLength(50);
-    
+
   modal.addComponents(
     new ActionRowBuilder().addComponents(inputTrucky),
     new ActionRowBuilder().addComponents(inputNome),
   );
-  
+
   await interaction.showModal(modal);
 }
 
 export async function handleTruckyVerification(interaction, client) {
   const temTrucky = interaction.fields.getTextInputValue("trucky_instalado").toLowerCase().trim();
-  const nomeTrucky = interaction.fields.getTextInputValue("trucky_nome")?.trim() || "Não informado";
-  
-  // NÃO fazer deferReply aqui — modal submit já está deferido automaticamente
-  // Usar reply normal ou followUp
-  
-  if (temTrucky.includes("não") || temTrucky.includes("nao") || temTrucky.startsWith("n")) {
+  const nomeTrucky = interaction.fields.getTextInputValue("trucky_nome")?.trim() || "Nao informado";
+
+  if (temTrucky.includes("nao") || temTrucky.includes("não") || temTrucky.startsWith("n")) {
     const embed = new EmbedBuilder()
-      .setTitle("Trucky App - Instalação Necessária")
+      .setTitle("Trucky App - Instalacao Necessaria")
       .setDescription([
         "Precisas de instalar o Trucky App antes de te candidatares!", 
         "", 
@@ -107,26 +102,25 @@ export async function handleTruckyVerification(interaction, client) {
       .setColor(0xff9800)
       .setImage(CONFIG.IMAGEM_RECRUTAMENTO)
       .setTimestamp();
-      
+
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setLabel("Trucky App").setStyle(ButtonStyle.Link).setURL("https://hub.truckyapp.com/"),
     );
-    
-    // Usar reply em vez de editReply porque modal não vem deferido
+
     await interaction.reply({ embeds: [embed], components: [row], flags: 64 });
     return;
   }
-  
+
   await mostrarRegrasRecrutamento(interaction, client, nomeTrucky);
 }
 
 async function mostrarRegrasRecrutamento(interaction, client, nomeTrucky) {
   const regrasTexto = REGRAS_RECRUTAMENTO.map((r, i) => `${i + 1}. ${r}`).join("\n");
-  
+
   const embed = new EmbedBuilder()
     .setTitle("Regras da Portugal Alfa Truckers")
     .setDescription([
-      "Antes de prosseguires, lê atentamente as regras:", 
+      "Antes de prosseguires, le atentamente as regras:", 
       "", 
       regrasTexto, 
       "", 
@@ -135,7 +129,7 @@ async function mostrarRegrasRecrutamento(interaction, client, nomeTrucky) {
     .setColor(0x262af1)
     .setImage(CONFIG.IMAGEM_RECRUTAMENTO)
     .setTimestamp();
-    
+
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`aceitar_regras_rec_${interaction.user.id}_${nomeTrucky}`)
@@ -143,31 +137,28 @@ async function mostrarRegrasRecrutamento(interaction, client, nomeTrucky) {
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId(`recusar_regras_rec_${interaction.user.id}`)
-      .setLabel("Não Aceito")
+      .setLabel("Nao Aceito")
       .setStyle(ButtonStyle.Danger),
   );
-  
-  // Usar reply porque vem do modal
+
   await interaction.reply({ embeds: [embed], components: [row], flags: 64 });
 }
 
 export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
-  // Determinar servidor correto
   const isRecrutamentoGuild = interaction.guildId === CONFIG.GUILD_ID_RECRUTAMENTO;
   const targetGuildId = isRecrutamentoGuild ? CONFIG.GUILD_ID_RECRUTAMENTO : CONFIG.GUILD_ID;
-  const targetCategoria = isRecrutamentoGuild ? CONFIG.CATEGORIA_TICKETS_RECRUTAMENTO : CONFIG.CATEGORIA_TICKETS_RECRUTAMENTO;
-  
+
   const guild = await client.guilds.fetch(targetGuildId).catch(() => null);
   const user = interaction.user;
-  
+
   if (!guild) {
     return interaction.editReply({ 
-      content: "Erro: Não consegui aceder ao servidor para criar o ticket.", 
+      content: "Erro: Nao consegui aceder ao servidor para criar o ticket.", 
       components: [], 
       embeds: [] 
     });
   }
-  
+
   if (cooldown.has(user.id)) {
     return interaction.editReply({ 
       content: "Espera um pouco antes de abrir outro ticket (3 segundos).", 
@@ -175,24 +166,24 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
       embeds: [] 
     });
   }
-  
+
   cooldown.add(user.id);
   setTimeout(() => cooldown.delete(user.id), 3000);
-  
+
   const channelName = `rec-${user.username}-${user.id.slice(0, 4)}`.toLowerCase().replace(/[^a-z0-9-]/g, "").substring(0, 25);
-  
-  let categoria = targetCategoria;
+
+  let categoria = CONFIG.CATEGORIA_TICKETS_RECRUTAMENTO;
   if (categoria) {
     const categoriaExiste = await guild.channels.fetch(categoria).catch(() => null);
     if (!categoriaExiste) categoria = null;
   }
-  
+
   let staffRoleId = CONFIG.CARGO_STAFF;
   try {
     const staffRole = await guild.roles.fetch(CONFIG.CARGO_STAFF).catch(() => null);
     if (staffRole) staffRoleId = staffRole.id;
   } catch (e) {}
-  
+
   const channelData = {
     name: channelName, 
     type: ChannelType.GuildText,
@@ -202,13 +193,13 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
       { id: staffRoleId, type: 0, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
     ],
   };
-  
+
   if (categoria) channelData.parent = categoria;
-  
+
   try {
     const channel = await guild.channels.create(channelData);
     const ticketId = Date.now().toString();
-    
+
     db.tickets[ticketId] = {
       id: ticketId, 
       channelId: channel.id, 
@@ -230,48 +221,47 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
       fotoNome: null, 
       truckyNome: nomeTrucky, 
       regrasAceites: true,
-      guildId: targetGuildId, // Guardar qual servidor
+      guildId: targetGuildId,
     };
-    
+
     await saveDB();
-    
+
     const embed = new EmbedBuilder()
       .setTitle("Sistema de Ticket | Portugal Alfa Truckers")
       .setDescription([
         `Motivo: Recrutamento PAT`, 
         `Assumido: Aguardando staff...`, 
         "", 
-        `Olá ${user.username}, aguarde ser atendido.`, 
+        `Ola ${user.username}, aguarde ser atendido.`, 
         "", 
         `Trucky: ${nomeTrucky}`, 
         "", 
         "Regras aceites: Sim"
       ].join("\n"))
       .setColor(0x262af1);
-      
+
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`assumir_${ticketId}`).setLabel("Assumir").setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId(`painel_${ticketId}`).setLabel("Painel Staff").setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId(`sair_${ticketId}`).setLabel("Sair").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`deletar_${ticketId}`).setLabel("Fechar").setStyle(ButtonStyle.Danger),
     );
-    
+
     const panelMsg = await channel.send({ content: `${user.username}`, embeds: [embed], components: [row] });
     db.tickets[ticketId].panelMessageId = panelMsg.id;
     await saveDB();
     await sendLog(ticketId, "open", client);
-    
+
     const rowIrTicket = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setLabel("Ir para o Ticket").setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${targetGuildId}/${channel.id}`),
     );
-    
-    // Usar editReply porque o botão já fez deferUpdate
+
     await interaction.editReply({ 
       content: "O teu ticket de recrutamento foi criado!", 
       components: [rowIrTicket], 
       embeds: [] 
     });
-    
+
   } catch (error) {
     console.error("Erro ao criar ticket de recrutamento:", error);
     await interaction.editReply({ 
@@ -279,5 +269,149 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
       components: [], 
       embeds: [] 
     });
+  }
+}
+
+async function criarTicketNormal(interaction, type, label, client, guild, user) {
+  if (cooldown.has(user.id)) {
+    return safeEditReply(interaction, { content: "Espera um pouco antes de abrir outro ticket (3 segundos).", flags: 64 });
+  }
+
+  const existingTicket = Object.values(db.tickets).find((t) => t.userId === user.id && !t.closed);
+  if (existingTicket) {
+    const existingChannel = await guild.channels.fetch(existingTicket.channelId).catch(() => null);
+    if (existingChannel) {
+      return safeEditReply(interaction, { content: "Ja tens um ticket aberto!", flags: 64 });
+    }
+  }
+
+  cooldown.add(user.id);
+  setTimeout(() => cooldown.delete(user.id), 3000);
+
+  const typePrefix = type === "bugs" ? "bug" : type === "denuncia" ? "den" : type === "suporte" ? "sup" : type === "criador" ? "cri" : type === "ajuda" ? "ajd" : "tk";
+  const channelName = `${typePrefix}-${user.username}-${user.id.slice(0, 4)}`.toLowerCase().replace(/[^a-z0-9-]/g, "").substring(0, 25);
+
+  let categoria = CONFIG.CATEGORIA_TICKETS_GERAL;
+  if (type === "ajuda") categoria = CONFIG.CATEGORIA_TICKETS_RECRUTAMENTO;
+  if (categoria) {
+    const categoriaExiste = await guild.channels.fetch(categoria).catch(() => null);
+    if (!categoriaExiste) categoria = null;
+  }
+
+  let staffRoleId = CONFIG.CARGO_STAFF;
+  try {
+    const staffRole = await guild.roles.fetch(CONFIG.CARGO_STAFF).catch(() => null);
+    if (staffRole) staffRoleId = staffRole.id;
+  } catch (e) {}
+
+  const channelData = {
+    name: channelName, 
+    type: ChannelType.GuildText,
+    permissionOverwrites: [
+      { id: guild.id, type: 0, deny: [PermissionFlagsBits.ViewChannel] },
+      { id: user.id, type: 1, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+      { id: staffRoleId, type: 0, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+    ],
+  };
+
+  if (categoria) channelData.parent = categoria;
+
+  const channel = await guild.channels.create(channelData);
+  const ticketId = Date.now().toString();
+
+  db.tickets[ticketId] = {
+    id: ticketId, 
+    channelId: channel.id, 
+    userId: user.id, 
+    username: user.username,
+    type: type, 
+    label: label, 
+    openedAt: new Date().toISOString(),
+    closedAt: null, 
+    claimedBy: null, 
+    claimedByName: null, 
+    closedBy: null, 
+    closedByName: null,
+    callActive: false, 
+    callChannelId: null, 
+    rating: null, 
+    panelMessageId: null,
+    recrutado: null, 
+    fotoNome: null,
+    guildId: guild.id,
+  };
+
+  await saveDB();
+
+  const embed = new EmbedBuilder()
+    .setTitle("Sistema de Ticket | Portugal Alfa Community")
+    .setDescription([
+      `Motivo: ${label}`, 
+      `Assumido: Aguardando staff...`, 
+      "", 
+      `Ola ${user.username}, aguarde ser atendido.`, 
+      "", 
+      "Lembre-se: Qualquer descumprimento das regras levara ao encerramento do ticket sem aviso previo!"
+    ].join("\n"))
+    .setColor(0x262af1);
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`assumir_${ticketId}`).setLabel("Assumir").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`painel_${ticketId}`).setLabel("Painel Staff").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(`sair_${ticketId}`).setLabel("Sair").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`deletar_${ticketId}`).setLabel("Fechar").setStyle(ButtonStyle.Danger),
+  );
+
+  const panelMsg = await channel.send({ content: `${user.username}`, embeds: [embed], components: [row] });
+  db.tickets[ticketId].panelMessageId = panelMsg.id;
+  await saveDB();
+  await sendLog(ticketId, "open", client);
+
+  const rowIrTicket = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setLabel("Ir para o Ticket").setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${guild.id}/${channel.id}`),
+  );
+
+  await safeEditReply(interaction, { content: "O teu ticket foi criado com sucesso!", components: [rowIrTicket], flags: 64 });
+}
+
+export async function updateTicketEmbed(channel, ticketId) {
+  const ticket = db.tickets[ticketId];
+  if (!ticket || !ticket.panelMessageId) return;
+
+  try {
+    const panelMsg = await channel.messages.fetch(ticket.panelMessageId);
+    if (!panelMsg) return;
+
+    const claimedText = ticket.claimedBy ? ticket.claimedByName : "Aguardando staff...";
+    const embed = new EmbedBuilder()
+      .setTitle("Sistema de Ticket | Portugal Alfa Community")
+      .setDescription([
+        `Motivo: ${ticket.label}`, 
+        `Assumido: ${claimedText}`, 
+        "", 
+        "Ola, aguarde ser atendido.", 
+        "", 
+        "Lembre-se: Qualquer descumprimento das regras levara ao encerramento do ticket sem aviso previo!"
+      ].join("\n"))
+      .setColor(ticket.claimedBy ? 0x00ff00 : 0x040021);
+
+    if (ticket.claimedBy) {
+      const newRow = new ActionRowBuilder();
+      const oldButtons = panelMsg.components[0]?.components || [];
+
+      for (const btn of oldButtons) {
+        const newBtn = ButtonBuilder.from(btn);
+        if (btn.customId?.startsWith("assumir_")) {
+          newBtn.setDisabled(true).setLabel("Assumido");
+        }
+        newRow.addComponents(newBtn);
+      }
+
+      await panelMsg.edit({ embeds: [embed], components: [newRow] });
+    } else {
+      await panelMsg.edit({ embeds: [embed] });
+    }
+  } catch (e) {
+    console.log("Erro ao atualizar embed:", e);
   }
 }
