@@ -159,9 +159,9 @@ export async function handleSmartResponse(message, client) {
 
     try {
         const sent = await message.reply({
-            content: "🤔 **Não encontrei nenhuma resposta no histórico nem no FAQ.**\n\nQueres que eu **pesquise na internet** por: "" + question + ""?",
-            components: [row]
-        });
+    content: `🤔 **Não encontrei nenhuma resposta no histórico nem no FAQ.**\n\nQueres que eu **pesquise na internet** por: "${question}"?`,
+    components: [row]
+});
 
         assistantMemory.pendingSearches.set(message.id, {
             question: question,
