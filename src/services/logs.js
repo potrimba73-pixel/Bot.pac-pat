@@ -18,11 +18,11 @@ export async function sendLog(ticketId, action, client) {
     const embed = new EmbedBuilder()
       .setTitle(`${CONFIG.EMOJI_TICKET} Logs System - #${ticketId}`)
       .setDescription([
-        `${CONFIG.EMOJI_USER} Usuário que abriu:`, 
-        `${ticket.username} (${ticket.userId})`, 
-        "", 
-        `${CONFIG.EMOJI_INFO} Tipo: ${ticket.label}`, 
-        "", 
+        `${CONFIG.EMOJI_USER} Usuário que abriu:`,
+        `${ticket.username} (${ticket.userId})`,
+        "",
+        `${CONFIG.EMOJI_INFO} Tipo: ${ticket.label}`,
+        "",
         `${CONFIG.EMOJI_TICKET} Vá para o ticket pressionando o botão abaixo`
       ].join("\n"))
       .setColor(0x262af1).setTimestamp();
@@ -34,12 +34,12 @@ export async function sendLog(ticketId, action, client) {
     const embed = new EmbedBuilder()
       .setTitle(`${CONFIG.EMOJI_TICKET} Logs System - #${ticketId}`)
       .setDescription([
-        `${CONFIG.EMOJI_USER} Usuário que abriu:`, 
-        `${ticket.username} (${ticket.userId})`, 
-        "", 
-        `${CONFIG.EMOJI_STAFF} Assumido por:`, 
-        `${ticket.claimedByName} (${ticket.claimedBy})`, 
-        "", 
+        `${CONFIG.EMOJI_USER} Usuário que abriu:`,
+        `${ticket.username} (${ticket.userId})`,
+        "",
+        `${CONFIG.EMOJI_STAFF} Assumido por:`,
+        `${ticket.claimedByName} (${ticket.claimedBy})`,
+        "",
         `${CONFIG.EMOJI_INFO} Tipo: ${ticket.label}`
       ].join("\n"))
       .setColor(0x262af1).setTimestamp();
@@ -54,6 +54,7 @@ export async function sendLog(ticketId, action, client) {
     });
     const recrutadoText = ticket.recrutado !== null ? `Recrutado: ${ticket.recrutado ? "Sim" : "Não"}` : "";
     const fotoText = ticket.fotoNome ? `Foto: ${ticket.fotoNome}` : "";
+    const truckyText = ticket.truckyNome ? `Trucky: ${ticket.truckyNome}` : "";
 
     // GERAR TRANSCRIPT COMO FICHEIRO HTML DIRETO
     let transcriptAttachment = null;
@@ -65,19 +66,19 @@ export async function sendLog(ticketId, action, client) {
     const embed = new EmbedBuilder()
       .setTitle(`${CONFIG.EMOJI_FECHAR} Ticket Fechado - #${ticketId}`)
       .setDescription([
-        `${CONFIG.EMOJI_USER} Usuário que abriu:`, `${ticket.username}`, "", 
-        `${CONFIG.EMOJI_STAFF} Assumido por:`, ticket.claimedByName || "Ninguém", "", 
+        `${CONFIG.EMOJI_USER} Usuário que abriu:`, `${ticket.username}`, "",
+        `${CONFIG.EMOJI_STAFF} Assumido por:`, ticket.claimedByName || "Ninguém", "",
         `${CONFIG.EMOJI_STAFF} Fechado por:`, `${ticket.closedByName}`, "",
-        `${CONFIG.EMOJI_INFO} Informações Adicionais:`, `Abertura: ${dataAbertura}`, `Fechamento: ${dataFechamento}`, `Tipo: ${ticket.label}`, recrutadoText, fotoText
+        `${CONFIG.EMOJI_INFO} Informações Adicionais:`, `Abertura: ${dataAbertura}`, `Fechamento: ${dataFechamento}`, `Tipo: ${ticket.label}`, recrutadoText, truckyText, fotoText
       ].filter(Boolean).join("\n"))
       .setColor(0x262af1).setTimestamp()
       .setFooter({ text: "Portugal Alfa Community", iconURL: client.user?.displayAvatarURL() });
 
     // Enviar embed + ficheiro HTML
     if (transcriptAttachment) {
-      await logChannel.send({ 
-        embeds: [embed], 
-        files: [transcriptAttachment.attachment] 
+      await logChannel.send({
+        embeds: [embed],
+        files: [transcriptAttachment.attachment]
       });
     } else {
       await logChannel.send({ embeds: [embed] });
@@ -97,17 +98,20 @@ export async function enviarLogAvaliacao(ticket, estrelas, mensagem, user, clien
     const embed = new EmbedBuilder()
       .setTitle(`${CONFIG.EMOJI_STAR} Portugal Alfa Community - Avaliação Recebida`)
       .setDescription([
-        `${CONFIG.EMOJI_USER} Usuário: ${user.username}`, 
-        "", 
-        `${CONFIG.EMOJI_STAR} Avaliação`, 
-        estrelasTexto, 
-        "", 
-        `${CONFIG.EMOJI_STAFF} Atendido por`, 
-        ticket.claimedByName || "Ninguém", 
-        "", 
-        `${CONFIG.EMOJI_EDIT} Mensagem`, 
-        mensagem || "Nenhuma mensagem adicionada.", 
-        "", 
+        `${CONFIG.EMOJI_USER} Usuário: ${user.username}`,
+        "",
+        `${CONFIG.EMOJI_TICKET} Ticket: #${ticket.id}`,
+        `${CONFIG.EMOJI_INFO} Tipo: ${ticket.label || "N/A"}`,
+        "",
+        `${CONFIG.EMOJI_STAR} Avaliação`,
+        estrelasTexto,
+        "",
+        `${CONFIG.EMOJI_STAFF} Atendido por`,
+        ticket.claimedByName || "Ninguém",
+        "",
+        `${CONFIG.EMOJI_EDIT} Mensagem`,
+        mensagem || "Nenhuma mensagem adicionada.",
+        "",
         `${CONFIG.EMOJI_TIME} Horário: ${dataAvaliacao}`
       ].join("\n"))
       .setColor(0xFFD700).setTimestamp();
@@ -129,14 +133,17 @@ export async function enviarAvaliacaoDM(ticket, client) {
     const embed = new EmbedBuilder()
       .setTitle(`${CONFIG.EMOJI_STAR} Ticket Fechado`)
       .setDescription([
-        `${CONFIG.EMOJI_INFO} Seu ticket foi fechado com sucesso, avalie nosso atendimento clicando nas estrelas abaixo.`, 
-        "", 
-        `${CONFIG.EMOJI_STAFF} Fechado por:`, 
-        ticket.closedByName, 
-        "", 
-        `${CONFIG.EMOJI_TIME} Fechado em:`, 
-        dataFechamento, 
-        "", 
+        `${CONFIG.EMOJI_INFO} Seu ticket foi fechado com sucesso, avalie nosso atendimento clicando nas estrelas abaixo.`,
+        "",
+        `${CONFIG.EMOJI_TICKET} Ticket: #${ticket.id}`,
+        `${CONFIG.EMOJI_INFO} Tipo: ${ticket.label || "N/A"}`,
+        "",
+        `${CONFIG.EMOJI_STAFF} Fechado por:`,
+        ticket.closedByName,
+        "",
+        `${CONFIG.EMOJI_TIME} Fechado em:`,
+        dataFechamento,
+        "",
         `${CONFIG.EMOJI_TICKET} Caso necessário, não hesite em abrir ticket novamente!`
       ].join("\n"))
       .setColor(0xFF0000);
