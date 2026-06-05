@@ -5,11 +5,10 @@ import {
 import { CONFIG } from "../config/index.js";
 import { db, saveDB } from "../utils/db.js";
 import { safeDeferReply, safeEditReply } from "../utils/safeReply.js";
-import { updateTicketEmbed } from "../services/tickets.js";
+import { updateTicketEmbed, criarTicketRecrutamento, handleTruckyVerification } from "../services/tickets.js";
 import { sendPainelChamada, criarCall, apagarCall, chamarMembro } from "../services/calls.js";
 import { sendLog, enviarLogAvaliacao, enviarAvaliacaoDM } from "../services/logs.js";
 import { handleAjudaCommand, handleAjudaProcurar, handleAjudaModal, assistantMemory } from "../services/ajuda.js";
-import { handleTruckyVerification, criarTicketRecrutamento } from "../services/tickets.js";
 
 // Cooldown para painel membro (5 minutos = 300000ms)
 const painelMembroCooldown = new Map();
@@ -108,7 +107,7 @@ export async function handleInteractionCreate(interaction, client) {
         `${CONFIG.EMOJI_CHECK} Total de mensagens apagadas: ${totalApagadas}`,
         ...(erros.length > 0 ? [`${CONFIG.EMOJI_WARNING} Erros em ${erros.length} canais`] : []),
         "",
-        `${CONFIG.EMOJI_INFO} Dica: Use os comandos manuais para reenviar painéis.`
+        `${CONFIG.EMOJI_INFO} Dica: Use os comandos manuais para reenviar paineis.`
       ].join("\n");
       await safeEditReply(interaction, { content: resposta });
       return;
@@ -482,7 +481,6 @@ export async function handleInteractionCreate(interaction, client) {
     // Painel Staff - REMOVIDO do botao "Painel Staff" no ticket
     // Agora so via /painelstaff
     if (customId.startsWith("painel_")) {
-      // Painel Staff foi removido do botao - usar /painelstaff
       await interaction.reply({ 
         content: `${CONFIG.EMOJI_INFO} Usa o comando **/painelstaff** para aceder ao painel de staff.`, 
         flags: 64 
@@ -554,14 +552,14 @@ export async function handleInteractionCreate(interaction, client) {
         ticket.callChannelId = null;
       }
 
-      // GERAR TRANSCRIPT ANTES DE APAGAR
-      let transcriptData = null;
+      // GERAR TRANSCRIPT COMO FICHEIRO HTML DIRETO
+      let transcriptAttachment = null;
       const ticketChannel = await client.channels.fetch(ticket.channelId).catch(() => null);
       if (ticketChannel) {
         const { gerarTranscript } = await import("../utils/transcript.js");
-        transcriptData = await gerarTranscript(ticketChannel, ticketId);
-        if (transcriptData) {
-          ticket.transcriptUrl = transcriptData.url;
+        transcriptAttachment = await gerarTranscript(ticketChannel, ticketId);
+        if (transcriptAttachment) {
+          ticket.transcriptUrl = transcriptAttachment.fileName;
         }
       }
 
