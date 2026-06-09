@@ -1,4 +1,3 @@
-import { Events, EmbedBuilder } from "discord.js";
 import { CONFIG } from "../config/index.js";
 import { db } from "../utils/db.js";
 import { logExternalMessageUpdate } from "../services/externalLogs.js";
@@ -8,33 +7,9 @@ export async function handleMessageUpdate(oldMessage, newMessage, client) {
   if (oldMessage.content === newMessage.content) return;
   if (!newMessage.guild) return;
 
-  // Verificar se é um canal de ticket - se for, NÃO enviar log local
-  const isTicketChannel = Object.values(db.tickets || {}).some(
-    t => t.channelId === newMessage.channel.id && !t.closed
-  );
+  // === NÃO ENVIAR LOG LOCAL NO CANAL 1457144182954266634 ===
+  // O log local foi removido. Todos os logs de mensagens vão para o servidor externo.
 
-  // Log local APENAS se NÃO for canal de ticket
-  if (!isTicketChannel) {
-    try {
-      const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
-      if (logChannel) {
-        const embed = new EmbedBuilder()
-          .setTitle("✏️ Mensagem Editada")
-          .addFields(
-            { name: "Autor", value: `<@${newMessage.author.id}>`, inline: true },
-            { name: "Canal", value: `<#${newMessage.channel.id}>`, inline: true },
-            { name: "Antes", value: oldMessage.content?.substring(0, 1024) || "*Vazio*", inline: false },
-            { name: "Depois", value: newMessage.content?.substring(0, 1024) || "*Vazio*", inline: false }
-          )
-          .setColor(0xffff00)
-          .setTimestamp();
-        await logChannel.send({ embeds: [embed] });
-      }
-    } catch (err) {
-      console.error("[MessageUpdate] Erro log local:", err.message);
-    }
-  }
-
-  // Log externo (servidor 1510401803974475947) - SEMPRE
+  // Log externo (servidor 1510401803974475947, canal 1511421322134163547)
   await logExternalMessageUpdate(oldMessage, newMessage);
 }
