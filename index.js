@@ -16,7 +16,7 @@ import { handleMessageUpdate } from "./src/events/messageUpdate.js";
 import { setExternalClient } from "./src/services/externalLogs.js";
 
 // ==================== VALIDAR ENV VARS ====================
-const requiredEnv = ["TOKEN", "CLIENT_ID", "GUILD_ID"];
+const requiredEnv = ["TOKEN", "CLIENT_ID"];
 const missing = requiredEnv.filter(e => !process.env[e]);
 if (missing.length > 0) {
   console.error("Variaveis em falta:", missing.join(", "));
@@ -123,16 +123,8 @@ client.on(Events.GuildBanAdd, async (ban) => {
 client.on(Events.GuildBanRemove, async (ban) => {
   try {
     const { logExternalMemberUnban } = await import("./src/services/externalLogs.js");
-    logExternalMemberUnban(ban.user);
+    logExternalMemberUnban(ban.user, ban.guild);
   } catch (e) {}
-});
-
-// ===== BOT STATUS =====
-client.on(Events.ClientReady, async () => {
-  client.user.setPresence({
-    activities: [{ name: '/ajuda novo comando!', type: 0 }],
-    status: 'online',
-  });
 });
 
 // ==================== ERROR HANDLING ====================
