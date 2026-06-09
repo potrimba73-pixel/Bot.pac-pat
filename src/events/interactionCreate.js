@@ -477,6 +477,12 @@ export async function handleInteractionCreate(interaction, client) {
       }
       return;
     }
+    // /transcript
+    if (interaction.commandName === "transcript") {
+      const { handleTranscriptCommand } = await import("../commands/transcript.js");
+      await handleTranscriptCommand(interaction, client);
+      return;
+    }
     return;
   }
 
