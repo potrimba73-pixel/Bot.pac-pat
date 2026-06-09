@@ -5,7 +5,7 @@ import {
 } from "discord.js";
 import { CONFIG } from "../config/index.js";
 import { gerarTranscript } from "../utils/transcript.js";
-import { salvarTranscriptSupabase, buscarTranscriptSupabase } from "../utils/supabase.js";
+import { salvarTranscriptSupabase } from "../utils/supabase.js";
 
 export async function handleTranscriptCommand(interaction, client) {
   // ========== VERIFICAR PERMISSÃO STAFF ==========
@@ -34,7 +34,7 @@ export async function handleTranscriptCommand(interaction, client) {
     // ========== GERAR TXT ==========
     const messages = await canal.messages.fetch({ limit: 100 });
     const msgsArray = Array.from(messages.values()).sort((a, b) => a.createdTimestamp - b.createdTimestamp);
-    
+
     let txtContent = `═══════════════════════════════════════════════════════════════\n`;
     txtContent += `  TRANSCRIPT - PORTUGAL ALFA COMMUNITY\n`;
     txtContent += `═══════════════════════════════════════════════════════════════\n`;
@@ -52,21 +52,21 @@ export async function handleTranscriptCommand(interaction, client) {
         day: '2-digit', month: '2-digit', year: 'numeric',
         hour: '2-digit', minute: '2-digit', second: '2-digit'
       });
-      
+
       txtContent += `[${data}] ${msg.author.tag} (${msg.author.id})\n`;
-      
+
       if (msg.content) {
         txtContent += `  ${msg.content}\n`;
       }
-      
+
       if (msg.attachments.size > 0) {
         txtContent += `  [Anexos: ${msg.attachments.map(a => `${a.name} (${a.url})`).join(", ")}]\n`;
       }
-      
+
       if (msg.embeds.length > 0) {
         txtContent += `  [Embed: ${msg.embeds.length} embed(s)]\n`;
       }
-      
+
       txtContent += `\n`;
     }
 
@@ -76,7 +76,7 @@ export async function handleTranscriptCommand(interaction, client) {
 
     // ========== CRIAR ATTACHMENTS ==========
     const files = [];
-    
+
     // TXT
     const txtBuffer = Buffer.from(txtContent, "utf-8");
     files.push(new AttachmentBuilder(txtBuffer, { name: `transcript-${canal.name}-${Date.now()}.txt` }));
@@ -158,7 +158,7 @@ export async function handleTranscriptCommand(interaction, client) {
         ].join("\n"))
         .setColor(0x0099ff)
         .setTimestamp();
-      
+
       await logChannel.send({ embeds: [embedLog] });
     }
 
