@@ -249,7 +249,12 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
       new ButtonBuilder().setCustomId(`deletar_${ticketId}`).setLabel(`${CONFIG.EMOJI_FECHAR} Fechar`).setStyle(ButtonStyle.Danger),
     );
 
-    const panelMsg = await channel.send({ content: `${CONFIG.EMOJI_USER} ${user.username}`, embeds: [embed], components: [row] });
+    // Nome mencionável no content + info extra no embed
+    const panelMsg = await channel.send({ 
+      content: `${CONFIG.EMOJI_USER} <@${user.id}> | ID: \`${user.id}\``, 
+      embeds: [embed], 
+      components: [row] 
+    });
     db.tickets[ticketId].panelMessageId = panelMsg.id;
     await saveDB();
     await sendLog(ticketId, "open", client);
@@ -365,7 +370,12 @@ async function criarTicketNormal(interaction, type, label, client, guild, user) 
     new ButtonBuilder().setCustomId(`deletar_${ticketId}`).setLabel(`${CONFIG.EMOJI_FECHAR} Fechar`).setStyle(ButtonStyle.Danger),
   );
 
-  const panelMsg = await channel.send({ content: `${CONFIG.EMOJI_USER} ${user.username}`, embeds: [embed], components: [row] });
+  // Nome mencionável no content + info extra
+  const panelMsg = await channel.send({ 
+    content: `${CONFIG.EMOJI_USER} <@${user.id}> | ID: \`${user.id}\``, 
+    embeds: [embed], 
+    components: [row] 
+  });
   db.tickets[ticketId].panelMessageId = panelMsg.id;
   await saveDB();
   await sendLog(ticketId, "open", client);
@@ -385,7 +395,11 @@ export async function updateTicketEmbed(channel, ticketId) {
     const panelMsg = await channel.messages.fetch(ticket.panelMessageId);
     if (!panelMsg) return;
 
-    const claimedText = ticket.claimedBy ? `${CONFIG.EMOJI_STAFF} ${ticket.claimedByName}` : `${CONFIG.EMOJI_TIME} Aguardando staff...`;
+    // NOVO: mencionável no "Assumido por" — sem emoji à frente, com @mencao | username
+    const claimedText = ticket.claimedBy 
+      ? `<@${ticket.claimedBy}> | ${ticket.claimedByName}` 
+      : `${CONFIG.EMOJI_TIME} Aguardando staff...`;
+
     const embed = new EmbedBuilder()
       .setTitle(`${CONFIG.EMOJI_TICKET} Sistema de Ticket | Portugal Alfa Community`)
       .setDescription([
