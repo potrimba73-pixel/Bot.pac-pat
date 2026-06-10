@@ -39,12 +39,6 @@ export async function registerCommands() {
       .setDescription("Abre o painel de staff para o ticket atual")
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
       .toJSON(),
-    // Dentro do array `commands`, adiciona:
-new SlashCommandBuilder()
-  .setName("transcript")
-  .setDescription("Gera um transcript completo do canal atual (HTML + TXT) - Apenas Staff")
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
-  .toJSON(),
     new SlashCommandBuilder()
       .setName("painelmembro")
       .setDescription("Abre o painel do membro para chamar staff específica")
@@ -61,6 +55,11 @@ new SlashCommandBuilder()
     new SlashCommandBuilder()
       .setName("pedirassumo")
       .setDescription("Pedir assumo de um ticket que está com outro staff")
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("transcript")
+      .setDescription("Gera um transcript completo do canal atual (HTML + TXT) - Apenas Staff")
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
       .toJSON(),
   ];
