@@ -35,16 +35,27 @@ export async function handleTranscriptCommand(interaction, client) {
     const messages = await canal.messages.fetch({ limit: 100 });
     const msgsArray = Array.from(messages.values()).sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 
-    let txtContent = `═══════════════════════════════════════════════════════════════\n`;
-    txtContent += `  TRANSCRIPT - PORTUGAL ALFA COMMUNITY\n`;
-    txtContent += `═══════════════════════════════════════════════════════════════\n`;
-    txtContent += `Canal:        #${canal.name}\n`;
-    txtContent += `ID do Canal:  ${canal.id}\n`;
-    txtContent += `Servidor:     ${guild.name}\n`;
-    txtContent += `Gerado por:   ${interaction.user.tag}\n`;
-    txtContent += `Data:         ${new Date().toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" })}\n`;
-    txtContent += `Total msgs:   ${msgsArray.length}\n`;
-    txtContent += `═══════════════════════════════════════════════════════════════\n\n`;
+    let txtContent = `═══════════════════════════════════════════════════════════════
+`;
+    txtContent += `  TRANSCRIPT - PORTUGAL ALFA COMMUNITY
+`;
+    txtContent += `═══════════════════════════════════════════════════════════════
+`;
+    txtContent += `Canal:        #${canal.name}
+`;
+    txtContent += `ID do Canal:  ${canal.id}
+`;
+    txtContent += `Servidor:     ${guild.name}
+`;
+    txtContent += `Gerado por:   ${interaction.user.tag}
+`;
+    txtContent += `Data:         ${new Date().toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" })}
+`;
+    txtContent += `Total msgs:   ${msgsArray.length}
+`;
+    txtContent += `═══════════════════════════════════════════════════════════════
+
+`;
 
     for (const msg of msgsArray) {
       const data = new Date(msg.createdTimestamp).toLocaleString("pt-PT", { 
@@ -53,26 +64,34 @@ export async function handleTranscriptCommand(interaction, client) {
         hour: '2-digit', minute: '2-digit', second: '2-digit'
       });
 
-      txtContent += `[${data}] ${msg.author.tag} (${msg.author.id})\n`;
+      txtContent += `[${data}] ${msg.author.tag} (${msg.author.id})
+`;
 
       if (msg.content) {
-        txtContent += `  ${msg.content}\n`;
+        txtContent += `  ${msg.content}
+`;
       }
 
       if (msg.attachments.size > 0) {
-        txtContent += `  [Anexos: ${msg.attachments.map(a => `${a.name} (${a.url})`).join(", ")}]\n`;
+        txtContent += `  [Anexos: ${msg.attachments.map(a => `${a.name} (${a.url})`).join(", ")}]
+`;
       }
 
       if (msg.embeds.length > 0) {
-        txtContent += `  [Embed: ${msg.embeds.length} embed(s)]\n`;
+        txtContent += `  [Embed: ${msg.embeds.length} embed(s)]
+`;
       }
 
-      txtContent += `\n`;
+      txtContent += `
+`;
     }
 
-    txtContent += `═══════════════════════════════════════════════════════════════\n`;
-    txtContent += `  FIM DO TRANSCRIPT\n`;
-    txtContent += `═══════════════════════════════════════════════════════════════\n`;
+    txtContent += `═══════════════════════════════════════════════════════════════
+`;
+    txtContent += `  FIM DO TRANSCRIPT
+`;
+    txtContent += `═══════════════════════════════════════════════════════════════
+`;
 
     // ========== CRIAR ATTACHMENTS ==========
     const files = [];
@@ -100,7 +119,8 @@ export async function handleTranscriptCommand(interaction, client) {
         `${CONFIG.EMOJI_CHECK} Ficheiros:`,
         `• TXT - Versão texto simples`,
         htmlAttachment ? `• HTML - Versão visual bonita` : `• HTML - Erro ao gerar`
-      ].join("\n"))
+      ].join("
+"))
       .setColor(0x262af1)
       .setTimestamp();
 
@@ -139,7 +159,8 @@ export async function handleTranscriptCommand(interaction, client) {
         htmlAttachment ? `• 🌐 HTML (visual bonito)` : `• ❌ HTML (erro ao gerar)`,
         ``,
         `${CONFIG.EMOJI_DATABASE} Guardado na base de dados com sucesso.`
-      ].join("\n"))
+      ].join("
+"))
       .setColor(0x00ff00)
       .setTimestamp();
 
@@ -155,7 +176,8 @@ export async function handleTranscriptCommand(interaction, client) {
           `${CONFIG.EMOJI_INFO} Canal: <#${canal.id}> (${canal.id})`,
           `${CONFIG.EMOJI_TIME} Data: ${new Date().toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" })}`,
           `${CONFIG.EMOJI_FILE} Mensagens: ${msgsArray.length}`
-        ].join("\n"))
+        ].join("
+"))
         .setColor(0x0099ff)
         .setTimestamp();
 
