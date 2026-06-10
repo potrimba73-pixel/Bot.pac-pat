@@ -241,10 +241,10 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
       ].join("\n"))
       .setColor(0x262af1);
 
+    // REMOVIDO: botão painel_membro do embed — agora só via comando /painelmembro
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`assumir_${ticketId}`).setLabel(`${CONFIG.EMOJI_ASSUMIR} Assumir`).setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId(`painel_staff_${ticketId}`).setLabel(`${CONFIG.EMOJI_PAINEL} Painel Staff`).setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId(`painel_membro_${ticketId}`).setLabel(`${CONFIG.EMOJI_PAINEL} Painel Membro`).setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`sair_${ticketId}`).setLabel(`${CONFIG.EMOJI_SAIR} Sair`).setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`deletar_${ticketId}`).setLabel(`${CONFIG.EMOJI_FECHAR} Fechar`).setStyle(ButtonStyle.Danger),
     );
@@ -362,10 +362,10 @@ async function criarTicketNormal(interaction, type, label, client, guild, user) 
     ].join("\n"))
     .setColor(0x262af1);
 
+  // REMOVIDO: botão painel_membro do embed — agora só via comando /painelmembro
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`assumir_${ticketId}`).setLabel(`${CONFIG.EMOJI_ASSUMIR} Assumir`).setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId(`painel_staff_${ticketId}`).setLabel(`${CONFIG.EMOJI_PAINEL} Painel Staff`).setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(`painel_membro_${ticketId}`).setLabel(`${CONFIG.EMOJI_PAINEL} Painel Membro`).setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`sair_${ticketId}`).setLabel(`${CONFIG.EMOJI_SAIR} Sair`).setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`deletar_${ticketId}`).setLabel(`${CONFIG.EMOJI_FECHAR} Fechar`).setStyle(ButtonStyle.Danger),
   );
