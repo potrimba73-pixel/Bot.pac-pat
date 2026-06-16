@@ -274,11 +274,41 @@ async function criarTicketNormal(interaction, type, label, client, guild, user) 
     return safeEditReply(interaction, { content: `${CONFIG.EMOJI_TIME} Espera um pouco antes de abrir outro ticket (3 segundos).`, flags: 64 });
   }
 
+  // Verificar se o utilizador já tem um ticket aberto (na DB ou no Discord)
   const existingTicket = Object.values(db.tickets).find((t) => t.userId === user.id && !t.closed);
   if (existingTicket) {
     const existingChannel = await guild.channels.fetch(existingTicket.channelId).catch(() => null);
     if (existingChannel) {
       return safeEditReply(interaction, { content: `${CONFIG.EMOJI_WARNING} Já tens um ticket aberto!`, flags: 64 });
+    } else {
+      // Canal foi apagado mas está na DB como aberto → marcar como fechado
+      existingTicket.closed = true;
+      existingTicket.closedAt = new Date().toISOString();
+      existingTicket.closedBy = "Sistema (Canal Apagado)";
+      existingTicket.closedByName = "Sistema";
+      await saveDB();
+    }
+  }
+
+  // Também verificar no Discord se há algum canal de ticket deste utilizador que não está na DB
+  const userTicketsInDiscord = guild.channels.cache.filter(ch => 
+    ch.name.includes(`ticket-${user.username.toLowerCase().replace(/[^a-z0-9-]/g, "")}`) ||
+    ch.name.includes(`rec-${user.username.toLowerCase().replace(/[^a-z0-9-]/g, "")}`) ||
+    ch.name.includes(`bug-${user.username.toLowerCase().replace(/[^a-z0-9-]/g, "")}`) ||
+    ch.name.includes(`den-${user.username.toLowerCase().replace(/[^a-z0-9-]/g, "")}`) ||
+    ch.name.includes(`sup-${user.username.toLowerCase().replace(/[^a-z0-9-]/g, "")}`) ||
+    ch.name.includes(`cri-${user.username.toLowerCase().replace(/[^a-z0-9-]/g, "")}`) ||
+    ch.name.includes(`ajd-${user.username.toLowerCase().replace(/[^a-z0-9-]/g, "")}`)
+  );
+
+  for (const [channelId, ch] of userTicketsInDiscord) {
+    // Verificar se este canal já está na DB
+    const inDb = Object.values(db.tickets).find(t => t.channelId === channelId);
+    if (!inDb) {
+      // Canal existe no Discord mas não na DB → adicionar à DB como fechado (ou aberto se quiseres)
+      // Por segurança, vamos assumir que é um ticket antigo e deixar criar novo
+      // Mas avisar o utilizador
+      console.log(`Canal ${ch.name} existe no Discord mas não na DB. Permitir criar novo ticket.`);
     }
   }
 
