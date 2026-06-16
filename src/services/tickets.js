@@ -88,7 +88,12 @@ export async function handleTruckyVerification(interaction, client) {
 
   await interaction.deferReply({ flags: 64 });
 
-  if (temTrucky.includes("não") || temTrucky.includes("nao") || temTrucky.startsWith("n")) {
+  // VALIDAÇÃO: Só aceita "sim" ou variações
+  const respostasValidas = ["sim", "s", "yes", "y", "true", "1"];
+  const respostasNegativas = ["não", "nao", "n", "no", "false", "0", "nao tenho", "não tenho"];
+
+  if (respostasNegativas.includes(temTrucky)) {
+    // Resposta negativa → mostrar instruções
     const embed = new EmbedBuilder()
       .setTitle(`${CONFIG.EMOJI_WARNING} Trucky App - Instalação Necessária`)
       .setDescription(
@@ -110,6 +115,25 @@ export async function handleTruckyVerification(interaction, client) {
     return;
   }
 
+  if (!respostasValidas.includes(temTrucky)) {
+    // Resposta inválida → pedir para tentar novamente
+    const embed = new EmbedBuilder()
+      .setTitle(`${CONFIG.EMOJI_WARNING} Resposta Inválida`)
+      .setDescription(
+        `${CONFIG.EMOJI_ERROR} A resposta "${temTrucky}" não é válida.\n\n` +
+        `${CONFIG.EMOJI_INFO} Precisas de responder apenas com:\n` +
+        `• **Sim** (ou S, Yes, Y)\n` +
+        `• **Não** (ou N, No)\n\n` +
+        `${CONFIG.EMOJI_TIME} Por favor, volta a abrir o ticket de recrutamento e responde corretamente.`
+      )
+      .setColor(0xFF0000)
+      .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed], flags: 64 });
+    return;
+  }
+
+  // Se chegou aqui, respondeu "Sim" → mostrar regras
   await mostrarRegrasRecrutamento(interaction, client, nomeTrucky);
 }
 
