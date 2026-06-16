@@ -1,137 +1,165 @@
 import { MongoClient } from "mongodb";
 import { CONFIG } from "../config/index.js";
+import fs from "fs";
+import path from "path";
 
 let client = null;
-let db = null;
+let mongoDB = null;
+let useMongo = false;
 
-// Cache em memória para performance
+// Cache em memória
 let cache = {
   tickets: {},
   avaliacoes: {},
   acceptedRules: [],
   messages: {},
 };
-let cacheLoaded = false;
 
+const DB_PATH = path.resolve("db.json");
+
+// ========== JSON FALLBACK ==========
+function loadJSON() {
+  try {
+    if (fs.existsSync(DB_PATH)) {
+      const data = JSON.parse(fs.readFileSync(DB_PATH, "utf-8"));
+      cache.tickets = data.tickets || {};
+      cache.avaliacoes = data.avaliacoes || {};
+      cache.acceptedRules = data.acceptedRules || [];
+      cache.messages = data.messages || {};
+      console.log(`[DB] 📂 JSON carregado: ${Object.keys(cache.tickets).length} tickets`);
+    } else {
+      console.log("[DB] 📂 Ficheiro JSON não encontrado, a criar novo.");
+      saveJSON();
+    }
+  } catch (e) {
+    console.error("[DB] Erro ao carregar JSON:", e.message);
+  }
+}
+
+function saveJSON() {
+  try {
+    fs.writeFileSync(DB_PATH, JSON.stringify(cache, null, 2));
+  } catch (e) {
+    console.error("[DB] Erro ao guardar JSON:", e.message);
+  }
+}
+
+// ========== MONGODB ==========
 export async function connectDB() {
-  if (client) return db;
+  // Se não há URI configurada, usar JSON
+  if (!CONFIG.MONGODB_URI || CONFIG.MONGODB_URI === "") {
+    console.log("[DB] ⚠️ MONGODB_URI não configurada, a usar JSON.");
+    loadJSON();
+    return;
+  }
 
   try {
     client = new MongoClient(CONFIG.MONGODB_URI);
     await client.connect();
-    db = client.db("pacpat_bot");
+    mongoDB = client.db("pacpat_bot");
+    useMongo = true;
 
-    // Carregar dados para cache
-    await loadCache();
+    // Carregar para cache
+    await loadMongoToCache();
 
     console.log("[DB] ✅ MongoDB conectado com sucesso!");
-    return db;
   } catch (error) {
     console.error("[DB] ❌ Erro ao conectar MongoDB:", error.message);
-    console.log("[DB] ⚠️ A usar cache em memória (dados serão perdidos no restart)");
-    return null;
+    console.log("[DB] ⚠️ A usar JSON como fallback.");
+    loadJSON();
   }
 }
 
-async function loadCache() {
-  if (!db || cacheLoaded) return;
+async function loadMongoToCache() {
+  if (!mongoDB) return;
 
   try {
     // Tickets
-    const ticketsCollection = db.collection("tickets");
-    const tickets = await ticketsCollection.find({}).toArray();
+    const ticketsCol = mongoDB.collection("tickets");
+    const tickets = await ticketsCol.find({}).toArray();
     for (const t of tickets) {
       cache.tickets[t.id] = t;
     }
 
     // Avaliações
-    const avalCollection = db.collection("avaliacoes");
-    const avaliacoes = await avalCollection.find({}).toArray();
+    const avalCol = mongoDB.collection("avaliacoes");
+    const avaliacoes = await avalCol.find({}).toArray();
     for (const a of avaliacoes) {
       cache.avaliacoes[a.ticketId] = a.avaliacoes;
     }
 
-    // Regras aceites
-    const rulesCollection = db.collection("acceptedRules");
-    const rules = await rulesCollection.findOne({ _id: "rules" });
-    if (rules) {
-      cache.acceptedRules = rules.users || [];
-    }
+    // Regras
+    const rulesCol = mongoDB.collection("acceptedRules");
+    const rules = await rulesCol.findOne({ _id: "rules" });
+    if (rules) cache.acceptedRules = rules.users || [];
 
-    // Mensagens dos painéis
-    const msgCollection = db.collection("messages");
-    const messages = await msgCollection.findOne({ _id: "panels" });
-    if (messages) {
-      cache.messages = messages.data || {};
-    }
+    // Mensagens
+    const msgCol = mongoDB.collection("messages");
+    const messages = await msgCol.findOne({ _id: "panels" });
+    if (messages) cache.messages = messages.data || {};
 
-    cacheLoaded = true;
-    console.log(`[DB] 📊 Cache carregado: ${Object.keys(cache.tickets).length} tickets`);
-  } catch (error) {
-    console.error("[DB] Erro ao carregar cache:", error.message);
+    console.log(`[DB] 📊 MongoDB cache: ${Object.keys(cache.tickets).length} tickets`);
+  } catch (e) {
+    console.error("[DB] Erro ao carregar MongoDB:", e.message);
   }
 }
 
 export async function saveDB() {
-  if (!db) {
-    console.log("[DB] ⚠️ MongoDB não conectado, dados apenas em memória");
-    return;
-  }
+  // Guardar sempre no JSON (backup)
+  saveJSON();
 
-  try {
-    // Salvar tickets
-    const ticketsCollection = db.collection("tickets");
-    for (const [id, ticket] of Object.entries(cache.tickets)) {
-      await ticketsCollection.updateOne(
-        { id: id },
-        { $set: ticket },
+  // Se MongoDB disponível, guardar lá também
+  if (useMongo && mongoDB) {
+    try {
+      // Tickets
+      const ticketsCol = mongoDB.collection("tickets");
+      for (const [id, ticket] of Object.entries(cache.tickets)) {
+        await ticketsCol.updateOne({ id: id }, { $set: ticket }, { upsert: true });
+      }
+
+      // Avaliações
+      const avalCol = mongoDB.collection("avaliacoes");
+      for (const [ticketId, avaliacoes] of Object.entries(cache.avaliacoes)) {
+        await avalCol.updateOne(
+          { ticketId: ticketId },
+          { $set: { ticketId, avaliacoes } },
+          { upsert: true }
+        );
+      }
+
+      // Regras
+      const rulesCol = mongoDB.collection("acceptedRules");
+      await rulesCol.updateOne(
+        { _id: "rules" },
+        { $set: { users: cache.acceptedRules } },
         { upsert: true }
       );
-    }
 
-    // Salvar avaliações
-    const avalCollection = db.collection("avaliacoes");
-    for (const [ticketId, avaliacoes] of Object.entries(cache.avaliacoes)) {
-      await avalCollection.updateOne(
-        { ticketId: ticketId },
-        { $set: { ticketId, avaliacoes } },
+      // Mensagens
+      const msgCol = mongoDB.collection("messages");
+      await msgCol.updateOne(
+        { _id: "panels" },
+        { $set: { data: cache.messages } },
         { upsert: true }
       );
+
+      console.log("[DB] 💾 MongoDB atualizado");
+    } catch (e) {
+      console.error("[DB] Erro ao guardar no MongoDB:", e.message);
     }
-
-    // Salvar regras aceites
-    const rulesCollection = db.collection("acceptedRules");
-    await rulesCollection.updateOne(
-      { _id: "rules" },
-      { $set: { users: cache.acceptedRules } },
-      { upsert: true }
-    );
-
-    // Salvar mensagens dos painéis
-    const msgCollection = db.collection("messages");
-    await msgCollection.updateOne(
-      { _id: "panels" },
-      { $set: { data: cache.messages } },
-      { upsert: true }
-    );
-
-    console.log("[DB] 💾 Dados salvos no MongoDB");
-  } catch (error) {
-    console.error("[DB] Erro ao salvar:", error.message);
   }
 }
 
-// Getter para a cache (compatível com código antigo)
+// ========== GETTER/SETTER (compatível com código antigo) ==========
 export const db = {
   get tickets() { return cache.tickets; },
-  set tickets(val) { cache.tickets = val; },
+  set tickets(val) { cache.tickets = val; saveJSON(); },
   get avaliacoes() { return cache.avaliacoes; },
-  set avaliacoes(val) { cache.avaliacoes = val; },
+  set avaliacoes(val) { cache.avaliacoes = val; saveJSON(); },
   get acceptedRules() { return cache.acceptedRules; },
-  set acceptedRules(val) { cache.acceptedRules = val; },
+  set acceptedRules(val) { cache.acceptedRules = val; saveJSON(); },
   get messages() { return cache.messages; },
-  set messages(val) { cache.messages = val; },
+  set messages(val) { cache.messages = val; saveJSON(); },
 };
 
-// Para compatibilidade com código antigo que usa db diretamente
 export default { db, saveDB, connectDB };
