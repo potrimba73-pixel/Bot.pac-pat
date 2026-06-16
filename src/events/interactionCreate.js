@@ -70,17 +70,14 @@ export async function handleInteractionCreate(interaction, client) {
 
         const embed = new EmbedBuilder()
           .setTitle(`${CONFIG.EMOJI_CHAMAR} Staff a Chamar!`)
-          .setDescription([
-            `Ola ${staffUser.username}!`,
-            "",
-            `Um membro da staff esta a chamar-te no teu ticket <#${ticket.channelId}>.`,
-            "",
-            `${CONFIG.EMOJI_INFO} Motivo: ${ticket.label}`,
-            `${CONFIG.EMOJI_STAFF} Staff: ${interaction.user.username}`,
-            `${CONFIG.EMOJI_EDIT} Nota: ${nota}`,
-            "",
+          .setDescription(
+            `Ola ${staffUser.username}!\n\n` +
+            `Um membro da staff esta a chamar-te no teu ticket <#${ticket.channelId}>.\n\n` +
+            `${CONFIG.EMOJI_INFO} Motivo: ${ticket.label}\n` +
+            `${CONFIG.EMOJI_STAFF} Staff: ${interaction.user.username}\n` +
+            `${CONFIG.EMOJI_EDIT} Nota: ${nota}\n\n` +
             `${CONFIG.EMOJI_TIME} Importante: Responde o mais breve possivel!`
-          ].join("\n"))
+          )
           .setColor(0x00ff88)
           .setTimestamp()
           .setFooter({ text: "Portugal Alfa Community", iconURL: client.user?.displayAvatarURL() });
@@ -279,13 +276,13 @@ export async function handleInteractionCreate(interaction, client) {
     if (interaction.commandName === "status") {
       const embed = new EmbedBuilder()
         .setTitle(`${CONFIG.EMOJI_INFO} Status do Bot`)
-        .setDescription([
-          `${CONFIG.EMOJI_USER} Bot: ${client.user.tag}`,
-          `${CONFIG.EMOJI_TIME} Ping: ${client.ws.ping}ms`,
-          `${CONFIG.EMOJI_TICKET} Tickets abertos: ${Object.values(db.tickets).filter(t => !t.closed).length}`,
-          `${CONFIG.EMOJI_USER} Membros: ${interaction.guild.memberCount}`,
+        .setDescription(
+          `${CONFIG.EMOJI_USER} Bot: ${client.user.tag}\n` +
+          `${CONFIG.EMOJI_TIME} Ping: ${client.ws.ping}ms\n` +
+          `${CONFIG.EMOJI_TICKET} Tickets abertos: ${Object.values(db.tickets).filter(t => !t.closed).length}\n` +
+          `${CONFIG.EMOJI_USER} Membros: ${interaction.guild.memberCount}\n` +
           `${CONFIG.EMOJI_TIME} Online desde: `
-        ].join("\n"))
+        )
         .setColor(0x00ff00)
         .setTimestamp();
       await interaction.reply({ embeds: [embed], flags: 64 });
@@ -355,7 +352,7 @@ export async function handleInteractionCreate(interaction, client) {
         return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Nenhuma staff online encontrada.`, flags: 64 });
       }
 
-      const options = staffMembers.slice(0, 25).map(m => 
+      const options = staffMembers.slice(0, 25).map(m =>
         new StringSelectMenuOptionBuilder()
           .setLabel(m.user.username)
           .setDescription(`Chamar ${m.user.username}`)
@@ -370,10 +367,10 @@ export async function handleInteractionCreate(interaction, client) {
           .addOptions(options)
       );
 
-      await interaction.reply({ 
+      await interaction.reply({
         content: `${CONFIG.EMOJI_PAINEL} Escolhe qual staff pretendes chamar:`,
-        components: [row], 
-        flags: 64 
+        components: [row],
+        flags: 64
       });
       return;
     }
@@ -450,15 +447,13 @@ export async function handleInteractionCreate(interaction, client) {
       try {
         const requestEmbed = new EmbedBuilder()
           .setTitle(`${CONFIG.EMOJI_CHAMAR} Pedido de Assumo`)
-          .setDescription([
-            `${interaction.user.username} pediu assumo do teu ticket.`,
-            "",
-            `${CONFIG.EMOJI_TICKET} Ticket: #${ticket.id}`,
-            `${CONFIG.EMOJI_USER} Criador: ${ticket.username}`,
-            `${CONFIG.EMOJI_INFO} Canal: <#${ticket.channelId}>`,
-            "",
+          .setDescription(
+            `${interaction.user.username} pediu assumo do teu ticket.\n\n` +
+            `${CONFIG.EMOJI_TICKET} Ticket: #${ticket.id}\n` +
+            `${CONFIG.EMOJI_USER} Criador: ${ticket.username}\n` +
+            `${CONFIG.EMOJI_INFO} Canal: <#${ticket.channelId}>\n\n` +
             `${CONFIG.EMOJI_QUESTION} Queres passar o controlo?`
-          ].join("\n"))
+          )
           .setColor(0xff9800)
           .setTimestamp();
         const row = new ActionRowBuilder().addComponents(
@@ -747,7 +742,7 @@ export async function handleInteractionCreate(interaction, client) {
         return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Nenhuma staff encontrada.`, flags: 64 });
       }
 
-      const options = staffMembers.slice(0, 25).map(m => 
+      const options = staffMembers.slice(0, 25).map(m =>
         new StringSelectMenuOptionBuilder()
           .setLabel(m.user.username)
           .setDescription(`Chamar ${m.user.username}`)
@@ -762,10 +757,10 @@ export async function handleInteractionCreate(interaction, client) {
           .addOptions(options)
       );
 
-      await interaction.reply({ 
+      await interaction.reply({
         content: `${CONFIG.EMOJI_PAINEL} Escolhe qual staff pretendes chamar:`,
-        components: [row], 
-        flags: 64 
+        components: [row],
+        flags: 64
       });
       return;
     }
@@ -795,23 +790,21 @@ export async function handleInteractionCreate(interaction, client) {
           ticket.transcriptUrl = transcriptAttachment.fileName;
         }
       }
+
+      // RECRUTAMENTO - fluxo simplificado
       if (ticket.type === "recrutamento") {
         const embedRecrutamento = new EmbedBuilder()
           .setTitle(`${CONFIG.EMOJI_RECRUTAMENTO} Ticket de Recrutamento - Aguardando Decisao`)
-          .setDescription([
-            `${CONFIG.EMOJI_INFO} Este ticket de recrutamento foi marcado para fecho.`,
-            "",
-            `${CONFIG.EMOJI_STAFF} Fechado por: ${interaction.user.username}`,
-            "",
-            `${CONFIG.EMOJI_TIME} Aguardando decisao da staff...`,
-            "",
+          .setDescription(
+            `${CONFIG.EMOJI_INFO} Este ticket de recrutamento foi marcado para fecho.\n\n` +
+            `${CONFIG.EMOJI_STAFF} Fechado por: ${interaction.user.username}\n\n` +
+            `${CONFIG.EMOJI_TIME} Aguardando decisao da staff...\n\n` +
             `${CONFIG.EMOJI_QUESTION} O utilizador foi recrutado?`
-          ].join("\n"))
+          )
           .setColor(0xFFA500);
         const rowRecrutamento = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId(`recrutado_sim_${ticketId}`).setLabel(`${CONFIG.EMOJI_RECRUTADO} Sim - Recrutado`).setStyle(ButtonStyle.Success),
           new ButtonBuilder().setCustomId(`recrutado_nao_${ticketId}`).setLabel(`${CONFIG.EMOJI_NAO_RECRUTADO} Nao - Nao Recrutado`).setStyle(ButtonStyle.Danger),
-          new ButtonBuilder().setCustomId(`fechar_definitivo_${ticketId}`).setLabel(`${CONFIG.EMOJI_FECHAR_DEF} Fechar Definitivo (Nao Recrutamento)`).setStyle(ButtonStyle.Secondary),
         );
         await interaction.channel.send({ embeds: [embedRecrutamento], components: [rowRecrutamento] });
         ticket.closedBy = interaction.user.id;
@@ -822,20 +815,17 @@ export async function handleInteractionCreate(interaction, client) {
         await safeEditReply(interaction, { content: `${CONFIG.EMOJI_INFO} Ticket de recrutamento aguarda decisao da staff.` });
         return;
       }
+
+      // TICKET NORMAL
       const dataFechamento = new Date().toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" });
       const embedFechamento = new EmbedBuilder()
         .setTitle(`${CONFIG.EMOJI_FECHAR} Ticket Fechado`)
-        .setDescription([
-          `${CONFIG.EMOJI_INFO} Seu ticket foi fechado com sucesso, avalie nosso atendimento enviado no seu privado.`,
-          "",
-          `${CONFIG.EMOJI_STAFF} Fechado por:`,
-          interaction.user.username,
-          "",
-          `${CONFIG.EMOJI_TIME} Fechado em:`,
-          dataFechamento,
-          "",
+        .setDescription(
+          `${CONFIG.EMOJI_INFO} Seu ticket foi fechado com sucesso, avalie nosso atendimento enviado no seu privado.\n\n` +
+          `${CONFIG.EMOJI_STAFF} Fechado por:\n${interaction.user.username}\n\n` +
+          `${CONFIG.EMOJI_TIME} Fechado em:\n${dataFechamento}\n\n` +
           `${CONFIG.EMOJI_TICKET} Caso necessario, nao hesite em abrir ticket novamente!`
-        ].join("\n"))
+        )
         .setColor(0xFF0000);
       await interaction.channel.send({ embeds: [embedFechamento], content: `${CONFIG.EMOJI_USER} ${ticket.username}` });
       ticket.closedBy = interaction.user.id;
@@ -962,15 +952,11 @@ export async function handleInteractionCreate(interaction, client) {
       const dataFechamento = new Date().toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" });
       const embedFechamento = new EmbedBuilder()
         .setTitle(`${CONFIG.EMOJI_LOCK} Ticket Fechado Definitivamente`)
-        .setDescription([
-          `${CONFIG.EMOJI_INFO} Seu ticket foi fechado com sucesso.`,
-          "",
-          `${CONFIG.EMOJI_STAFF} Fechado por:`,
-          interaction.user.username,
-          "",
-          `${CONFIG.EMOJI_TIME} Fechado em:`,
-          dataFechamento,
-        ].join("\n"))
+        .setDescription(
+          `${CONFIG.EMOJI_INFO} Seu ticket foi fechado com sucesso.\n\n` +
+          `${CONFIG.EMOJI_STAFF} Fechado por:\n${interaction.user.username}\n\n` +
+          `${CONFIG.EMOJI_TIME} Fechado em:\n${dataFechamento}`
+        )
         .setColor(0xFF0000);
       await interaction.channel.send({ embeds: [embedFechamento], content: `${CONFIG.EMOJI_USER} ${ticket.username}` });
       await enviarAvaliacaoDM(ticket, client);
