@@ -669,7 +669,51 @@ export async function handleInteractionCreate(interaction, client) {
       const deferred = await safeDeferReply(interaction, { flags: 64 });
       if (!deferred) return;
       const ticketId = customId.split("_")[1];
-      const ticket = db.tickets[ticketId];
+      let ticket = db.tickets[ticketId];
+
+      // Se não está na DB, tentar recuperar
+      if (!ticket) {
+        const channel = interaction.channel;
+        const messages = await channel.messages.fetch({ limit: 5 }).catch(() => null);
+        let userId = null;
+
+        if (messages) {
+          for (const msg of messages.values()) {
+            if (msg.content.includes("<@") && msg.content.includes(">")) {
+              const match = msg.content.match(/<@(\d+)>/);
+              if (match) {
+                userId = match[1];
+                break;
+              }
+            }
+          }
+        }
+
+        ticket = {
+          id: ticketId,
+          channelId: channel.id,
+          userId: userId || "desconhecido",
+          username: "Desconhecido",
+          type: "desconhecido",
+          label: "Ticket Antigo",
+          openedAt: new Date().toISOString(),
+          closedAt: null,
+          claimedBy: null,
+          claimedByName: null,
+          closedBy: null,
+          closedByName: null,
+          callActive: false,
+          callChannelId: null,
+          rating: null,
+          panelMessageId: null,
+          recrutado: null,
+          fotoNome: null,
+          guildId: interaction.guild.id,
+        };
+        db.tickets[ticketId] = ticket;
+        await saveDB();
+      }
+
       if (ticket && ticket.userId === interaction.user.id) {
         await interaction.channel.permissionOverwrites.delete(interaction.user.id);
         await safeEditReply(interaction, { content: `${CONFIG.EMOJI_SAIR} Saiste do ticket. Podes fecha-lo se desejares.`, flags: 64 });
@@ -682,8 +726,59 @@ export async function handleInteractionCreate(interaction, client) {
       const deferred = await safeDeferReply(interaction, { flags: 64 });
       if (!deferred) return;
       const ticketId = customId.split("_")[1];
-      const ticket = db.tickets[ticketId];
-      if (!ticket) return;
+      let ticket = db.tickets[ticketId];
+
+      // Se ticket não existe na DB, pode ser um ticket antigo → criar entrada na DB
+      if (!ticket) {
+        // Tentar recuperar info do canal
+        const channel = interaction.channel;
+        const messages = await channel.messages.fetch({ limit: 5 }).catch(() => null);
+        let userId = null;
+        let username = "Desconhecido";
+
+        if (messages) {
+          for (const msg of messages.values()) {
+            if (msg.content.includes("<@") && msg.content.includes(">")) {
+              const match = msg.content.match(/<@(\d+)>/);
+              if (match) {
+                userId = match[1];
+                try {
+                  const user = await client.users.fetch(userId);
+                  username = user.username;
+                } catch (e) {}
+                break;
+              }
+            }
+          }
+        }
+
+        // Criar entrada na DB para este ticket antigo
+        ticket = {
+          id: ticketId,
+          channelId: channel.id,
+          userId: userId || "desconhecido",
+          username: username,
+          type: "desconhecido",
+          label: "Ticket Antigo",
+          openedAt: new Date().toISOString(),
+          closedAt: null,
+          claimedBy: null,
+          claimedByName: null,
+          closedBy: null,
+          closedByName: null,
+          callActive: false,
+          callChannelId: null,
+          rating: null,
+          panelMessageId: null,
+          recrutado: null,
+          fotoNome: null,
+          guildId: interaction.guild.id,
+        };
+        db.tickets[ticketId] = ticket;
+        await saveDB();
+        console.log(`Ticket antigo ${ticketId} recuperado e adicionado à DB.`);
+      }
+
       const member = interaction.member;
       if (!member.roles.cache.has(CONFIG.CARGO_STAFF)) {
         return safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Apenas staff pode assumir tickets.`, flags: 64 });
@@ -766,9 +861,55 @@ export async function handleInteractionCreate(interaction, client) {
     }
     if (customId.startsWith("deletar_")) {
       const ticketId = customId.split("_")[1];
-      const ticket = db.tickets[ticketId];
+      let ticket = db.tickets[ticketId];
+
+      // Se ticket não existe na DB, pode ser um ticket antigo → criar entrada na DB
       if (!ticket) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Ticket nao encontrado.`, flags: 64 });
+        const channel = interaction.channel;
+        const messages = await channel.messages.fetch({ limit: 5 }).catch(() => null);
+        let userId = null;
+        let username = "Desconhecido";
+
+        if (messages) {
+          for (const msg of messages.values()) {
+            if (msg.content.includes("<@") && msg.content.includes(">")) {
+              const match = msg.content.match(/<@(\d+)>/);
+              if (match) {
+                userId = match[1];
+                try {
+                  const user = await client.users.fetch(userId);
+                  username = user.username;
+                } catch (e) {}
+                break;
+              }
+            }
+          }
+        }
+
+        ticket = {
+          id: ticketId,
+          channelId: channel.id,
+          userId: userId || "desconhecido",
+          username: username,
+          type: "desconhecido",
+          label: "Ticket Antigo",
+          openedAt: new Date().toISOString(),
+          closedAt: null,
+          claimedBy: null,
+          claimedByName: null,
+          closedBy: null,
+          closedByName: null,
+          callActive: false,
+          callChannelId: null,
+          rating: null,
+          panelMessageId: null,
+          recrutado: null,
+          fotoNome: null,
+          guildId: interaction.guild.id,
+        };
+        db.tickets[ticketId] = ticket;
+        await saveDB();
+        console.log(`Ticket antigo ${ticketId} recuperado para fecho.`);
       }
       const member = interaction.member;
       if (!member.roles.cache.has(CONFIG.CARGO_STAFF) && ticket.userId !== interaction.user.id) {
