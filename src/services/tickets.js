@@ -31,7 +31,6 @@ export async function createTicket(interaction, type, label, client) {
       flags: 64
     });
   }
-
   const user = interaction.user;
 
   if (type === "recrutamento") {
@@ -92,16 +91,14 @@ export async function handleTruckyVerification(interaction, client) {
   if (temTrucky.includes("não") || temTrucky.includes("nao") || temTrucky.startsWith("n")) {
     const embed = new EmbedBuilder()
       .setTitle(`${CONFIG.EMOJI_WARNING} Trucky App - Instalação Necessária`)
-      .setDescription([
-        `${CONFIG.EMOJI_INFO} Precisas de instalar o Trucky App antes de te candidatares!`,
-        "",
-        `${CONFIG.EMOJI_CHECK} Passos:`,
-        `1. Acede a: https://hub.truckyapp.com/`,
-        `2. Cria a tua conta e liga ao Steam`,
-        `3. Instala a app no computador`,
-        "",
+      .setDescription(
+        `${CONFIG.EMOJI_INFO} Precisas de instalar o Trucky App antes de te candidatares!\n\n` +
+        `${CONFIG.EMOJI_CHECK} Passos:\n` +
+        `1. Acede a: https://hub.truckyapp.com/\n` +
+        `2. Cria a tua conta e liga ao Steam\n` +
+        `3. Instala a app no computador\n\n` +
         `${CONFIG.EMOJI_TIME} Depois de instalado, volta a abrir o ticket de recrutamento!`
-      ].join("\n"))
+      )
       .setColor(0xff9800)
       .setTimestamp();
 
@@ -121,13 +118,11 @@ async function mostrarRegrasRecrutamento(interaction, client, nomeTrucky) {
 
   const embed = new EmbedBuilder()
     .setTitle(`${CONFIG.EMOJI_RECRUTAMENTO} Regras da Portugal Alfa Truckers`)
-    .setDescription([
-      `${CONFIG.EMOJI_INFO} Antes de prosseguires, lê atentamente as regras:`,
-      "",
-      regrasTexto,
-      "",
+    .setDescription(
+      `${CONFIG.EMOJI_INFO} Antes de prosseguires, lê atentamente as regras:\n\n` +
+      `${regrasTexto}\n\n` +
       `${CONFIG.EMOJI_QUESTION} Aceitas cumprir todas as regras acima?`
-    ].join("\n"))
+    )
     .setColor(0x262af1)
     .setTimestamp();
 
@@ -229,31 +224,26 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
 
     const embed = new EmbedBuilder()
       .setTitle(`${CONFIG.EMOJI_TICKET} Sistema de Ticket | Portugal Alfa Truckers`)
-      .setDescription([
-        `${CONFIG.EMOJI_INFO} Motivo: ${CONFIG.EMOJI_RECRUTAMENTO} Recrutamento PAT`,
-        `${CONFIG.EMOJI_STAFF} Assumido: Aguardando staff...`,
-        "",
-        `${CONFIG.EMOJI_USER} Olá ${user.username}, aguarde ser atendido.`,
-        "",
-        `${CONFIG.EMOJI_TRUCK} Trucky: ${nomeTrucky}`,
-        "",
+      .setDescription(
+        `${CONFIG.EMOJI_INFO} Motivo: ${CONFIG.EMOJI_RECRUTAMENTO} Recrutamento PAT\n` +
+        `${CONFIG.EMOJI_STAFF} Assumido: Aguardando staff...\n\n` +
+        `${CONFIG.EMOJI_USER} Olá <@${user.id}>, aguarde ser atendido.\n\n` +
+        `${CONFIG.EMOJI_TRUCK} Trucky: ${nomeTrucky}\n` +
         `${CONFIG.EMOJI_CHECK} Regras aceites: Sim`
-      ].join("\n"))
+      )
       .setColor(0x262af1);
 
-    // REMOVIDO: botão painel_membro do embed — agora só via comando /painelmembro
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`assumir_${ticketId}`).setLabel(`${CONFIG.EMOJI_ASSUMIR} Assumir`).setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId(`painel_staff_${ticketId}`).setLabel(`${CONFIG.EMOJI_PAINEL} Painel Staff`).setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`painel_membro_${ticketId}`).setLabel(`${CONFIG.EMOJI_PAINEL} Painel Membro`).setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId(`sair_${ticketId}`).setLabel(`${CONFIG.EMOJI_SAIR} Sair`).setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`deletar_${ticketId}`).setLabel(`${CONFIG.EMOJI_FECHAR} Fechar`).setStyle(ButtonStyle.Danger),
     );
 
-    // Nome mencionável no content + info extra no embed
-    const panelMsg = await channel.send({ 
-      content: `${CONFIG.EMOJI_USER} <@${user.id}> | ID: \`${user.id}\``, 
-      embeds: [embed], 
-      components: [row] 
+    const panelMsg = await channel.send({
+      content: `${CONFIG.EMOJI_USER} <@${user.id}>`,
+      embeds: [embed],
+      components: [row]
     });
     db.tickets[ticketId].panelMessageId = panelMsg.id;
     await saveDB();
@@ -350,31 +340,34 @@ async function criarTicketNormal(interaction, type, label, client, guild, user) 
 
   await saveDB();
 
-  const embed = new EmbedBuilder()
-    .setTitle(`${CONFIG.EMOJI_TICKET} Sistema de Ticket | Portugal Alfa Community`)
-    .setDescription([
-      `${CONFIG.EMOJI_INFO} Motivo: ${label}`,
-      `${CONFIG.EMOJI_STAFF} Assumido: Aguardando staff...`,
-      "",
-      `${CONFIG.EMOJI_USER} Olá ${user.username}, aguarde ser atendido.`,
-      "",
-      `${CONFIG.EMOJI_WARNING} Lembre-se: Qualquer descumprimento das regras levará ao encerramento do ticket sem aviso prévio!`
-    ].join("\n"))
-    .setColor(0x262af1);
+  // Determinar se é Community ou Truckers baseado na categoria
+  const isCommunity = categoria === CONFIG.CATEGORIA_TICKETS_GERAL;
+  const serverName = isCommunity ? "Portugal Alfa Community" : "Portugal Alfa Truckers";
 
-  // REMOVIDO: botão painel_membro do embed — agora só via comando /painelmembro
+  const embed = new EmbedBuilder()
+    .setTitle(`${CONFIG.EMOJI_TICKET} Sistema de Ticket | ${serverName}`)
+    .setDescription(
+      `${CONFIG.EMOJI_INFO} Motivo: ${label}\n` +
+      `${CONFIG.EMOJI_STAFF} Assumido: Aguardando staff...\n\n` +
+      `${CONFIG.EMOJI_USER} Olá <@${user.id}>, o teu ticket foi criado com sucesso!\n` +
+      `Um membro da staff irá assumir o teu ticket brevemente.\n\n` +
+      `${CONFIG.EMOJI_WARNING} Lembre-se: Qualquer descumprimento das regras levará ao encerramento do ticket sem aviso prévio!`
+    )
+    .setColor(0x262af1)
+    .setFooter({ text: `Ticket #${ticketId} | ${serverName}` })
+    .setTimestamp();
+
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`assumir_${ticketId}`).setLabel(`${CONFIG.EMOJI_ASSUMIR} Assumir`).setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId(`painel_staff_${ticketId}`).setLabel(`${CONFIG.EMOJI_PAINEL} Painel Staff`).setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(`painel_membro_${ticketId}`).setLabel(`${CONFIG.EMOJI_PAINEL} Painel Membro`).setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId(`sair_${ticketId}`).setLabel(`${CONFIG.EMOJI_SAIR} Sair`).setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`deletar_${ticketId}`).setLabel(`${CONFIG.EMOJI_FECHAR} Fechar`).setStyle(ButtonStyle.Danger),
   );
 
-  // Nome mencionável no content + info extra
-  const panelMsg = await channel.send({ 
-    content: `${CONFIG.EMOJI_USER} <@${user.id}> | ID: \`${user.id}\``, 
-    embeds: [embed], 
-    components: [row] 
+  const panelMsg = await channel.send({
+    content: `${CONFIG.EMOJI_USER} <@${user.id}>`,
+    embeds: [embed],
+    components: [row]
   });
   db.tickets[ticketId].panelMessageId = panelMsg.id;
   await saveDB();
@@ -395,22 +388,40 @@ export async function updateTicketEmbed(channel, ticketId) {
     const panelMsg = await channel.messages.fetch(ticket.panelMessageId);
     if (!panelMsg) return;
 
-    // NOVO: mencionável no "Assumido por" — sem emoji à frente, com @mencao | username
-    const claimedText = ticket.claimedBy 
-      ? `<@${ticket.claimedBy}> | ${ticket.claimedByName}` 
+    // Determinar se é Community ou Truckers baseado no tipo de ticket e categoria
+    const isCommunity = ticket.type !== "recrutamento" && ticket.type !== "ajuda";
+    const serverName = isCommunity ? "Portugal Alfa Community" : "Portugal Alfa Truckers";
+
+    const claimedText = ticket.claimedBy
+      ? `<@${ticket.claimedBy}> | ${ticket.claimedByName}`
       : `${CONFIG.EMOJI_TIME} Aguardando staff...`;
 
+    let description;
+    if (ticket.claimedBy) {
+      // DEPOIS de assumir - mensagem que faz SENTIDO
+      description =
+        `${CONFIG.EMOJI_INFO} Motivo: ${ticket.label}\n` +
+        `${CONFIG.EMOJI_STAFF} Assumido por: ${claimedText}\n\n` +
+        `✅ O teu ticket já foi assumido pela staff!\n` +
+        `<@${ticket.claimedBy}> está a tratar do teu pedido.\n` +
+        `Podes usar o **Painel Membro** para chamar staff para uma call.\n\n` +
+        `${CONFIG.EMOJI_WARNING} Lembre-se: Qualquer descumprimento das regras levará ao encerramento do ticket sem aviso prévio!`;
+    } else {
+      // ANTES de assumir - mensagem original
+      description =
+        `${CONFIG.EMOJI_INFO} Motivo: ${ticket.label}\n` +
+        `${CONFIG.EMOJI_STAFF} Assumido: ${claimedText}\n\n` +
+        `${CONFIG.EMOJI_USER} Olá <@${ticket.userId}>, o teu ticket foi criado com sucesso!\n` +
+        `Um membro da staff irá assumir o teu ticket brevemente.\n\n` +
+        `${CONFIG.EMOJI_WARNING} Lembre-se: Qualquer descumprimento das regras levará ao encerramento do ticket sem aviso prévio!`;
+    }
+
     const embed = new EmbedBuilder()
-      .setTitle(`${CONFIG.EMOJI_TICKET} Sistema de Ticket | Portugal Alfa Community`)
-      .setDescription([
-        `${CONFIG.EMOJI_INFO} Motivo: ${ticket.label}`,
-        `${CONFIG.EMOJI_STAFF} Assumido: ${claimedText}`,
-        "",
-        `${CONFIG.EMOJI_USER} Olá, aguarde ser atendido.`,
-        "",
-        `${CONFIG.EMOJI_WARNING} Lembre-se: Qualquer descumprimento das regras levará ao encerramento do ticket sem aviso prévio!`
-      ].join("\n"))
-      .setColor(ticket.claimedBy ? 0x00ff00 : 0x040021);
+      .setTitle(`${CONFIG.EMOJI_TICKET} Sistema de Ticket | ${serverName}`)
+      .setDescription(description)
+      .setColor(0x262af1) // Azul sempre (não muda de cor)
+      .setFooter({ text: `Ticket #${ticketId} | ${serverName}` })
+      .setTimestamp();
 
     if (ticket.claimedBy) {
       const newRow = new ActionRowBuilder();
@@ -419,7 +430,7 @@ export async function updateTicketEmbed(channel, ticketId) {
       for (const btn of oldButtons) {
         const newBtn = ButtonBuilder.from(btn);
         if (btn.customId?.startsWith("assumir_")) {
-          newBtn.setDisabled(true).setLabel(`${CONFIG.EMOJI_ASSUMIR} Assumido`);
+          newBtn.setDisabled(true).setLabel(`${CONFIG.EMOJI_ASSUMIR} Assumido`).setStyle(ButtonStyle.Success);
         }
         newRow.addComponents(newBtn);
       }
