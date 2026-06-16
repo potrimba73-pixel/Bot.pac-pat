@@ -1,7 +1,7 @@
 {
   "name": "pac-bot",
   "type": "module",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Portugal Alfa Community Bot - Sistema de Tickets e Assistente Inteligente",
   "main": "index.js",
   "scripts": {
@@ -17,9 +17,7 @@
     "discord-html-transcripts": "^3.2.0",
     "@octokit/rest": "^20.1.1",
     "js-base64": "^3.7.7",
-    "axios": "^1.7.0"
-  },
-  "optionalDependencies": {
+    "axios": "^1.7.0",
     "mongodb": "^6.8.0"
   },
   "keywords": [
