@@ -78,7 +78,7 @@ export async function sendLog(ticketId, action, client) {
       ? `${CONFIG.EMOJI_TRUCK} Trucky: [${ticket.truckyNome}](https://hub.truckyapp.com/user/${ticket.userId})`
       : "";
 
-    // GERAR TRANSCRIPT COMO FICHEIRO HTML DIRETO
+    // GERAR TRANSCRIPT
     let transcriptAttachment = null;
     const ticketChannel = await client.channels.fetch(ticket.channelId).catch(() => null);
     if (ticketChannel) {
@@ -106,7 +106,6 @@ export async function sendLog(ticketId, action, client) {
       .setTimestamp()
       .setFooter({ text: "Portugal Alfa Community", iconURL: client.user?.displayAvatarURL() });
 
-    // Enviar embed + ficheiro HTML
     if (transcriptAttachment) {
       await logChannel.send({
         embeds: [embed],
@@ -156,7 +155,10 @@ export async function enviarLogAvaliacao(ticket, estrelas, mensagem, user, clien
 export async function enviarAvaliacaoDM(ticket, client) {
   try {
     const user = await client.users.fetch(ticket.userId).catch(() => null);
-    if (!user) return;
+    if (!user) {
+      console.log(`[DM] Utilizador ${ticket.userId} não encontrado, não foi possível enviar avaliação.`);
+      return;
+    }
 
     const dataFechamento = new Date(ticket.closedAt).toLocaleString("pt-PT", {
       day: '2-digit', month: '2-digit', year: 'numeric',
@@ -186,7 +188,15 @@ export async function enviarAvaliacaoDM(ticket, client) {
     );
 
     await user.send({ embeds: [embed], components: [row] });
+    console.log(`[DM] ✅ Avaliação enviada para ${user.tag}`);
   } catch (error) {
-    console.error("Erro ao enviar avaliação por DM:", error);
+    // CORREÇÃO: Não crashar se não conseguir enviar DM
+    if (error.code === 50278) {
+      console.log(`[DM] ⚠️ Não foi possível enviar DM para ${ticket.userId}: utilizador não partilha servidor com o bot.`);
+    } else if (error.code === 50007) {
+      console.log(`[DM] ⚠️ Não foi possível enviar DM para ${ticket.userId}: DMs desativadas.`);
+    } else {
+      console.error(`[DM] ⚠️ Erro ao enviar avaliação por DM:`, error.message);
+    }
   }
 }
