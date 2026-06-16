@@ -5,7 +5,7 @@ import {
   Events,
 } from "discord.js";
 import http from 'node:http';
-import { loadDB, db } from "./src/utils/db.js";
+import { connectDB, db } from "./src/utils/db.js";
 import { handleReady } from "./src/events/ready.js";
 import { handleGuildMemberAdd } from "./src/events/guildMemberAdd.js";
 import { handleGuildMemberRemove } from "./src/events/guildMemberRemove.js";
@@ -43,8 +43,8 @@ const client = new Client({
   },
 });
 
-// ==================== LOAD DATABASE ====================
-loadDB();
+// ==================== LOAD DATABASE (MongoDB ou JSON) ====================
+await connectDB();
 
 // ==================== EVENTS ====================
 client.once(Events.ClientReady, () => {
