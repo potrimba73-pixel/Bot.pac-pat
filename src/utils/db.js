@@ -1,177 +1,137 @@
-import fs from "node:fs";
-import path from "node:path";
+import { MongoClient } from "mongodb";
+import { CONFIG } from "../config/index.js";
 
-// ==================== CONFIGURAÇÃO ====================
-const USE_MONGODB = process.env.USE_MONGODB === "true";
-const MONGO_URI = process.env.MONGO_URI || null;
-const DB_NAME = process.env.MONGO_DB_NAME || "pac_bot";
-const LOCAL_DB_PATH = process.env.LOCAL_DB_PATH || "./tickets.json";
+let client = null;
+let db = null;
 
-// Tentar importar mongodb dinamicamente (para não crashar se não estiver instalado)
-let MongoClient = null;
-if (USE_MONGODB && MONGO_URI) {
-    try {
-        const mongo = await import("mongodb");
-        MongoClient = mongo.MongoClient;
-        console.log("[DB] MongoDB importado com sucesso.");
-    } catch (err) {
-        console.warn("[DB] MongoDB não instalado. A usar JSON local.");
-        console.warn("[DB] Para usar MongoDB, corre: npm install mongodb");
-    }
-}
-
-// Cache em memória
-export let db = {
-    tickets: {},
-    cooldowns: {},
-    transcripts: {},
-    settings: {},
-    acceptedRules: [],
-    messages: {},
-    avaliacoes: {},
+// Cache em memória para performance
+let cache = {
+  tickets: {},
+  avaliacoes: {},
+  acceptedRules: [],
+  messages: {},
 };
+let cacheLoaded = false;
 
-let mongoClient = null;
-let mongoDb = null;
-let lastSave = Date.now();
-const SAVE_INTERVAL = 30000; // 30 segundos
+export async function connectDB() {
+  if (client) return db;
 
-// ==================== MONGODB ====================
-async function connectMongo() {
-    if (!MongoClient || !MONGO_URI) return false;
-    try {
-        mongoClient = new MongoClient(MONGO_URI, {
-            maxPoolSize: 5,
-            serverSelectionTimeoutMS: 5000,
-            socketTimeoutMS: 45000,
-        });
-        await mongoClient.connect();
-        mongoDb = mongoClient.db(DB_NAME);
-        console.log("[DB] MongoDB conectado com sucesso.");
-        return true;
-    } catch (err) {
-        console.error("[DB] Erro ao conectar MongoDB:", err.message);
-        console.log("[DB] A usar fallback JSON local.");
-        return false;
-    }
+  try {
+    client = new MongoClient(CONFIG.MONGODB_URI);
+    await client.connect();
+    db = client.db("pacpat_bot");
+
+    // Carregar dados para cache
+    await loadCache();
+
+    console.log("[DB] ✅ MongoDB conectado com sucesso!");
+    return db;
+  } catch (error) {
+    console.error("[DB] ❌ Erro ao conectar MongoDB:", error.message);
+    console.log("[DB] ⚠️ A usar cache em memória (dados serão perdidos no restart)");
+    return null;
+  }
 }
 
-async function loadFromMongo() {
-    if (!mongoDb) return;
-    try {
-        const collections = ["tickets", "cooldowns", "transcripts", "settings", "acceptedRules", "messages", "avaliacoes"];
-        for (const col of collections) {
-            const docs = await mongoDb.collection(col).find({}).toArray();
-            const data = {};
-            docs.forEach(doc => {
-                const key = doc._key || doc._id?.toString();
-                if (key) data[key] = doc.data || doc;
-            });
-            // Para arrays (acceptedRules), usar formato especial
-            if (col === "acceptedRules") {
-                const arrDoc = docs.find(d => d._key === "array");
-                db[col] = arrDoc?.data || [];
-            } else {
-                db[col] = data;
-            }
-        }
-        console.log("[DB] Dados carregados do MongoDB.");
-    } catch (err) {
-        console.error("[DB] Erro ao carregar do MongoDB:", err.message);
+async function loadCache() {
+  if (!db || cacheLoaded) return;
+
+  try {
+    // Tickets
+    const ticketsCollection = db.collection("tickets");
+    const tickets = await ticketsCollection.find({}).toArray();
+    for (const t of tickets) {
+      cache.tickets[t.id] = t;
     }
-}
 
-async function saveToMongo() {
-    if (!mongoDb) return;
-    try {
-        for (const [colName, data] of Object.entries(db)) {
-            const collection = mongoDb.collection(colName);
-
-            // Arrays precisam de tratamento especial
-            if (Array.isArray(data)) {
-                await collection.updateOne(
-                    { _key: "array" },
-                    { $set: { _key: "array", data: data, updatedAt: new Date() } },
-                    { upsert: true }
-                );
-                continue;
-            }
-
-            const ops = Object.entries(data).map(([key, value]) => ({
-                updateOne: {
-                    filter: { _key: key },
-                    update: { $set: { _key: key, data: value, updatedAt: new Date() } },
-                    upsert: true,
-                }
-            }));
-            if (ops.length > 0) {
-                await collection.bulkWrite(ops);
-            }
-        }
-    } catch (err) {
-        console.error("[DB] Erro ao guardar no MongoDB:", err.message);
+    // Avaliações
+    const avalCollection = db.collection("avaliacoes");
+    const avaliacoes = await avalCollection.find({}).toArray();
+    for (const a of avaliacoes) {
+      cache.avaliacoes[a.ticketId] = a.avaliacoes;
     }
-}
 
-// ==================== JSON LOCAL (FALLBACK) ====================
-function loadLocal() {
-    try {
-        if (fs.existsSync(LOCAL_DB_PATH)) {
-            const raw = fs.readFileSync(LOCAL_DB_PATH, "utf-8");
-            const parsed = JSON.parse(raw);
-            db = { ...db, ...parsed };
-            // Garantir que acceptedRules é sempre array
-            if (!Array.isArray(db.acceptedRules)) db.acceptedRules = [];
-            console.log("[DB] Dados carregados do JSON local.");
-        } else {
-            console.log("[DB] Ficheiro JSON não encontrado, a criar novo.");
-            saveLocal();
-        }
-    } catch (err) {
-        console.error("[DB] Erro ao carregar JSON:", err.message);
+    // Regras aceites
+    const rulesCollection = db.collection("acceptedRules");
+    const rules = await rulesCollection.findOne({ _id: "rules" });
+    if (rules) {
+      cache.acceptedRules = rules.users || [];
     }
-}
 
-function saveLocal() {
-    try {
-        fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(db, null, 2));
-    } catch (err) {
-        console.error("[DB] Erro ao guardar JSON:", err.message);
+    // Mensagens dos painéis
+    const msgCollection = db.collection("messages");
+    const messages = await msgCollection.findOne({ _id: "panels" });
+    if (messages) {
+      cache.messages = messages.data || {};
     }
-}
 
-// ==================== API PÚBLICA ====================
-export async function loadDB() {
-    if (USE_MONGODB && MongoClient && MONGO_URI) {
-        const connected = await connectMongo();
-        if (connected) {
-            await loadFromMongo();
-            // Auto-save periódico
-            setInterval(async () => {
-                await saveToMongo();
-            }, SAVE_INTERVAL);
-            return;
-        }
-    }
-    loadLocal();
-    // Auto-save periódico
-    setInterval(() => {
-        saveLocal();
-    }, SAVE_INTERVAL);
+    cacheLoaded = true;
+    console.log(`[DB] 📊 Cache carregado: ${Object.keys(cache.tickets).length} tickets`);
+  } catch (error) {
+    console.error("[DB] Erro ao carregar cache:", error.message);
+  }
 }
 
 export async function saveDB() {
-    if (mongoDb) {
-        await saveToMongo();
-    } else {
-        saveLocal();
+  if (!db) {
+    console.log("[DB] ⚠️ MongoDB não conectado, dados apenas em memória");
+    return;
+  }
+
+  try {
+    // Salvar tickets
+    const ticketsCollection = db.collection("tickets");
+    for (const [id, ticket] of Object.entries(cache.tickets)) {
+      await ticketsCollection.updateOne(
+        { id: id },
+        { $set: ticket },
+        { upsert: true }
+      );
     }
+
+    // Salvar avaliações
+    const avalCollection = db.collection("avaliacoes");
+    for (const [ticketId, avaliacoes] of Object.entries(cache.avaliacoes)) {
+      await avalCollection.updateOne(
+        { ticketId: ticketId },
+        { $set: { ticketId, avaliacoes } },
+        { upsert: true }
+      );
+    }
+
+    // Salvar regras aceites
+    const rulesCollection = db.collection("acceptedRules");
+    await rulesCollection.updateOne(
+      { _id: "rules" },
+      { $set: { users: cache.acceptedRules } },
+      { upsert: true }
+    );
+
+    // Salvar mensagens dos painéis
+    const msgCollection = db.collection("messages");
+    await msgCollection.updateOne(
+      { _id: "panels" },
+      { $set: { data: cache.messages } },
+      { upsert: true }
+    );
+
+    console.log("[DB] 💾 Dados salvos no MongoDB");
+  } catch (error) {
+    console.error("[DB] Erro ao salvar:", error.message);
+  }
 }
 
-export function getDB() {
-    return db;
-}
+// Getter para a cache (compatível com código antigo)
+export const db = {
+  get tickets() { return cache.tickets; },
+  set tickets(val) { cache.tickets = val; },
+  get avaliacoes() { return cache.avaliacoes; },
+  set avaliacoes(val) { cache.avaliacoes = val; },
+  get acceptedRules() { return cache.acceptedRules; },
+  set acceptedRules(val) { cache.acceptedRules = val; },
+  get messages() { return cache.messages; },
+  set messages(val) { cache.messages = val; },
+};
 
-export function updateDB(key, value) {
-    db[key] = value;
-}
+// Para compatibilidade com código antigo que usa db diretamente
+export default { db, saveDB, connectDB };
