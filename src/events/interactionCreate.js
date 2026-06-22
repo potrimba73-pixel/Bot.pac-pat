@@ -507,7 +507,7 @@ export async function handleInteractionCreate(interaction, client) {
             `${CONFIG.EMOJI_TICKET} Ticket: #${ticket.id}\n` +
             `${CONFIG.EMOJI_USER} Criador: ${ticket.username}\n` +
             `${CONFIG.EMOJI_INFO} Canal: <#${ticket.channelId}>\n\n` +
-            `${CONFIG.EMOJI_QUESTION} Queres passar o controlo?`
+            `❓ Queres passar o controlo?`
           )
           .setColor(0xff9800)
           .setTimestamp();
@@ -1044,7 +1044,7 @@ export async function handleInteractionCreate(interaction, client) {
             `${CONFIG.EMOJI_INFO} Este ticket de recrutamento foi marcado para fecho.\n\n` +
             `${CONFIG.EMOJI_STAFF} Fechado por: ${interaction.user.username}\n\n` +
             `${CONFIG.EMOJI_TIME} Aguardando decisao da staff...\n\n` +
-            `${CONFIG.EMOJI_QUESTION} O utilizador foi recrutado?`
+            `❓ O utilizador foi recrutado?`
           )
           .setColor(0xFFA500);
         const rowRecrutamento = new ActionRowBuilder().addComponents(
