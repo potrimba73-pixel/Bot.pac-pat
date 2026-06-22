@@ -12,13 +12,15 @@ import { sendLog, enviarLogAvaliacao, enviarAvaliacaoDM } from "../services/logs
 import { handleAjudaCommand, handleAjudaProcurar, handleAjudaModal, assistantMemory } from "../services/ajuda.js";
 import { gerarTranscript } from "../utils/transcript.js";
 
+// IDs a excluir da lista normal (bot e Diego)
+const EXCLUDED_IDS = ["1498462519818326117", "849132183112384573"];
+
 // Cooldown para painel membro (5 minutos = 300000ms)
 const painelMembroCooldown = new Map();
 
 export async function handleInteractionCreate(interaction, client) {
   // ========== MODAL SUBMIT ==========
   if (interaction.isModalSubmit()) {
-    // Defere imediatamente para evitar timeout
     const deferred = await safeDeferReply(interaction, { flags: 64 });
     if (!deferred && interaction.replied) return;
 
@@ -325,7 +327,7 @@ export async function handleInteractionCreate(interaction, client) {
       return;
     }
 
-    // /painelmembro
+    // /painelmembro - ATUALIZADO COM ORDENACAO POR CARGO
     if (interaction.commandName === "painelmembro") {
       const ticket = Object.values(db.tickets).find(
         t => t.channelId === interaction.channel.id && !t.closed
@@ -343,18 +345,75 @@ export async function handleInteractionCreate(interaction, client) {
         return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Cargo de staff nao encontrado.`, flags: 64 });
       }
 
-      const staffMembers = staffRole.members.map(m => m).sort((a, b) => a.user.username.localeCompare(b.user.username));
+      // Filtrar membros: excluir bot e Diego da lista normal
+      let staffMembers = staffRole.members
+        .filter(m => !EXCLUDED_IDS.includes(m.user.id))
+        .map(m => m);
+
       if (staffMembers.length === 0) {
         return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Nenhuma staff online encontrada.`, flags: 64 });
       }
 
-      const options = staffMembers.slice(0, 25).map(m =>
-        new StringSelectMenuOptionBuilder()
-          .setLabel(m.user.username)
-          .setDescription(`Chamar ${m.user.username}`)
-          .setValue(m.user.id)
-          .setEmoji(CONFIG.EMOJI_STAFF)
-      );
+      // Ordenar A-Z pelo nome do cargo (mais alto primeiro), depois por displayName
+      staffMembers.sort((a, b) => {
+        // Comparar pelo nome do cargo mais alto de cada um
+        const aRoles = a.roles.cache
+          .filter(r => r.id !== guild.id && r.id !== CONFIG.CARGO_STAFF)
+          .sort((r1, r2) => r2.position - r1.position);
+        const bRoles = b.roles.cache
+          .filter(r => r.id !== guild.id && r.id !== CONFIG.CARGO_STAFF)
+          .sort((r1, r2) => r2.position - r1.position);
+
+        const aTopRole = aRoles.first();
+        const bTopRole = bRoles.first();
+
+        // Se tem cargos diferentes, ordenar por posicao do cargo (descendente)
+        if (aTopRole && bTopRole && aTopRole.position !== bTopRole.position) {
+          return bTopRole.position - aTopRole.position;
+        }
+
+        // Se mesmo cargo ou sem cargo, ordenar A-Z por displayName
+        const aName = (a.displayName || a.user.username).toLowerCase();
+        const bName = (b.displayName || b.user.username).toLowerCase();
+        return aName.localeCompare(bName);
+      });
+
+      // Buscar o Diego para por no topo
+      const diegoMember = staffRole.members.get("849132183112384573");
+
+      // Criar options: Diego primeiro, depois o resto A-Z por cargo
+      const options = [];
+
+      // Diego no topo como Fundador
+      if (diegoMember) {
+        const diegoDisplayName = diegoMember.displayName || diegoMember.user.username;
+        options.push(
+          new StringSelectMenuOptionBuilder()
+            .setLabel(diegoDisplayName)
+            .setDescription("Fundador")
+            .setValue(diegoMember.user.id)
+            .setEmoji("👑")
+        );
+      }
+
+      // Resto da staff
+      for (const m of staffMembers.slice(0, 24)) { // max 25 total, 1 ja usado pelo Diego
+        const displayName = m.displayName || m.user.username;
+        // Buscar o cargo mais alto (excluindo @everyone e cargo staff base)
+        const topRole = m.roles.cache
+          .filter(r => r.id !== guild.id && r.id !== CONFIG.CARGO_STAFF)
+          .sort((a, b) => b.position - a.position)
+          .first();
+        const roleName = topRole ? topRole.name : "Staff";
+
+        options.push(
+          new StringSelectMenuOptionBuilder()
+            .setLabel(displayName)
+            .setDescription(roleName)
+            .setValue(m.user.id)
+            .setEmoji(CONFIG.EMOJI_STAFF)
+        );
+      }
 
       const row = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
@@ -478,7 +537,6 @@ export async function handleInteractionCreate(interaction, client) {
 
   // ========== SELECT MENUS ==========
   if (interaction.isStringSelectMenu()) {
-    // DEFER IMEDIATO para evitar timeout no dropdown de tickets
     const deferred = await safeDeferReply(interaction, { flags: 64 });
     if (!deferred && interaction.replied) return;
 
@@ -524,7 +582,6 @@ export async function handleInteractionCreate(interaction, client) {
       }
       painelMembroCooldown.set(interaction.user.id, now);
 
-      // Modal para nota opcional
       const modal = new ModalBuilder()
         .setCustomId(`modal_chamar_staff_${ticketId}`)
         .setTitle(`${CONFIG.EMOJI_CHAMAR} Chamar Staff`);
@@ -560,13 +617,12 @@ export async function handleInteractionCreate(interaction, client) {
   if (interaction.isButton()) {
     const customId = interaction.customId;
 
-    // Botoes que NAO precisam de defer (resposta rapida)
     if (customId === "ajuda_procurar") {
       await handleAjudaProcurar(interaction);
       return;
     }
     if (customId === "ajuda_ticket") {
-      await interaction.reply({ content: `${CONFIG.EMOJI_TICKET} Abre um ticket aqui: <#${CONFIG.CANAL_TICKETS_GERAL}>`, flags: 64 });
+      await safeEditReply(interaction, { content: `${CONFIG.EMOJI_TICKET} Abre um ticket aqui: <#${CONFIG.CANAL_TICKETS_GERAL}>`, flags: 64 });
       return;
     }
     if (customId === "ajuda_nova") {
@@ -593,8 +649,6 @@ export async function handleInteractionCreate(interaction, client) {
       await interaction.update({ content: `${CONFIG.EMOJI_CROSS} Pesquisa cancelada.`, components: [] });
       return;
     }
-
-    // Botoes de regras de recrutamento - deferUpdate e validacao
     if (customId.startsWith("aceitar_regras_rec_")) {
       await interaction.deferUpdate();
       const parts = customId.split("_");
@@ -618,8 +672,6 @@ export async function handleInteractionCreate(interaction, client) {
       });
       return;
     }
-
-    // Aceitar regras geral
     if (customId === "aceitar_regras") {
       const deferred = await safeDeferReply(interaction, { flags: 64 });
       if (!deferred) return;
@@ -668,8 +720,6 @@ export async function handleInteractionCreate(interaction, client) {
       }
       return;
     }
-
-    // Sair do ticket
     if (customId.startsWith("sair_")) {
       const deferred = await safeDeferReply(interaction, { flags: 64 });
       if (!deferred) return;
@@ -726,8 +776,6 @@ export async function handleInteractionCreate(interaction, client) {
       }
       return;
     }
-
-    // Assumir ticket
     if (customId.startsWith("assumir_")) {
       const deferred = await safeDeferReply(interaction, { flags: 64 });
       if (!deferred) return;
@@ -800,8 +848,6 @@ export async function handleInteractionCreate(interaction, client) {
       await safeEditReply(interaction, { content: `${CONFIG.EMOJI_SUCCESS} Ticket assumido com sucesso!`, flags: 64 });
       return;
     }
-
-    // Painel staff
     if (customId.startsWith("painel_staff_")) {
       await interaction.reply({
         content: `${CONFIG.EMOJI_INFO} Usa o comando **/painelstaff** para aceder ao painel de staff.`,
@@ -810,7 +856,7 @@ export async function handleInteractionCreate(interaction, client) {
       return;
     }
 
-    // Painel membro
+    // ========== PAINEL MEMBRO BUTTON - ATUALIZADO ==========
     if (customId.startsWith("painel_membro_")) {
       const ticketId = customId.split("_")[2];
       const ticket = db.tickets[ticketId];
@@ -839,18 +885,70 @@ export async function handleInteractionCreate(interaction, client) {
         return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Cargo de staff nao encontrado.`, flags: 64 });
       }
 
-      const staffMembers = staffRole.members.map(m => m).sort((a, b) => a.user.username.localeCompare(b.user.username));
+      // Filtrar: excluir bot e Diego da lista normal
+      let staffMembers = staffRole.members
+        .filter(m => !EXCLUDED_IDS.includes(m.user.id))
+        .map(m => m);
+
       if (staffMembers.length === 0) {
         return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Nenhuma staff encontrada.`, flags: 64 });
       }
 
-      const options = staffMembers.slice(0, 25).map(m =>
-        new StringSelectMenuOptionBuilder()
-          .setLabel(m.user.username)
-          .setDescription(`Chamar ${m.user.username}`)
-          .setValue(m.user.id)
-          .setEmoji(CONFIG.EMOJI_STAFF)
-      );
+      // Ordenar A-Z pelo cargo mais alto, depois por displayName
+      staffMembers.sort((a, b) => {
+        const aRoles = a.roles.cache
+          .filter(r => r.id !== guild.id && r.id !== CONFIG.CARGO_STAFF)
+          .sort((r1, r2) => r2.position - r1.position);
+        const bRoles = b.roles.cache
+          .filter(r => r.id !== guild.id && r.id !== CONFIG.CARGO_STAFF)
+          .sort((r1, r2) => r2.position - r1.position);
+
+        const aTopRole = aRoles.first();
+        const bTopRole = bRoles.first();
+
+        if (aTopRole && bTopRole && aTopRole.position !== bTopRole.position) {
+          return bTopRole.position - aTopRole.position;
+        }
+
+        const aName = (a.displayName || a.user.username).toLowerCase();
+        const bName = (b.displayName || b.user.username).toLowerCase();
+        return aName.localeCompare(bName);
+      });
+
+      // Buscar Diego para por no topo
+      const diegoMember = staffRole.members.get("849132183112384573");
+
+      const options = [];
+
+      // Diego no topo como Fundador
+      if (diegoMember) {
+        const diegoDisplayName = diegoMember.displayName || diegoMember.user.username;
+        options.push(
+          new StringSelectMenuOptionBuilder()
+            .setLabel(diegoDisplayName)
+            .setDescription("Fundador")
+            .setValue(diegoMember.user.id)
+            .setEmoji("👑")
+        );
+      }
+
+      // Resto da staff
+      for (const m of staffMembers.slice(0, 24)) {
+        const displayName = m.displayName || m.user.username;
+        const topRole = m.roles.cache
+          .filter(r => r.id !== guild.id && r.id !== CONFIG.CARGO_STAFF)
+          .sort((a, b) => b.position - a.position)
+          .first();
+        const roleName = topRole ? topRole.name : "Staff";
+
+        options.push(
+          new StringSelectMenuOptionBuilder()
+            .setLabel(displayName)
+            .setDescription(roleName)
+            .setValue(m.user.id)
+            .setEmoji(CONFIG.EMOJI_STAFF)
+        );
+      }
 
       const row = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
@@ -867,7 +965,6 @@ export async function handleInteractionCreate(interaction, client) {
       return;
     }
 
-    // Deletar/fechar ticket
     if (customId.startsWith("deletar_")) {
       const ticketId = customId.split("_")[1];
       let ticket = db.tickets[ticketId];
@@ -940,7 +1037,6 @@ export async function handleInteractionCreate(interaction, client) {
         }
       }
 
-      // RECRUTAMENTO - fluxo simplificado
       if (ticket.type === "recrutamento") {
         const embedRecrutamento = new EmbedBuilder()
           .setTitle(`${CONFIG.EMOJI_RECRUTAMENTO} Ticket de Recrutamento - Aguardando Decisao`)
@@ -965,7 +1061,6 @@ export async function handleInteractionCreate(interaction, client) {
         return;
       }
 
-      // TICKET NORMAL
       const dataFechamento = new Date().toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" });
       const embedFechamento = new EmbedBuilder()
         .setTitle(`${CONFIG.EMOJI_FECHAR} Ticket Fechado`)
@@ -990,8 +1085,6 @@ export async function handleInteractionCreate(interaction, client) {
       }, 10000);
       return;
     }
-
-    // Avaliar
     if (customId.startsWith("avaliar_")) {
       const parts = customId.split("_");
       const estrelas = parseInt(parts[1]);
@@ -1018,8 +1111,6 @@ export async function handleInteractionCreate(interaction, client) {
       await interaction.showModal(modal);
       return;
     }
-
-    // Recrutado sim
     if (customId.startsWith("recrutado_sim_")) {
       await interaction.deferUpdate();
       const ticketId = customId.split("_")[2];
@@ -1054,8 +1145,6 @@ export async function handleInteractionCreate(interaction, client) {
       }, 10000);
       return;
     }
-
-    // Recrutado nao
     if (customId.startsWith("recrutado_nao_")) {
       await interaction.deferUpdate();
       const ticketId = customId.split("_")[2];
@@ -1086,8 +1175,6 @@ export async function handleInteractionCreate(interaction, client) {
       }, 10000);
       return;
     }
-
-    // Fechar definitivo
     if (customId.startsWith("fechar_definitivo_")) {
       const ticketId = customId.split("_")[2];
       const ticket = db.tickets[ticketId];
@@ -1123,8 +1210,6 @@ export async function handleInteractionCreate(interaction, client) {
       }, 10000);
       return;
     }
-
-    // Criar call
     if (customId.startsWith("criar_call_")) {
       const deferred = await safeDeferReply(interaction, { flags: 64 });
       if (!deferred) return;
@@ -1132,8 +1217,6 @@ export async function handleInteractionCreate(interaction, client) {
       await criarCall(interaction, ticketId, client);
       return;
     }
-
-    // Apagar call
     if (customId.startsWith("apagar_call_")) {
       const deferred = await safeDeferReply(interaction, { flags: 64 });
       if (!deferred) return;
@@ -1141,8 +1224,6 @@ export async function handleInteractionCreate(interaction, client) {
       await apagarCall(interaction, ticketId, client);
       return;
     }
-
-    // Chamar membro
     if (customId.startsWith("chamar_membro_")) {
       const deferred = await safeDeferReply(interaction, { flags: 64 });
       if (!deferred) return;
@@ -1150,8 +1231,6 @@ export async function handleInteractionCreate(interaction, client) {
       await chamarMembro(interaction, ticketId, client);
       return;
     }
-
-    // Aceitar assumo
     if (customId.startsWith("aceitar_assumo_")) {
       await interaction.deferUpdate();
       const parts = customId.split("_");
@@ -1184,8 +1263,6 @@ export async function handleInteractionCreate(interaction, client) {
       await interaction.editReply({ content: `${CONFIG.EMOJI_SUCCESS} Passaste o controlo do ticket para ${ticket.claimedByName}.`, components: [] });
       return;
     }
-
-    // Recusar assumo
     if (customId.startsWith("recusar_assumo_")) {
       await interaction.deferUpdate();
       const parts = customId.split("_");
@@ -1202,8 +1279,6 @@ export async function handleInteractionCreate(interaction, client) {
       await interaction.editReply({ content: `${CONFIG.EMOJI_INFO} Recusaste passar o controlo. O ticket continua contigo.`, components: [] });
       return;
     }
-
-    // Passar ticket
     if (customId.startsWith("passar_ticket_")) {
       const deferred = await safeDeferReply(interaction, { flags: 64 });
       if (!deferred) return;
@@ -1218,8 +1293,6 @@ export async function handleInteractionCreate(interaction, client) {
       await safeEditReply(interaction, { content: `${CONFIG.EMOJI_INFO} Usa o comando /passar @staff para passar o controlo para outro membro da staff.`, flags: 64 });
       return;
     }
-
-    // Add user
     if (customId.startsWith("add_user_")) {
       const ticketId = customId.split("_")[2];
       const ticket = db.tickets[ticketId];
@@ -1227,8 +1300,6 @@ export async function handleInteractionCreate(interaction, client) {
       await interaction.reply({ content: `${CONFIG.EMOJI_INFO} Para adicionar um usuario, menciona-o neste canal e um staff pode adicionar manualmente nas permissoes.`, flags: 64 });
       return;
     }
-
-    // Remove user
     if (customId.startsWith("remove_user_")) {
       const ticketId = customId.split("_")[2];
       const ticket = db.tickets[ticketId];
