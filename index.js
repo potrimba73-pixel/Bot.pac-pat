@@ -1,268 +1,148 @@
-// ==================== CONFIGURACOES ====================
-export const CONFIG = {
-  TOKEN: process.env.TOKEN,
-  CLIENT_ID: process.env.CLIENT_ID,
-  MONGODB_URI: process.env.MONGODB_URI || "",
-  GUILD_ID: "932093509060689933",
-  GUILD_ID_RECRUTAMENTO: "1494713559681077460",
-  CANAL_TICKETS_GERAL: "1465865626286428355",
-  CANAL_TICKETS_RECRUTAMENTO: "1326963454397124649",
-  CANAL_LOGS: "1457144182954266634",
-  CANAL_LOGS_RECRUTAMENTO: "1494713560578785426",
-  CANAL_REGRAS: "1120317573624512646",
-  CANAL_REGRAS_RECRUTAMENTO: "1120317573624512646",
-  CANAL_TEMPLATE_FOTO: "1204160547092697088",
-  CANAL_FECHADO_PV: "1457144182954266634",
-  CANAL_AVALIACOES: "1457144182954266634",
-  CATEGORIA_TICKETS_GERAL: "1387953178557026314",
-  CATEGORIA_TICKETS_RECRUTAMENTO: "1465780596386037901",
-  CARGO_STAFF: "1347693608136081490",
-  CARGO_MEMBRO: "1146443166686396476",
-  CARGO_VERIFICADO: "1194328704290140322",
-  CARGO_RECRUTAMENTO_1: "1494713559697850438",
-  CARGO_RECRUTAMENTO_2: "",
-  CARGO_RECRUTADO: "1200169608875868190",
-  CANAL_LOG_RECRUTAMENTO_MSG: "1507520372281446451",
-  CANAL_LOG_RECRUTAMENTO_ENTRADAS: "1494713561853988875",
-  CANAL_LOG_RECRUTAMENTO_MODS: "1494713561363124282",
-  CANAL_LOG_RECRUTAMENTO_MEMBROS: "1494713561363124283",
-  CATEGORIA_LOGS_RECRUTAMENTO: "1494713561363124280",
-  TOPICO_RECRUTAMENTO_TRUCKY: "1507520548572495912",
-  // === SERVIDOR EXTERNO DE LOGS ===
-  EXTERNAL_LOG_GUILD_ID: "1510401803974475947",
-  EXTERNAL_LOG_CHANNEL_ID: "1510402518629482587",
-  IMAGEM_GERAL: "https://media.discordapp.net/attachments/1494713560440242200/1503029978051248188/Tickets_Portugal_Alfa_Community.png",
-  IMAGEM_RECRUTAMENTO: "https://media.discordapp.net/attachments/1494713560440242200/1503029978802163823/Tickets_Portugal_Alfa_Truckers.png",
-  IMAGEM_REGRAS: "https://media.discordapp.net/attachments/1494713560440242200/1503029979422654606/Regras_Portugal_Alfa_Communitypng.png",
-  EMOJI_BUGS: "🐛",
-  EMOJI_DENUNCIA: "🚨",
-  EMOJI_SUPORTE: "🛠️",
-  EMOJI_CRIADOR: "🎨",
-  EMOJI_RECRUTAMENTO: "📝",
-  EMOJI_AJUDA: "❓",
-  EMOJI_ASSUMIR: "✅",
-  EMOJI_PAINEL: "🛡️",
-  EMOJI_SAIR: "🚪",
-  EMOJI_FECHAR: "🗑️",
-  EMOJI_CALL: "📞",
-  EMOJI_CHAMAR: "🔔",
-  EMOJI_PASSAR: "🔄",
-  EMOJI_ADD: "➕",
-  EMOJI_REMOVE: "➖",
-  EMOJI_STAR: "⭐",
-  EMOJI_RECUSAR: "❌",
-  EMOJI_ACEITAR: "✅",
-  EMOJI_RECRUTADO: "🎉",
-  EMOJI_NAO_RECRUTADO: "😔",
-  EMOJI_FECHAR_DEF: "🔒",
-  EMOJI_AVISO: "⚠️",
-  EMOJI_INFO: "ℹ️",
-  EMOJI_TICKET: "🎫",
-  EMOJI_USER: "👤",
-  EMOJI_STAFF: "👮",
-  EMOJI_TIME: "⏰",
-  EMOJI_CHECK: "✅",
-  EMOJI_CROSS: "❌",
-  EMOJI_SEARCH: "🔍",
-  EMOJI_HELP: "🆘",
-  EMOJI_BACK: "🔙",
-  EMOJI_FORWARD: "🔜",
-  EMOJI_WARNING: "⚠️",
-  EMOJI_SUCCESS: "🎉",
-  EMOJI_ERROR: "💥",
-  EMOJI_LOADING: "⏳",
-  EMOJI_LOCK: "🔒",
-  EMOJI_UNLOCK: "🔓",
-  EMOJI_EDIT: "✏️",
-  EMOJI_DELETE: "🗑️",
-  EMOJI_PIN: "📌",
-  EMOJI_UNPIN: "📍",
-  EMOJI_MUTE: "🔇",
-  EMOJI_DEAF: "🔕",
-  EMOJI_STREAM: "📺",
-  EMOJI_VIDEO: "🎥",
-  EMOJI_SCREEN: "🖥️",
-  EMOJI_CAMERA: "📷",
-  EMOJI_MIC: "🎤",
-  EMOJI_SPEAKER: "🔊",
-  EMOJI_HEADSET: "🎧",
-  EMOJI_GAMEPAD: "🎮",
-  EMOJI_KEYBOARD: "⌨️",
-  EMOJI_MOUSE: "🖱️",
-  EMOJI_MONITOR: "🖥️",
-  EMOJI_PC: "💻",
-  EMOJI_SERVER: "🖥️",
-  EMOJI_CLOUD: "☁️",
-  EMOJI_DATABASE: "🗄️",
-  EMOJI_FILE: "📄",
-  EMOJI_FOLDER: "📁",
-  EMOJI_ZIP: "🗜️",
-  EMOJI_TRASH: "🗑️",
-  EMOJI_RECYCLE: "♻️",
-  EMOJI_BROOM: "🧹",
-  EMOJI_SPARKLES: "✨",
-  EMOJI_FIRE: "🔥",
-  EMOJI_BOMB: "💣",
-  EMOJI_LIGHTNING: "⚡",
-  EMOJI_ROCKET: "🚀",
-  EMOJI_PLANE: "✈️",
-  EMOJI_CAR: "🚗",
-  EMOJI_TRUCK: "🚛",
-  EMOJI_BUS: "🚌",
-  EMOJI_TAXI: "🚕",
-  EMOJI_POLICE: "🚓",
-  EMOJI_AMBULANCE: "🚑",
-  EMOJI_FIRE_TRUCK: "🚒",
-  EMOJI_CONSTRUCTION: "🚧",
-  EMOJI_STOP: "🛑",
-  EMOJI_YIELD: "⚠️",
-  EMOJI_SPEED: "💨",
-  EMOJI_GAS: "⛽",
-  EMOJI_BATTERY: "🔋",
-  EMOJI_PLUG: "🔌",
-  EMOJI_BULB: "💡",
-  EMOJI_FLASHLIGHT: "🔦",
-  EMOJI_CANDLE: "🕯️",
-  EMOJI_LANTERN: "🏮",
-  EMOJI_SUN: "☀️",
-  EMOJI_MOON: "🌙",
-  EMOJI_STAR2: "🌟",
-  EMOJI_CLOUD2: "☁️",
-  EMOJI_RAIN: "🌧️",
-  EMOJI_SNOW: "🌨️",
-  EMOJI_WIND: "💨",
-  EMOJI_FOG: "🌫️",
-  EMOJI_RAINBOW: "🌈",
-  EMOJI_UMBRELLA: "☂️",
-  EMOJI_SNOWMAN: "☃️",
-  EMOJI_COMET: "☄️",
-  EMOJI_FIREWORKS: "🎆",
-  EMOJI_SPARKLER: "🎇",
-  EMOJI_BALLOON: "🎈",
-  EMOJI_PARTY: "🎉",
-  EMOJI_CONFETTI: "🎊",
-  EMOJI_GIFT: "🎁",
-  EMOJI_TROPHY: "🏆",
-  EMOJI_MEDAL: "🥇",
-  EMOJI_MEDAL2: "🥈",
-  EMOJI_MEDAL3: "🥉",
-  EMOJI_CROWN: "👑",
-  EMOJI_GEM: "💎",
-  EMOJI_RING: "💍",
-  EMOJI_HEART: "❤️",
-  EMOJI_HEART2: "💛",
-  EMOJI_HEART3: "💚",
-  EMOJI_HEART4: "💙",
-  EMOJI_HEART5: "💜",
-  EMOJI_HEART6: "🖤",
-  EMOJI_HEART7: "🤍",
-  EMOJI_HEART8: "🤎",
-  EMOJI_HEART9: "💔",
-  EMOJI_HEART10: "❣️",
-  EMOJI_HEART11: "💕",
-  EMOJI_HEART12: "💞",
-  EMOJI_HEART13: "💓",
-  EMOJI_HEART14: "💗",
-  EMOJI_HEART15: "💖",
-  EMOJI_HEART16: "💘",
-  EMOJI_HEART17: "💝",
-  EMOJI_HEART18: "💟",
-  EMOJI_HEART19: "❤️‍🔥",
-  EMOJI_HEART20: "❤️‍🩹",
-  EMOJI_HEART21: "💌",
-  EMOJI_HEART22: "💋",
-  EMOJI_HEART23: "🫀",
-  EMOJI_HEART24: "🫁",
-  EMOJI_HEART25: "🧠",
-  EMOJI_HEART26: "🦷",
-  EMOJI_HEART27: "🦴",
-  EMOJI_HEART28: "👀",
-  EMOJI_HEART29: "👁️",
-  EMOJI_HEART30: "👅",
-  EMOJI_HEART31: "👄",
-  EMOJI_HEART32: "🫦",
-  EMOJI_HEART33: "💅",
-  EMOJI_HEART34: "🤳",
-  EMOJI_HEART35: "💪",
-  EMOJI_HEART36: "🦾",
-  EMOJI_HEART37: "🦿",
-  EMOJI_HEART38: "🦵",
-  EMOJI_HEART39: "🦶",
-  EMOJI_HEART40: "👂",
-  EMOJI_HEART41: "🦻",
-  EMOJI_HEART42: "👃",
-  EMOJI_HEART43: "🧠",
-  EMOJI_HEART44: "🫀",
-  EMOJI_HEART45: "🫁",
-  EMOJI_HEART46: "🦷",
-  EMOJI_HEART47: "🦴",
-  EMOJI_HEART48: "👀",
-  EMOJI_HEART49: "👁️",
-  EMOJI_HEART50: "👅",
-  EMOJI_HEART51: "👄",
-  EMOJI_HEART52: "🫦",
-  EMOJI_HEART53: "💅",
-  EMOJI_HEART54: "🤳",
-  EMOJI_HEART55: "💪",
-  EMOJI_HEART56: "🦾",
-  EMOJI_HEART57: "🦿",
-  EMOJI_HEART58: "🦵",
-  EMOJI_HEART59: "🦶",
-  EMOJI_HEART60: "👂",
-  EMOJI_HEART61: "🦻",
-  EMOJI_HEART62: "👃",
-  EMOJI_HEART63: "🧠",
-  EMOJI_HEART64: "🫀",
-  EMOJI_HEART65: "🫁",
-  EMOJI_HEART66: "🦷",
-  EMOJI_HEART67: "🦴",
-  EMOJI_HEART68: "👀",
-  EMOJI_HEART69: "👁️",
-  EMOJI_HEART70: "👅",
-  EMOJI_HEART71: "👄",
-  EMOJI_HEART72: "🫦",
-  EMOJI_HEART73: "💅",
-  EMOJI_HEART74: "🤳",
-  EMOJI_HEART75: "💪",
-  EMOJI_HEART76: "🦾",
-  EMOJI_HEART77: "🦿",
-  EMOJI_HEART78: "🦵",
-  EMOJI_HEART79: "🦶",
-  EMOJI_HEART80: "👂",
-  EMOJI_HEART81: "🦻",
-  EMOJI_HEART82: "👃",
-  EMOJI_HEART83: "🧠",
-  EMOJI_HEART84: "🫀",
-  EMOJI_HEART85: "🫁",
-  EMOJI_HEART86: "🦷",
-  EMOJI_HEART87: "🦴",
-  EMOJI_HEART88: "👀",
-  EMOJI_HEART89: "👁️",
-  EMOJI_HEART90: "👅",
-  EMOJI_HEART91: "👄",
-  EMOJI_HEART92: "🫦",
-  EMOJI_HEART93: "💅",
-  EMOJI_HEART94: "🤳",
-  EMOJI_HEART95: "💪",
-  EMOJI_HEART96: "🦾",
-  EMOJI_HEART97: "🦿",
-  EMOJI_HEART98: "🦵",
-  EMOJI_HEART99: "🦶",
-  EMOJI_HEART100: "👂",
-  // === EMOJIS ADICIONAIS QUE FALTAVAM ===
-  EMOJI_QUESTION: "❓",
-};
+import {
+  Client,
+  GatewayIntentBits,
+  Partials,
+  Events,
+} from "discord.js";
+import http from 'node:http';
+import { connectDB, db } from "./src/utils/db.js";
+import { handleReady } from "./src/events/ready.js";
+import { handleGuildMemberAdd } from "./src/events/guildMemberAdd.js";
+import { handleGuildMemberRemove } from "./src/events/guildMemberRemove.js";
+import { handleInteractionCreate } from "./src/events/interactionCreate.js";
+import { handleMessageCreate } from "./src/events/messageCreate.js";
+import { handleMessageDelete } from "./src/events/messageDelete.js";
+import { handleMessageUpdate } from "./src/events/messageUpdate.js";
+import { setExternalClient } from "./src/services/externalLogs.js";
 
-export const ASSISTANT_CONFIG = {
-  EXPERT_USER_ID: "849132183112384573",
-  ALLOWED_CHANNELS: ["1465865626286428355", "1326963454397124649"],
-  TRIGGER_KEYWORDS: [
-    "ajuda", "como", "configurar", "instalar", "ets2", "truck",
-    "mod", "vr", "grafico", "problema", "erro", "nao consigo",
-    "tutorial", "video", "link", "download", "trucky", "ets2la",
-    "servidor", "entrar", "comboio", "recrutamento", "juntar", "pat"
+// ==================== VALIDAR ENV VARS ====================
+const requiredEnv = ["TOKEN", "CLIENT_ID"];
+const missing = requiredEnv.filter(e => !process.env[e]);
+if (missing.length > 0) {
+  console.error("Variaveis em falta:", missing.join(", "));
+  process.exit(1);
+}
+
+// ==================== CLIENT SETUP ====================
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.GuildPresences,
+    GatewayIntentBits.GuildVoiceStates,
   ],
-  HISTORY_LIMIT: 200,
-  COOLDOWN: 10,
-  SERPER_API_KEY: process.env.SERPER_API_KEY,
-};
+  partials: [Partials.Channel, Partials.Message, Partials.GuildMember],
+});
+
+// ==================== LOAD DATABASE (MongoDB ou JSON) ====================
+await connectDB();
+
+// ==================== EVENTS ====================
+client.once(Events.ClientReady, () => {
+  handleReady(client);
+  setExternalClient(client);
+});
+
+client.on(Events.GuildMemberAdd, (member) => handleGuildMemberAdd(member, client));
+
+client.on(Events.GuildMemberRemove, (member) => handleGuildMemberRemove(member, client));
+
+client.on(Events.InteractionCreate, (interaction) => handleInteractionCreate(interaction, client));
+
+client.on(Events.MessageCreate, (message) => handleMessageCreate(message, client));
+
+client.on(Events.MessageDelete, (message) => handleMessageDelete(message, client));
+
+client.on(Events.MessageUpdate, (oldMessage, newMessage) => handleMessageUpdate(oldMessage, newMessage, client));
+
+// Voice state updates for external logging
+client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+  if (oldState.channelId === newState.channelId) return;
+  try {
+    const { logExternalVoiceJoin, logExternalVoiceLeave } = await import("./src/services/externalLogs.js");
+    if (newState.channel) logExternalVoiceJoin(newState.member, newState.channel);
+    if (oldState.channel) logExternalVoiceLeave(oldState.member, oldState.channel);
+  } catch (e) {}
+});
+
+// Channel events for external logging
+client.on(Events.ChannelCreate, async (channel) => {
+  try {
+    const { logExternalChannelCreate } = await import("./src/services/externalLogs.js");
+    logExternalChannelCreate(channel);
+  } catch (e) {}
+});
+
+client.on(Events.ChannelDelete, async (channel) => {
+  try {
+    const { logExternalChannelDelete } = await import("./src/services/externalLogs.js");
+    logExternalChannelDelete(channel);
+  } catch (e) {}
+});
+
+// Role events for external logging
+client.on(Events.GuildRoleCreate, async (role) => {
+  try {
+    const { logExternalRoleCreate } = await import("./src/services/externalLogs.js");
+    logExternalRoleCreate(role);
+  } catch (e) {}
+});
+
+client.on(Events.GuildRoleDelete, async (role) => {
+  try {
+    const { logExternalRoleDelete } = await import("./src/services/externalLogs.js");
+    logExternalRoleDelete(role);
+  } catch (e) {}
+});
+
+// Member update for external logging
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+  try {
+    const { logExternalMemberUpdate } = await import("./src/services/externalLogs.js");
+    logExternalMemberUpdate(oldMember, newMember);
+  } catch (e) {}
+});
+
+// Ban/Unban for external logging
+client.on(Events.GuildBanAdd, async (ban) => {
+  try {
+    const { logExternalMemberBan } = await import("./src/services/externalLogs.js");
+    logExternalMemberBan(ban);
+  } catch (e) {}
+});
+
+client.on(Events.GuildBanRemove, async (ban) => {
+  try {
+    const { logExternalMemberUnban } = await import("./src/services/externalLogs.js");
+    logExternalMemberUnban(ban.user, ban.guild);
+  } catch (e) {}
+});
+
+// ==================== ERROR HANDLING ====================
+client.on(Events.Error, (error) => {
+  console.error("Erro do cliente Discord:", error);
+});
+
+process.on('unhandledRejection', (error) => {
+  console.error("Unhandled Rejection:", error);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error("Uncaught Exception:", error);
+});
+
+// ==================== WEB SERVER (Render) ====================
+http.createServer((req, res) => {
+  const ticketsAbertos = Object.values(db.tickets || {}).filter(t => !t.closed).length;
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.write("PAC Bot Online!\n");
+  res.write("Uptime: " + Math.floor(process.uptime()) + "s\n");
+  res.write("Tickets abertos: " + ticketsAbertos + "\n");
+  res.end();
+}).listen(process.env.PORT || 3000);
+
+// ==================== LOGIN ====================
+client.login(process.env.TOKEN);
