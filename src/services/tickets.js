@@ -21,6 +21,10 @@ const REGRAS_RECRUTAMENTO = [
 ];
 
 export async function createTicket(interaction, type, label, client) {
+  // DEFER IMEDIATO para evitar timeout no Render com cold start
+  // A interacao do dropdown ja vem deferida do interactionCreate.js
+  // mas fazemos safeEditReply em vez de reply direto
+
   const isRecrutamentoGuild = interaction.guildId === CONFIG.GUILD_ID_RECRUTAMENTO;
   const targetGuildId = isRecrutamentoGuild ? CONFIG.GUILD_ID_RECRUTAMENTO : CONFIG.GUILD_ID;
 
@@ -93,7 +97,6 @@ export async function handleTruckyVerification(interaction, client) {
   const respostasNegativas = ["não", "nao", "n", "no", "false", "0", "nao tenho", "não tenho"];
 
   if (respostasNegativas.includes(temTrucky)) {
-    // Resposta negativa → mostrar instruções
     const embed = new EmbedBuilder()
       .setTitle(`${CONFIG.EMOJI_WARNING} Trucky App - Instalação Necessária`)
       .setDescription(
@@ -116,7 +119,6 @@ export async function handleTruckyVerification(interaction, client) {
   }
 
   if (!respostasValidas.includes(temTrucky)) {
-    // Resposta inválida → pedir para tentar novamente
     const embed = new EmbedBuilder()
       .setTitle(`${CONFIG.EMOJI_WARNING} Resposta Inválida`)
       .setDescription(
@@ -133,7 +135,6 @@ export async function handleTruckyVerification(interaction, client) {
     return;
   }
 
-  // Se chegou aqui, respondeu "Sim" → mostrar regras
   await mostrarRegrasRecrutamento(interaction, client, nomeTrucky);
 }
 
@@ -298,41 +299,17 @@ async function criarTicketNormal(interaction, type, label, client, guild, user) 
     return safeEditReply(interaction, { content: `${CONFIG.EMOJI_TIME} Espera um pouco antes de abrir outro ticket (3 segundos).`, flags: 64 });
   }
 
-  // Verificar se o utilizador já tem um ticket aberto (na DB ou no Discord)
   const existingTicket = Object.values(db.tickets).find((t) => t.userId === user.id && !t.closed);
   if (existingTicket) {
     const existingChannel = await guild.channels.fetch(existingTicket.channelId).catch(() => null);
     if (existingChannel) {
       return safeEditReply(interaction, { content: `${CONFIG.EMOJI_WARNING} Já tens um ticket aberto!`, flags: 64 });
     } else {
-      // Canal foi apagado mas está na DB como aberto → marcar como fechado
       existingTicket.closed = true;
       existingTicket.closedAt = new Date().toISOString();
       existingTicket.closedBy = "Sistema (Canal Apagado)";
       existingTicket.closedByName = "Sistema";
       await saveDB();
-    }
-  }
-
-  // Também verificar no Discord se há algum canal de ticket deste utilizador que não está na DB
-  const userTicketsInDiscord = guild.channels.cache.filter(ch => 
-    ch.name.includes(`ticket-${user.username.toLowerCase().replace(/[^a-z0-9-]/g, "")}`) ||
-    ch.name.includes(`rec-${user.username.toLowerCase().replace(/[^a-z0-9-]/g, "")}`) ||
-    ch.name.includes(`bug-${user.username.toLowerCase().replace(/[^a-z0-9-]/g, "")}`) ||
-    ch.name.includes(`den-${user.username.toLowerCase().replace(/[^a-z0-9-]/g, "")}`) ||
-    ch.name.includes(`sup-${user.username.toLowerCase().replace(/[^a-z0-9-]/g, "")}`) ||
-    ch.name.includes(`cri-${user.username.toLowerCase().replace(/[^a-z0-9-]/g, "")}`) ||
-    ch.name.includes(`ajd-${user.username.toLowerCase().replace(/[^a-z0-9-]/g, "")}`)
-  );
-
-  for (const [channelId, ch] of userTicketsInDiscord) {
-    // Verificar se este canal já está na DB
-    const inDb = Object.values(db.tickets).find(t => t.channelId === channelId);
-    if (!inDb) {
-      // Canal existe no Discord mas não na DB → adicionar à DB como fechado (ou aberto se quiseres)
-      // Por segurança, vamos assumir que é um ticket antigo e deixar criar novo
-      // Mas avisar o utilizador
-      console.log(`Canal ${ch.name} existe no Discord mas não na DB. Permitir criar novo ticket.`);
     }
   }
 
@@ -367,71 +344,75 @@ async function criarTicketNormal(interaction, type, label, client, guild, user) 
 
   if (categoria) channelData.parent = categoria;
 
-  const channel = await guild.channels.create(channelData);
-  const ticketId = Date.now().toString();
+  try {
+    const channel = await guild.channels.create(channelData);
+    const ticketId = Date.now().toString();
 
-  db.tickets[ticketId] = {
-    id: ticketId,
-    channelId: channel.id,
-    userId: user.id,
-    username: user.username,
-    type: type,
-    label: label,
-    openedAt: new Date().toISOString(),
-    closedAt: null,
-    claimedBy: null,
-    claimedByName: null,
-    closedBy: null,
-    closedByName: null,
-    callActive: false,
-    callChannelId: null,
-    rating: null,
-    panelMessageId: null,
-    recrutado: null,
-    fotoNome: null,
-    guildId: guild.id,
-  };
+    db.tickets[ticketId] = {
+      id: ticketId,
+      channelId: channel.id,
+      userId: user.id,
+      username: user.username,
+      type: type,
+      label: label,
+      openedAt: new Date().toISOString(),
+      closedAt: null,
+      claimedBy: null,
+      claimedByName: null,
+      closedBy: null,
+      closedByName: null,
+      callActive: false,
+      callChannelId: null,
+      rating: null,
+      panelMessageId: null,
+      recrutado: null,
+      fotoNome: null,
+      guildId: guild.id,
+    };
 
-  await saveDB();
+    await saveDB();
 
-  // Determinar se é Community ou Truckers baseado na categoria
-  const isCommunity = categoria === CONFIG.CATEGORIA_TICKETS_GERAL;
-  const serverName = isCommunity ? "Portugal Alfa Community" : "Portugal Alfa Truckers";
+    const isCommunity = categoria === CONFIG.CATEGORIA_TICKETS_GERAL;
+    const serverName = isCommunity ? "Portugal Alfa Community" : "Portugal Alfa Truckers";
 
-  const embed = new EmbedBuilder()
-    .setTitle(`${CONFIG.EMOJI_TICKET} Sistema de Ticket | ${serverName}`)
-    .setDescription(
-      `${CONFIG.EMOJI_INFO} Motivo: ${label}\n` +
-      `${CONFIG.EMOJI_STAFF} Assumido: Aguardando staff...\n\n` +
-      `${CONFIG.EMOJI_USER} Olá <@${user.id}>, o teu ticket foi criado com sucesso!\n` +
-      `Um membro da staff irá assumir o teu ticket brevemente.\n\n` +
-      `${CONFIG.EMOJI_WARNING} Lembre-se: Qualquer descumprimento das regras levará ao encerramento do ticket sem aviso prévio!`
-    )
-    .setColor(0x262af1)
-    .setFooter({ text: `Ticket #${ticketId} | ${serverName}` })
-    .setTimestamp();
+    const embed = new EmbedBuilder()
+      .setTitle(`${CONFIG.EMOJI_TICKET} Sistema de Ticket | ${serverName}`)
+      .setDescription(
+        `${CONFIG.EMOJI_INFO} Motivo: ${label}\n` +
+        `${CONFIG.EMOJI_STAFF} Assumido: Aguardando staff...\n\n` +
+        `${CONFIG.EMOJI_USER} Olá <@${user.id}>, o teu ticket foi criado com sucesso!\n` +
+        `Um membro da staff irá assumir o teu ticket brevemente.\n\n` +
+        `${CONFIG.EMOJI_WARNING} Lembre-se: Qualquer descumprimento das regras levará ao encerramento do ticket sem aviso prévio!`
+      )
+      .setColor(0x262af1)
+      .setFooter({ text: `Ticket #${ticketId} | ${serverName}` })
+      .setTimestamp();
 
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`assumir_${ticketId}`).setLabel(`${CONFIG.EMOJI_ASSUMIR} Assumir`).setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId(`painel_membro_${ticketId}`).setLabel(`${CONFIG.EMOJI_PAINEL} Painel Membro`).setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(`sair_${ticketId}`).setLabel(`${CONFIG.EMOJI_SAIR} Sair`).setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`deletar_${ticketId}`).setLabel(`${CONFIG.EMOJI_FECHAR} Fechar`).setStyle(ButtonStyle.Danger),
-  );
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`assumir_${ticketId}`).setLabel(`${CONFIG.EMOJI_ASSUMIR} Assumir`).setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`painel_membro_${ticketId}`).setLabel(`${CONFIG.EMOJI_PAINEL} Painel Membro`).setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`sair_${ticketId}`).setLabel(`${CONFIG.EMOJI_SAIR} Sair`).setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`deletar_${ticketId}`).setLabel(`${CONFIG.EMOJI_FECHAR} Fechar`).setStyle(ButtonStyle.Danger),
+    );
 
-  const panelMsg = await channel.send({
-    content: `${CONFIG.EMOJI_USER} <@${user.id}>`,
-    embeds: [embed],
-    components: [row]
-  });
-  db.tickets[ticketId].panelMessageId = panelMsg.id;
-  await saveDB();
-  await sendLog(ticketId, "open", client);
+    const panelMsg = await channel.send({
+      content: `${CONFIG.EMOJI_USER} <@${user.id}>`,
+      embeds: [embed],
+      components: [row]
+    });
+    db.tickets[ticketId].panelMessageId = panelMsg.id;
+    await saveDB();
+    await sendLog(ticketId, "open", client);
 
-  const rowIrTicket = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TICKET} Ir para o Ticket`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${guild.id}/${channel.id}`),
-  );
+    const rowIrTicket = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TICKET} Ir para o Ticket`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${guild.id}/${channel.id}`),
+    );
 
-  await safeEditReply(interaction, { content: `${CONFIG.EMOJI_SUCCESS} O teu ticket foi criado com sucesso!`, components: [rowIrTicket], flags: 64 });
+    await safeEditReply(interaction, { content: `${CONFIG.EMOJI_SUCCESS} O teu ticket foi criado com sucesso!`, components: [rowIrTicket], flags: 64 });
+  } catch (error) {
+    console.error("Erro ao criar ticket normal:", error);
+    await safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Erro ao criar o ticket. Contacta a staff.`, flags: 64 });
+  }
 }
 
 export async function updateTicketEmbed(channel, ticketId) {
@@ -442,7 +423,6 @@ export async function updateTicketEmbed(channel, ticketId) {
     const panelMsg = await channel.messages.fetch(ticket.panelMessageId);
     if (!panelMsg) return;
 
-    // Determinar se é Community ou Truckers baseado no tipo de ticket e categoria
     const isCommunity = ticket.type !== "recrutamento" && ticket.type !== "ajuda";
     const serverName = isCommunity ? "Portugal Alfa Community" : "Portugal Alfa Truckers";
 
@@ -452,7 +432,6 @@ export async function updateTicketEmbed(channel, ticketId) {
 
     let description;
     if (ticket.claimedBy) {
-      // DEPOIS de assumir - mensagem que faz SENTIDO
       description =
         `${CONFIG.EMOJI_INFO} Motivo: ${ticket.label}\n` +
         `${CONFIG.EMOJI_STAFF} Assumido por: ${claimedText}\n\n` +
@@ -461,7 +440,6 @@ export async function updateTicketEmbed(channel, ticketId) {
         `Podes usar o **Painel Membro** para chamar staff para uma call.\n\n` +
         `${CONFIG.EMOJI_WARNING} Lembre-se: Qualquer descumprimento das regras levará ao encerramento do ticket sem aviso prévio!`;
     } else {
-      // ANTES de assumir - mensagem original
       description =
         `${CONFIG.EMOJI_INFO} Motivo: ${ticket.label}\n` +
         `${CONFIG.EMOJI_STAFF} Assumido: ${claimedText}\n\n` +
@@ -473,7 +451,7 @@ export async function updateTicketEmbed(channel, ticketId) {
     const embed = new EmbedBuilder()
       .setTitle(`${CONFIG.EMOJI_TICKET} Sistema de Ticket | ${serverName}`)
       .setDescription(description)
-      .setColor(0x262af1) // Azul sempre (não muda de cor)
+      .setColor(0x262af1)
       .setFooter({ text: `Ticket #${ticketId} | ${serverName}` })
       .setTimestamp();
 
