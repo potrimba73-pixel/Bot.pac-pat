@@ -6,7 +6,7 @@ import {
 import { CONFIG } from "../config/index.js";
 import { db, saveDB } from "../utils/db.js";
 import { safeDeferReply, safeEditReply } from "../utils/safeReply.js";
-import { updateTicketEmbed, criarTicketRecrutamento, handleTruckyVerification } from "../services/tickets.js";
+import { updateTicketEmbed, criarTicketRecrutamento, handleTruckyVerification, createTicket } from "../services/tickets.js";
 import { sendPainelChamada, criarCall, apagarCall, chamarMembro } from "../services/calls.js";
 import { sendLog, enviarLogAvaliacao, enviarAvaliacaoDM } from "../services/logs.js";
 import { handleAjudaCommand, handleAjudaProcurar, handleAjudaModal, assistantMemory } from "../services/ajuda.js";
@@ -18,17 +18,19 @@ const painelMembroCooldown = new Map();
 export async function handleInteractionCreate(interaction, client) {
   // ========== MODAL SUBMIT ==========
   if (interaction.isModalSubmit()) {
+    // Defere imediatamente para evitar timeout
+    const deferred = await safeDeferReply(interaction, { flags: 64 });
+    if (!deferred && interaction.replied) return;
+
     if (interaction.customId.startsWith("modal_avaliar_")) {
       const parts = interaction.customId.split("_");
       const ticketId = parts[2];
       const estrelas = parseInt(parts[3]);
       const ticket = db.tickets[ticketId];
       if (!ticket) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Ticket nao encontrado.`, flags: 64 });
+        return safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Ticket nao encontrado.`, flags: 64 });
       }
       const mensagem = interaction.fields.getTextInputValue("mensagem_avaliacao") || "";
-      const deferred = await safeDeferReply(interaction, { flags: 64 });
-      if (!deferred) return;
       await enviarLogAvaliacao(ticket, estrelas, mensagem, interaction.user, client);
       if (!db.avaliacoes[ticketId]) {
         db.avaliacoes[ticketId] = [];
@@ -55,12 +57,10 @@ export async function handleInteractionCreate(interaction, client) {
       const ticketId = interaction.customId.split("_")[3];
       const ticket = db.tickets[ticketId];
       if (!ticket) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Ticket nao encontrado.`, flags: 64 });
+        return safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Ticket nao encontrado.`, flags: 64 });
       }
       const staffId = interaction.fields.getTextInputValue("staff_id");
       const nota = interaction.fields.getTextInputValue("nota_staff") || "Sem nota adicional";
-
-      await interaction.deferReply({ flags: 64 });
 
       try {
         const staffUser = await client.users.fetch(staffId).catch(() => null);
@@ -221,7 +221,6 @@ export async function handleInteractionCreate(interaction, client) {
 
       const messages = await interaction.channel.messages.fetch({ limit: quantidade });
 
-      // Gerar TXT transcript ANTES de apagar
       let txtContent = `TRANSCRIPT - MENSAGENS APAGADAS\n`;
       txtContent += `================================\n`;
       txtContent += `Canal: #${interaction.channel.name}\n`;
@@ -241,7 +240,6 @@ export async function handleInteractionCreate(interaction, client) {
         txtContent += `\n`;
       }
 
-      // Gerar HTML transcript
       let htmlAttachment = null;
       try {
         htmlAttachment = await gerarTranscript(interaction.channel, `limpo-${interaction.channel.id}-${Date.now()}`);
@@ -249,14 +247,12 @@ export async function handleInteractionCreate(interaction, client) {
         console.error("Erro ao gerar HTML transcript:", e);
       }
 
-      // Apagar mensagens
       for (const msg of messages.values()) {
         if (msg.deletable) {
           await msg.delete().catch(() => {});
         }
       }
 
-      // Enviar ficheiros no canal
       const files = [];
       files.push({ attachment: Buffer.from(txtContent, "utf-8"), name: `limpo-${interaction.channel.name}-${Date.now()}.txt` });
       if (htmlAttachment) {
@@ -482,6 +478,10 @@ export async function handleInteractionCreate(interaction, client) {
 
   // ========== SELECT MENUS ==========
   if (interaction.isStringSelectMenu()) {
+    // DEFER IMEDIATO para evitar timeout no dropdown de tickets
+    const deferred = await safeDeferReply(interaction, { flags: 64 });
+    if (!deferred && interaction.replied) return;
+
     if (interaction.customId === "ticket_geral") {
       const type = interaction.values[0];
       const labels = {
@@ -490,7 +490,6 @@ export async function handleInteractionCreate(interaction, client) {
         suporte: `${CONFIG.EMOJI_SUPORTE} Suporte`,
         criador: `${CONFIG.EMOJI_CRIADOR} Criador De Conteudo`,
       };
-      const { createTicket } = await import("../services/tickets.js");
       await createTicket(interaction, type, labels[type], client);
     } else if (interaction.customId === "ticket_recrutamento") {
       const type = interaction.values[0];
@@ -498,19 +497,18 @@ export async function handleInteractionCreate(interaction, client) {
         recrutamento: `${CONFIG.EMOJI_RECRUTAMENTO} Recrutamento PAT`,
         ajuda: `${CONFIG.EMOJI_AJUDA} Pedir ajuda`,
       };
-      const { createTicket } = await import("../services/tickets.js");
       await createTicket(interaction, type, labels[type], client);
     } else if (interaction.customId.startsWith("painelmembro_select_")) {
       const ticketId = interaction.customId.split("_")[2];
       const ticket = db.tickets[ticketId];
       if (!ticket) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Ticket nao encontrado.`, flags: 64 });
+        return safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Ticket nao encontrado.`, flags: 64 });
       }
 
       const staffId = interaction.values[0];
       const staffUser = await client.users.fetch(staffId).catch(() => null);
       if (!staffUser) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Staff nao encontrada.`, flags: 64 });
+        return safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Staff nao encontrada.`, flags: 64 });
       }
 
       const now = Date.now();
@@ -519,7 +517,7 @@ export async function handleInteractionCreate(interaction, client) {
         const remaining = Math.ceil((300000 - (now - lastUse)) / 1000);
         const minutes = Math.floor(remaining / 60);
         const seconds = remaining % 60;
-        return interaction.reply({
+        return safeEditReply(interaction, {
           content: `${CONFIG.EMOJI_TIME} Aguarda ${minutes}m ${seconds}s antes de chamar a staff novamente.`,
           flags: 64
         });
@@ -562,6 +560,7 @@ export async function handleInteractionCreate(interaction, client) {
   if (interaction.isButton()) {
     const customId = interaction.customId;
 
+    // Botoes que NAO precisam de defer (resposta rapida)
     if (customId === "ajuda_procurar") {
       await handleAjudaProcurar(interaction);
       return;
@@ -594,6 +593,8 @@ export async function handleInteractionCreate(interaction, client) {
       await interaction.update({ content: `${CONFIG.EMOJI_CROSS} Pesquisa cancelada.`, components: [] });
       return;
     }
+
+    // Botoes de regras de recrutamento - deferUpdate e validacao
     if (customId.startsWith("aceitar_regras_rec_")) {
       await interaction.deferUpdate();
       const parts = customId.split("_");
@@ -617,6 +618,8 @@ export async function handleInteractionCreate(interaction, client) {
       });
       return;
     }
+
+    // Aceitar regras geral
     if (customId === "aceitar_regras") {
       const deferred = await safeDeferReply(interaction, { flags: 64 });
       if (!deferred) return;
@@ -665,13 +668,14 @@ export async function handleInteractionCreate(interaction, client) {
       }
       return;
     }
+
+    // Sair do ticket
     if (customId.startsWith("sair_")) {
       const deferred = await safeDeferReply(interaction, { flags: 64 });
       if (!deferred) return;
       const ticketId = customId.split("_")[1];
       let ticket = db.tickets[ticketId];
 
-      // Se não está na DB, tentar recuperar
       if (!ticket) {
         const channel = interaction.channel;
         const messages = await channel.messages.fetch({ limit: 5 }).catch(() => null);
@@ -722,15 +726,15 @@ export async function handleInteractionCreate(interaction, client) {
       }
       return;
     }
+
+    // Assumir ticket
     if (customId.startsWith("assumir_")) {
       const deferred = await safeDeferReply(interaction, { flags: 64 });
       if (!deferred) return;
       const ticketId = customId.split("_")[1];
       let ticket = db.tickets[ticketId];
 
-      // Se ticket não existe na DB, pode ser um ticket antigo → criar entrada na DB
       if (!ticket) {
-        // Tentar recuperar info do canal
         const channel = interaction.channel;
         const messages = await channel.messages.fetch({ limit: 5 }).catch(() => null);
         let userId = null;
@@ -752,7 +756,6 @@ export async function handleInteractionCreate(interaction, client) {
           }
         }
 
-        // Criar entrada na DB para este ticket antigo
         ticket = {
           id: ticketId,
           channelId: channel.id,
@@ -776,7 +779,7 @@ export async function handleInteractionCreate(interaction, client) {
         };
         db.tickets[ticketId] = ticket;
         await saveDB();
-        console.log(`Ticket antigo ${ticketId} recuperado e adicionado à DB.`);
+        console.log(`Ticket antigo ${ticketId} recuperado e adicionado a DB.`);
       }
 
       const member = interaction.member;
@@ -797,6 +800,8 @@ export async function handleInteractionCreate(interaction, client) {
       await safeEditReply(interaction, { content: `${CONFIG.EMOJI_SUCCESS} Ticket assumido com sucesso!`, flags: 64 });
       return;
     }
+
+    // Painel staff
     if (customId.startsWith("painel_staff_")) {
       await interaction.reply({
         content: `${CONFIG.EMOJI_INFO} Usa o comando **/painelstaff** para aceder ao painel de staff.`,
@@ -804,6 +809,8 @@ export async function handleInteractionCreate(interaction, client) {
       });
       return;
     }
+
+    // Painel membro
     if (customId.startsWith("painel_membro_")) {
       const ticketId = customId.split("_")[2];
       const ticket = db.tickets[ticketId];
@@ -859,11 +866,12 @@ export async function handleInteractionCreate(interaction, client) {
       });
       return;
     }
+
+    // Deletar/fechar ticket
     if (customId.startsWith("deletar_")) {
       const ticketId = customId.split("_")[1];
       let ticket = db.tickets[ticketId];
 
-      // Se ticket não existe na DB, pode ser um ticket antigo → criar entrada na DB
       if (!ticket) {
         const channel = interaction.channel;
         const messages = await channel.messages.fetch({ limit: 5 }).catch(() => null);
@@ -982,6 +990,8 @@ export async function handleInteractionCreate(interaction, client) {
       }, 10000);
       return;
     }
+
+    // Avaliar
     if (customId.startsWith("avaliar_")) {
       const parts = customId.split("_");
       const estrelas = parseInt(parts[1]);
@@ -1008,6 +1018,8 @@ export async function handleInteractionCreate(interaction, client) {
       await interaction.showModal(modal);
       return;
     }
+
+    // Recrutado sim
     if (customId.startsWith("recrutado_sim_")) {
       await interaction.deferUpdate();
       const ticketId = customId.split("_")[2];
@@ -1042,6 +1054,8 @@ export async function handleInteractionCreate(interaction, client) {
       }, 10000);
       return;
     }
+
+    // Recrutado nao
     if (customId.startsWith("recrutado_nao_")) {
       await interaction.deferUpdate();
       const ticketId = customId.split("_")[2];
@@ -1072,6 +1086,8 @@ export async function handleInteractionCreate(interaction, client) {
       }, 10000);
       return;
     }
+
+    // Fechar definitivo
     if (customId.startsWith("fechar_definitivo_")) {
       const ticketId = customId.split("_")[2];
       const ticket = db.tickets[ticketId];
@@ -1107,6 +1123,8 @@ export async function handleInteractionCreate(interaction, client) {
       }, 10000);
       return;
     }
+
+    // Criar call
     if (customId.startsWith("criar_call_")) {
       const deferred = await safeDeferReply(interaction, { flags: 64 });
       if (!deferred) return;
@@ -1114,6 +1132,8 @@ export async function handleInteractionCreate(interaction, client) {
       await criarCall(interaction, ticketId, client);
       return;
     }
+
+    // Apagar call
     if (customId.startsWith("apagar_call_")) {
       const deferred = await safeDeferReply(interaction, { flags: 64 });
       if (!deferred) return;
@@ -1121,6 +1141,8 @@ export async function handleInteractionCreate(interaction, client) {
       await apagarCall(interaction, ticketId, client);
       return;
     }
+
+    // Chamar membro
     if (customId.startsWith("chamar_membro_")) {
       const deferred = await safeDeferReply(interaction, { flags: 64 });
       if (!deferred) return;
@@ -1128,6 +1150,8 @@ export async function handleInteractionCreate(interaction, client) {
       await chamarMembro(interaction, ticketId, client);
       return;
     }
+
+    // Aceitar assumo
     if (customId.startsWith("aceitar_assumo_")) {
       await interaction.deferUpdate();
       const parts = customId.split("_");
@@ -1160,6 +1184,8 @@ export async function handleInteractionCreate(interaction, client) {
       await interaction.editReply({ content: `${CONFIG.EMOJI_SUCCESS} Passaste o controlo do ticket para ${ticket.claimedByName}.`, components: [] });
       return;
     }
+
+    // Recusar assumo
     if (customId.startsWith("recusar_assumo_")) {
       await interaction.deferUpdate();
       const parts = customId.split("_");
@@ -1176,6 +1202,8 @@ export async function handleInteractionCreate(interaction, client) {
       await interaction.editReply({ content: `${CONFIG.EMOJI_INFO} Recusaste passar o controlo. O ticket continua contigo.`, components: [] });
       return;
     }
+
+    // Passar ticket
     if (customId.startsWith("passar_ticket_")) {
       const deferred = await safeDeferReply(interaction, { flags: 64 });
       if (!deferred) return;
@@ -1190,6 +1218,8 @@ export async function handleInteractionCreate(interaction, client) {
       await safeEditReply(interaction, { content: `${CONFIG.EMOJI_INFO} Usa o comando /passar @staff para passar o controlo para outro membro da staff.`, flags: 64 });
       return;
     }
+
+    // Add user
     if (customId.startsWith("add_user_")) {
       const ticketId = customId.split("_")[2];
       const ticket = db.tickets[ticketId];
@@ -1197,6 +1227,8 @@ export async function handleInteractionCreate(interaction, client) {
       await interaction.reply({ content: `${CONFIG.EMOJI_INFO} Para adicionar um usuario, menciona-o neste canal e um staff pode adicionar manualmente nas permissoes.`, flags: 64 });
       return;
     }
+
+    // Remove user
     if (customId.startsWith("remove_user_")) {
       const ticketId = customId.split("_")[2];
       const ticket = db.tickets[ticketId];
