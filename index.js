@@ -35,12 +35,8 @@ const client = new Client({
     GatewayIntentBits.GuildVoiceStates,
   ],
   partials: [Partials.Channel, Partials.Message, Partials.GuildMember],
-  sweepers: {
-    messages: {
-      interval: 300,
-      lifetime: 1800,
-    },
-  },
+  // REMOVIDO: sweepers causam problemas de cache no Render
+  // O Discord.js ja faz sweep automatico, nao precisamos de configurar
 });
 
 // ==================== LOAD DATABASE (MongoDB ou JSON) ====================
@@ -140,8 +136,9 @@ process.on('uncaughtException', (error) => {
   console.error("Uncaught Exception:", error);
 });
 
-// ==================== WEB SERVER (RENDER) ====================
-http.createServer((req, res) => {
+// ==================== WEB SERVER (Render) ====================
+// Keep-alive para o Render nao dormir
+const server = http.createServer((req, res) => {
   const ticketsAbertos = Object.values(db.tickets || {}).filter(t => !t.closed).length;
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.write("PAC Bot Online!\n");
@@ -149,6 +146,16 @@ http.createServer((req, res) => {
   res.write("Tickets abertos: " + ticketsAbertos + "\n");
   res.end();
 }).listen(process.env.PORT || 3000);
+
+// Ping proprio a cada 10 minutos para manter o container acordado
+setInterval(() => {
+  const port = process.env.PORT || 3000;
+  http.get(`http://localhost:${port}/`, (res) => {
+    console.log(`[Keep-Alive] Ping proprio: ${res.statusCode}`);
+  }).on('error', (err) => {
+    console.error('[Keep-Alive] Erro no ping:', err.message);
+  });
+}, 10 * 60 * 1000); // 10 minutos
 
 // ==================== LOGIN ====================
 client.login(process.env.TOKEN);
