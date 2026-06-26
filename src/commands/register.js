@@ -71,11 +71,11 @@ export async function registerCommands() {
       .toJSON(),
 
     // ============================================================
-    // COMANDOS TRUCKY
+    // COMANDOS TRUCKY (ja estao em formato JSON)
     // ============================================================
-    ...truckySlashCommands.map(cmd => cmd.toJSON()),
-    ...truckyImageSlashCommands.map(cmd => cmd.toJSON()),
-    ...mapaCanalSlashCommands.map(cmd => cmd.toJSON()),
+    ...truckySlashCommands,
+    ...truckyImageSlashCommands,
+    ...mapaCanalSlashCommands,
   ];
 
   const rest = new REST({ version: "10" }).setToken(CONFIG.TOKEN);
