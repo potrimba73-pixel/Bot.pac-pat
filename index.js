@@ -72,12 +72,25 @@ client.once(Events.ClientReady, async () => {
 
   await handleReady(client);
 
+  // Aguardar 2 segundos para garantir que o bot esta pronto
+  await new Promise(r => setTimeout(r, 2000));
+
   // Auto-setup dos paineis de tickets
   try {
-    const guild = await client.guilds.fetch(CONFIG.GUILD_ID).catch(() => null);
+    // === SERVIDOR PRINCIPAL ===
+    const guild = await client.guilds.fetch(CONFIG.GUILD_ID).catch((e) => {
+      console.warn("[DIAG] ⚠️ Erro ao aceder servidor principal:", e.message);
+      return null;
+    });
+
     if (guild) {
+      console.log("[DIAG] ✅ Servidor principal encontrado:", guild.name);
+
       // Painel Geral
-      const canalGeral = await guild.channels.fetch(CONFIG.CANAL_TICKETS_GERAL).catch(() => null);
+      const canalGeral = await guild.channels.fetch(CONFIG.CANAL_TICKETS_GERAL).catch((e) => {
+        console.warn("[DIAG] ⚠️ Erro ao aceder canal tickets geral:", e.message);
+        return null;
+      });
       if (canalGeral) {
         const msgs = await canalGeral.messages.fetch({ limit: 10 }).catch(() => null);
         const temPainelGeral = msgs?.some(m => 
@@ -90,12 +103,13 @@ client.once(Events.ClientReady, async () => {
         } else {
           console.log("[DIAG] ℹ️ Painel geral ja existe");
         }
-      } else {
-        console.warn("[DIAG] ⚠️ Canal de tickets geral nao encontrado:", CONFIG.CANAL_TICKETS_GERAL);
       }
 
       // Painel Regras
-      const canalRegras = await guild.channels.fetch(CONFIG.CANAL_REGRAS).catch(() => null);
+      const canalRegras = await guild.channels.fetch(CONFIG.CANAL_REGRAS).catch((e) => {
+        console.warn("[DIAG] ⚠️ Erro ao aceder canal regras:", e.message);
+        return null;
+      });
       if (canalRegras) {
         const msgs = await canalRegras.messages.fetch({ limit: 10 }).catch(() => null);
         const temPainelRegras = msgs?.some(m => 
@@ -108,18 +122,29 @@ client.once(Events.ClientReady, async () => {
         } else {
           console.log("[DIAG] ℹ️ Painel de regras ja existe");
         }
-      } else {
-        console.warn("[DIAG] ⚠️ Canal de regras nao encontrado:", CONFIG.CANAL_REGRAS);
       }
     } else {
       console.warn("[DIAG] ⚠️ Servidor principal nao encontrado:", CONFIG.GUILD_ID);
     }
 
-    // Painel Recrutamento (servidor de recrutamento)
-    const guildRec = await client.guilds.fetch(CONFIG.GUILD_ID_RECRUTAMENTO).catch(() => null);
+    // === SERVIDOR DE RECRUTAMENTO ===
+    console.log("[DIAG] 🔄 A procurar servidor de recrutamento:", CONFIG.GUILD_ID_RECRUTAMENTO);
+
+    const guildRec = await client.guilds.fetch(CONFIG.GUILD_ID_RECRUTAMENTO).catch((e) => {
+      console.warn("[DIAG] ⚠️ Erro ao aceder servidor de recrutamento:", e.message);
+      return null;
+    });
+
     if (guildRec) {
-      const canalRec = await guildRec.channels.fetch(CONFIG.CANAL_TICKETS_RECRUTAMENTO).catch(() => null);
+      console.log("[DIAG] ✅ Servidor de recrutamento encontrado:", guildRec.name);
+
+      const canalRec = await guildRec.channels.fetch(CONFIG.CANAL_TICKETS_RECRUTAMENTO).catch((e) => {
+        console.warn("[DIAG] ⚠️ Erro ao aceder canal recrutamento:", e.message);
+        return null;
+      });
+
       if (canalRec) {
+        console.log("[DIAG] ✅ Canal de recrutamento encontrado:", canalRec.name);
         const msgs = await canalRec.messages.fetch({ limit: 10 }).catch(() => null);
         const temPainelRec = msgs?.some(m => 
           m.author.id === client.user.id && 
@@ -135,7 +160,8 @@ client.once(Events.ClientReady, async () => {
         console.warn("[DIAG] ⚠️ Canal de tickets recrutamento nao encontrado:", CONFIG.CANAL_TICKETS_RECRUTAMENTO);
       }
     } else {
-      console.warn("[DIAG] ⚠️ Servidor de recrutamento nao encontrado:", CONFIG.GUILD_ID_RECRUTAMENTO);
+      console.warn("[DIAG] ⚠️ Servidor de recrutamento nao encontrado. Verifica se o bot esta no servidor:", CONFIG.GUILD_ID_RECRUTAMENTO);
+      console.warn("[DIAG] ⚠️ Convida o bot para o servidor de recrutamento: https://discord.com/oauth2/authorize?client_id=" + CONFIG.CLIENT_ID + "&permissions=8&scope=bot+applications.commands&guild_id=" + CONFIG.GUILD_ID_RECRUTAMENTO);
     }
   } catch (err) {
     console.error("[DIAG] ❌ Erro no auto-setup dos paineis:", err.message);
