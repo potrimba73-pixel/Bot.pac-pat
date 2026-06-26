@@ -69,10 +69,10 @@ try {
 client.once(Events.ClientReady, async () => {
   console.log("[DIAG] ✅ Bot ONLINE:", client.user.tag);
   console.log("[DIAG] ✅ ID:", client.user.id);
-  
+
   await handleReady(client);
-  
-  // Auto-setup dos painéis de tickets
+
+  // Auto-setup dos paineis de tickets
   try {
     const guild = await client.guilds.fetch(CONFIG.GUILD_ID).catch(() => null);
     if (guild) {
@@ -91,9 +91,9 @@ client.once(Events.ClientReady, async () => {
           console.log("[DIAG] ℹ️ Painel geral ja existe");
         }
       } else {
-        console.warn("[DIAG] ⚠️ Canal de tickets geral nao encontrado");
+        console.warn("[DIAG] ⚠️ Canal de tickets geral nao encontrado:", CONFIG.CANAL_TICKETS_GERAL);
       }
-      
+
       // Painel Regras
       const canalRegras = await guild.channels.fetch(CONFIG.CANAL_REGRAS).catch(() => null);
       if (canalRegras) {
@@ -109,10 +109,12 @@ client.once(Events.ClientReady, async () => {
           console.log("[DIAG] ℹ️ Painel de regras ja existe");
         }
       } else {
-        console.warn("[DIAG] ⚠️ Canal de regras nao encontrado");
+        console.warn("[DIAG] ⚠️ Canal de regras nao encontrado:", CONFIG.CANAL_REGRAS);
       }
+    } else {
+      console.warn("[DIAG] ⚠️ Servidor principal nao encontrado:", CONFIG.GUILD_ID);
     }
-    
+
     // Painel Recrutamento (servidor de recrutamento)
     const guildRec = await client.guilds.fetch(CONFIG.GUILD_ID_RECRUTAMENTO).catch(() => null);
     if (guildRec) {
@@ -130,15 +132,17 @@ client.once(Events.ClientReady, async () => {
           console.log("[DIAG] ℹ️ Painel de recrutamento ja existe");
         }
       } else {
-        console.warn("[DIAG] ⚠️ Canal de tickets recrutamento nao encontrado");
+        console.warn("[DIAG] ⚠️ Canal de tickets recrutamento nao encontrado:", CONFIG.CANAL_TICKETS_RECRUTAMENTO);
       }
+    } else {
+      console.warn("[DIAG] ⚠️ Servidor de recrutamento nao encontrado:", CONFIG.GUILD_ID_RECRUTAMENTO);
     }
   } catch (err) {
     console.error("[DIAG] ❌ Erro no auto-setup dos paineis:", err.message);
   }
 });
 
-// Interaction Create (comandos, botões, dropdowns, modals)
+// Interaction Create (comandos, botoes, dropdowns, modals)
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
     await handleInteractionCreate(interaction, client);
@@ -222,5 +226,5 @@ client.login(process.env.TOKEN)
   })
   .catch((err) => {
     console.error("[DIAG] ❌ Erro no login:", err.message);
-    console.error("[DIAG] Verifica se o TOKEN está correto no Render");
+    console.error("[DIAG] Verifica se o TOKEN esta correto no Render");
   });
