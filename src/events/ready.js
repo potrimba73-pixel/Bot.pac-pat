@@ -1,28 +1,103 @@
-import { Events } from "discord.js";
-import { setExternalClient, setupExternalLogChannels } from "../services/externalLogs.js";
+import {
+ REST, Routes, SlashCommandBuilder, PermissionFlagsBits,
+} from "discord.js";
 import { CONFIG } from "../config/index.js";
 
-export async function handleReady(client) {
-  console.log(`[Ready] 🤖 Bot online: ${client.user.tag}`);
+// ============================================================
+// IMPORTS DOS COMANDOS TRUCKY
+// ============================================================
+import { truckySlashCommands } from "./truckyCommands.js";
+import { truckyImageSlashCommands } from "./truckyImageCommands.js";
+import { truckyMapaSlashCommand } from "./truckyMapaCanal.js";
 
-  // Configura o estado do bot
-  client.user.setPresence({
-    activities: [{ name: '/ajuda | Portugal Alfa Community', type: 0 }],
-    status: 'online',
-  });
+export async function registerCommands() {
+ const commands = [
+ new SlashCommandBuilder()
+ .setName("apagar")
+ .setDescription("Apaga mensagens do bot em todos os canais ou em canais específicos")
+ .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+ .addStringOption((option) =>
+ option.setName("canais").setDescription("IDs dos canais separados por vírgula (deixe vazio para todos)").setRequired(false),
+ )
+ .toJSON(),
+ new SlashCommandBuilder()
+ .setName("ajuda")
+ .setDescription("Central de ajuda da Portugal Alfa Community")
+ .setDefaultMemberPermissions(null)
+ .toJSON(),
+ new SlashCommandBuilder()
+ .setName("limpar")
+ .setDescription("Limpa mensagens do canal e guarda transcript")
+ .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+ .addIntegerOption((option) =>
+ option.setName("quantidade").setDescription("Número de mensagens a apagar (1-100)").setRequired(true).setMinValue(1).setMaxValue(100),
+ )
+ .addStringOption((option) =>
+ option.setName("motivo").setDescription("Motivo da limpeza").setRequired(false),
+ )
+ .toJSON(),
+ new SlashCommandBuilder()
+ .setName("status")
+ .setDescription("Mostra o status do bot e informações do servidor")
+ .setDefaultMemberPermissions(null)
+ .toJSON(),
+ new SlashCommandBuilder()
+ .setName("painelstaff")
+ .setDescription("Abre o painel de staff para o ticket atual")
+ .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+ .toJSON(),
+ new SlashCommandBuilder()
+ .setName("painelmembro")
+ .setDescription("Abre o painel do membro para chamar staff específica")
+ .setDefaultMemberPermissions(null)
+ .toJSON(),
+ new SlashCommandBuilder()
+ .setName("passar")
+ .setDescription("Passa o controlo do ticket para outro membro da staff")
+ .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+ .addUserOption((option) =>
+ option.setName("staff").setDescription("Membro da staff para quem passar o ticket").setRequired(true),
+ )
+ .toJSON(),
+ new SlashCommandBuilder()
+ .setName("pedirassumo")
+ .setDescription("Pedir assumo de um ticket que está com outro staff")
+ .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+ .toJSON(),
+ new SlashCommandBuilder()
+ .setName("transcript")
+ .setDescription("Gera um transcript completo do canal atual (HTML + TXT) - Apenas Staff")
+ .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+ .toJSON(),
 
-  // Configura o serviço de logs externo
-  setExternalClient(client);
+ // ============================================================
+ // COMANDOS TRUCKY
+ // ============================================================
+ ...truckySlashCommands.map(cmd => cmd.toJSON()),
+ ...truckyImageSlashCommands.map(cmd => cmd.toJSON()),
+ truckyMapaSlashCommand.toJSON(),
+ ];
 
-  // Auto-setup dos canais de log no servidor externo
-  try {
-    const externalGuild = await client.guilds.fetch(CONFIG.EXTERNAL_LOG_GUILD_ID).catch(() => null);
-    if (externalGuild) {
-      await setupExternalLogChannels(externalGuild);
-    } else {
-      console.warn("[Ready] Servidor externo de logs não encontrado. Verifica se o bot está no servidor 1510401803974475947");
-    }
-  } catch (err) {
-    console.error("[Ready] Erro no setup de canais externos:", err.message);
-  }
+ const rest = new REST({ version: "10" }).setToken(CONFIG.TOKEN);
+
+ try {
+ console.log("[Register] A registar comandos de barra...");
+ console.log("[Register] Total de comandos:", commands.length);
+
+ await rest.put(
+ Routes.applicationGuildCommands(CONFIG.CLIENT_ID, CONFIG.GUILD_ID),
+ { body: commands },
+ );
+ console.log("[Register] ✅ Comandos registados no servidor principal!");
+
+ await rest.put(
+ Routes.applicationGuildCommands(CONFIG.CLIENT_ID, CONFIG.GUILD_ID_RECRUTAMENTO),
+ { body: commands },
+ );
+ console.log("[Register] ✅ Comandos registados no servidor de recrutamento!");
+
+ console.log("[Register] ✅ Todos os comandos registados com sucesso!");
+ } catch (error) {
+ console.error("[Register] ❌ Erro ao registar comandos:", error);
+ }
 }
