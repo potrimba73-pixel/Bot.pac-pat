@@ -1,69 +1,85 @@
-import { CONFIG } from "./config.js";
+import { CONFIG } from "./index.js";
 
 // ============================================================
-// CONFIGURAÇÃO TRUCKY VTC - Portugal Alfa Truckers
+// CONFIGURACAO TRUCKY VTC - Portugal Alfa Truckers
 // ============================================================
 // Company ID: 46961
-// Página: https://hub.truckyapp.com/vtc/truckycompanyy
+// Pagina: https://hub.truckyapp.com/vtc/truckycompanyy
 // ============================================================
 
 export const TRUCKY_CONFIG = {
-    // --- API Trucky ---
-    companyId: "46961",
-    accessToken: "COLOCAR_TOKEN_AQUI",  // ← Obter no Trucky: Company Settings → API → Claim Token
+  // --- API Trucky ---
+  companyId: "46961",
+  accessToken: process.env.TRUCKY_ACCESS_TOKEN || "", // Token do Trucky (Company Settings -> API -> Claim Token)
 
-    baseURL: "https://api.truckyapp.com/v2",
+  baseURL: "https://api.truckyapp.com/v2",
 
-    // --- Canais Discord ---
-    channels: {
-        staff: "1146441860462690445",      // #staff
-        geral: "1200170007418642502",      // #geral
-        jornalPat: "1201616183435215008",  // #jornal-pat
-    },
+  // --- Canais Discord ---
+  channels: {
+    staff: "1146441860462690445",
+    geral: "1200170007418642502",
+    jornalPat: "1201616183435215008",
+    logs: "1457144182954266634",
+  },
 
-    // --- Cargos de Staff (protegidos, nunca removidos) ---
-    staffRoles: [
-        "1200459899583336458",  // CARGO_STAFF
-    ],
+  // --- Cargos de Staff (protegidos, nunca removidos) ---
+  staffRoles: [
+    "1200459899583336458",
+  ],
 
-    // --- Cargos de Membro VTC (removidos na limpeza) ---
-    // Adiciona aqui o cargo de "Membro VTC" se tiveres
-    vtcMemberRole: null,  // "ID_CARGO_MEMBRO_VTC" quando criares
+  // --- Cargos de Membro VTC ---
+  vtcMemberRole: null,
 
-    // --- Sistema de Patentes (DESATIVADO - não tens cargos no Discord) ---
-    // Para ativar, cria os cargos no Discord e preenche os IDs aqui
-    patentes: [],
+  // --- Sistema de Patentes ---
+  patentes: [],
 
-    // --- Configurações de Inatividade ---
-    inatividade: {
-        diasAviso: 15,      // Aviso após X dias sem cargas
-        diasLimpeza: 30,    // Considerado inativo após X dias
-        kmMinimoMes: 0,     // KM mínimo por mês (0 = desativado)
-    },
+  // --- Configuracoes de Inatividade ---
+  inatividade: {
+    verificacaoAuto: false,
+    diaVerificacao: 0,
+    horaVerificacao: "20:00",
+    diasAviso: 15,
+    diasLimite: 30,
+    diasLimpeza: 30,
+    kmMinimoMes: 0,
+  },
 
-    // --- Mapa ---
-    mapa: {
-        atualizarMinutos: 5,  // Intervalo de atualização do mapa-canal
-        jogoPadrao: "ets2",   // ets2 ou ats
-    },
+  // --- Mapa ---
+  mapa: {
+    atualizarMinutos: 5,
+    jogoPadrao: "ets2",
+  },
 
-    // --- Templates de Imagem ---
-    templates: {
-        padrao: "template-padrao.png",
-        fonte: "Arturo-Bold.ttf",
-    },
+  // --- Templates de Imagem ---
+  templates: {
+    padrao: "template-padrao.png",
+    fonte: "Arturo-Bold.ttf",
+  },
+
+  // --- Cores ---
+  cores: {
+    sucesso: 0x00ff00,
+    perigo: 0xff0000,
+    aviso: 0xffa500,
+    info: 0x262af1,
+  },
+
+  // --- Roles de Recrutamento ---
+  roles: {
+    recrutamento: ["1200459899583336458"],
+  },
 };
 
-// Helper: verifica se um membro é staff
+// Helper: verifica se um membro e staff
 export function isStaff(member) {
-    return member.roles.cache.some(role => 
-        TRUCKY_CONFIG.staffRoles.includes(role.id)
-    );
+  return member.roles.cache.some(role =>
+    TRUCKY_CONFIG.staffRoles.includes(role.id)
+  );
 }
 
 // Helper: verifica se um membro tem cargo de staff pat
 export function isStaffPat(member) {
-    return member.roles.cache.some(role => 
-        TRUCKY_CONFIG.staffRoles.includes(role.id)
-    );
+  return member.roles.cache.some(role =>
+    TRUCKY_CONFIG.staffRoles.includes(role.id)
+  );
 }
