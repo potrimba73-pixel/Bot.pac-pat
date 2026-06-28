@@ -537,8 +537,8 @@ export async function handleInteractionCreate(interaction, client) {
 
   // ========== SELECT MENUS ==========
   if (interaction.isStringSelectMenu()) {
-    const deferred = await safeDeferReply(interaction, { flags: 64 });
-    if (!deferred && interaction.replied) return;
+    // Para tickets, nao fazer defer aqui - o createTicket vai gerir a resposta
+    // Para painel membro, precisamos de defer porque vamos usar safeEditReply
 
     if (interaction.customId === "ticket_geral") {
       const type = interaction.values[0];
@@ -549,6 +549,7 @@ export async function handleInteractionCreate(interaction, client) {
         criador: `${CONFIG.EMOJI_CRIADOR} Criador De Conteudo`,
       };
       await createTicket(interaction, type, labels[type], client);
+      return;
     } else if (interaction.customId === "ticket_recrutamento") {
       const type = interaction.values[0];
       const labels = {
@@ -556,7 +557,11 @@ export async function handleInteractionCreate(interaction, client) {
         ajuda: `${CONFIG.EMOJI_AJUDA} Pedir ajuda`,
       };
       await createTicket(interaction, type, labels[type], client);
+      return;
     } else if (interaction.customId.startsWith("painelmembro_select_")) {
+      const deferred = await safeDeferReply(interaction, { flags: 64 });
+      if (!deferred && interaction.replied) return;
+
       const ticketId = interaction.customId.split("_")[2];
       const ticket = db.tickets[ticketId];
       if (!ticket) {
