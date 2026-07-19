@@ -1,4 +1,3 @@
-messageCreate
 import { handleSmartResponse } from "../assistant/smartResponse.js";
 import { processarPerguntaETS2 } from "../assistant/ets2AI.js";
 import { CONFIG } from "../config/index.js";
