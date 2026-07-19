@@ -1,4 +1,6 @@
+messageCreate
 import { handleSmartResponse } from "../assistant/smartResponse.js";
+import { processarPerguntaETS2 } from "../assistant/ets2AI.js";
 import { CONFIG } from "../config/index.js";
 import { db } from "../utils/db.js";
 
@@ -6,6 +8,9 @@ const messageCache = new Map();
 
 export async function handleMessageCreate(message, client) {
     if (message.author.bot) return;
+
+    // === IA ASSISTENTE (Pollinations) ===
+    await processarPerguntaETS2(message, client);
 
     // Cache message for edit/delete logging
     messageCache.set(message.id, {
