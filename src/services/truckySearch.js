@@ -5,18 +5,13 @@ const TRUCKY_API_BASE = "https://api.truckyapp.com";
 
 export async function searchTruckyUserByName(name) {
   try {
-    // Tentar pesquisar na API do Trucky
     const res = await fetch(`${TRUCKY_API_BASE}/v2/search/player?name=${encodeURIComponent(name)}`, {
       headers: { "Accept": "application/json" },
       timeout: 10000
     });
-
     if (!res.ok) return null;
     const data = await res.json();
-
-    if (data.response && data.response.length > 0) {
-      return data.response[0]; // Primeiro resultado
-    }
+    if (data.response && data.response.length > 0) return data.response[0];
     return null;
   } catch (e) {
     console.error("[Trucky Search] Erro:", e.message);
@@ -30,7 +25,6 @@ export async function getTruckyUserProfile(userId) {
       headers: { "Accept": "application/json" },
       timeout: 10000
     });
-
     if (!res.ok) return null;
     const data = await res.json();
     return data.response || null;
@@ -42,7 +36,7 @@ export async function getTruckyUserProfile(userId) {
 
 export function createTruckyProfileEmbed(profile, nomeInserido) {
   const embed = new EmbedBuilder()
-    .setColor(CONFIG.COLORS.PRIMARY)
+    .setColor(0x262af1)
     .setTitle(`${CONFIG.EMOJI_SUCCESS} Perfil Trucky Encontrado`)
     .setDescription(`Nome inserido: **${nomeInserido}**`)
     .addFields(
@@ -54,11 +48,7 @@ export function createTruckyProfileEmbed(profile, nomeInserido) {
     .setTimestamp();
 
   if (profile.company) {
-    embed.addFields({
-      name: "🏢 Companhia",
-      value: `${profile.company.name} (${profile.company.tag})`,
-      inline: true
-    });
+    embed.addFields({ name: "🏢 Companhia", value: `${profile.company.name} (${profile.company.tag})`, inline: true });
   }
 
   if (profile.stats) {
