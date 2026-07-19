@@ -5,14 +5,19 @@ let externalClient = null;
 
 // Canais no servidor externo
 const EXTERNAL_CHANNELS = {
-  MEMBER_LOGS: "1510402716008972520", // Entradas/saídas, voice, regras
-  MESSAGE_LOGS: "1511421322134163547", // Mensagens apagadas/editadas
-  MEMBER_UPDATES: "1511422765486444544", // Atualizações de membros (roles, avatar, etc)
-  COMMUNITY_LOGS: "1510402518629482587", // Logs da comunidade (canais, cargos, bans)
+  MEMBER_LOGS: "1510402716008972520",
+  MESSAGE_LOGS: "1511421322134163547",
+  MEMBER_UPDATES: "1511422765486444544",
+  COMMUNITY_LOGS: "1510402518629482587",
 };
 
 export function setExternalClient(client) {
   externalClient = client;
+}
+
+export async function setupExternalLogChannels(guild) {
+  // Auto-setup dos canais (opcional)
+  console.log("[ExternalLogs] Canais de log configurados");
 }
 
 async function getExternalChannel(channelId) {
@@ -20,7 +25,6 @@ async function getExternalChannel(channelId) {
   return externalClient.channels.fetch(channelId).catch(() => null);
 }
 
-// Helper para criar embed base
 function createBaseEmbed(title, color, timestamp = true) {
   const embed = new EmbedBuilder()
     .setTitle(title)
@@ -29,22 +33,17 @@ function createBaseEmbed(title, color, timestamp = true) {
   return embed;
 }
 
-// ========== MESSAGE EVENTS (canal 1511421322134163547) ==========
+// ========== MESSAGE EVENTS ==========
 export async function logExternalMessageDelete(message) {
   try {
     const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.MESSAGE_LOGS);
     if (!logChannel) return;
 
-    // Tentar obter quem apagou via Audit Log
     let deleter = null;
     try {
-      const auditLogs = await message.guild.fetchAuditLogs({
-        limit: 1,
-        type: 72, // MESSAGE_DELETE
-      });
+      const auditLogs = await message.guild.fetchAuditLogs({ limit: 1, type: 72 });
       const entry = auditLogs.entries.first();
-      if (entry && entry.target.id === message.author?.id &&
-          Date.now() - entry.createdTimestamp < 5000) {
+      if (entry && entry.target.id === message.author?.id && Date.now() - entry.createdTimestamp < 5000) {
         deleter = entry.executor;
       }
     } catch (e) {}
@@ -89,7 +88,10 @@ export async function logExternalMessageUpdate(oldMessage, newMessage) {
   }
 }
 
-// ========== MEMBER EVENTS (canal 1510402716008972520) ==========
+// Alias para compatibilidade (se algum ficheiro usar logMessageDelete)
+export { logExternalMessageDelete as logMessageDelete };
+
+// ========== MEMBER EVENTS ==========
 export async function logExternalMemberJoin(member) {
   try {
     const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.MEMBER_LOGS);
@@ -100,9 +102,7 @@ export async function logExternalMemberJoin(member) {
       .addFields(
         { name: "👤 Utilizador", value: `<@${member.id}>`, inline: true },
         { name: "📝 Nome", value: `\`${member.user.tag}\``, inline: true },
-        { name: "🆔 ID", value: `\`${member.id}\``, inline: true },
-        { name: "📅 Conta criada", value: ``, inline: true },
-        { name: "⏰ Entrou em", value: ``, inline: true }
+        { name: "🆔 ID", value: `\`${member.id}\``, inline: true }
       )
       .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
       .setFooter({ text: `ID: ${member.id}` });
@@ -134,7 +134,7 @@ export async function logExternalMemberLeave(member) {
   }
 }
 
-// ========== MEMBER UPDATES (canal 1511422765486444544) ==========
+// ========== MEMBER UPDATES ==========
 export async function logExternalMemberUpdate(oldMember, newMember) {
   try {
     const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.MEMBER_UPDATES);
@@ -142,12 +142,10 @@ export async function logExternalMemberUpdate(oldMember, newMember) {
 
     const changes = [];
 
-    // Nickname
     if (oldMember.nickname !== newMember.nickname) {
       changes.push(`📝 **Nickname:** \`${oldMember.nickname || "Nenhum"}\` → \`${newMember.nickname || "Nenhum"}\``);
     }
 
-    // Roles
     const oldRoles = oldMember.roles.cache.filter(r => r.id !== newMember.guild.id);
     const newRoles = newMember.roles.cache.filter(r => r.id !== newMember.guild.id);
     const addedRoles = newRoles.filter(r => !oldRoles.has(r.id));
@@ -162,7 +160,6 @@ export async function logExternalMemberUpdate(oldMember, newMember) {
       changes.push(`➖ **Cargos removidos:** ${rolesText}`);
     }
 
-    // Avatar
     if (oldMember.avatar !== newMember.avatar) {
       changes.push("🖼️ **Avatar do servidor atualizado**");
     }
@@ -181,72 +178,7 @@ export async function logExternalMemberUpdate(oldMember, newMember) {
   }
 }
 
-// ========== RULES ACCEPTANCE (canal 1511422765486444544) ==========
-export async function logExternalRulesAccepted(member, guildName, rolesAdded = []) {
-  try {
-    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.MEMBER_UPDATES);
-    if (!logChannel) return;
-
-    const embed = createBaseEmbed("📜 Regras Aceites", 0x00ff88)
-      .setDescription(`<@${member.id}> | \`${member.user.tag}\` aceitou as regras.`)
-      .addFields(
-        { name: "👤 Utilizador", value: `<@${member.id}>`, inline: true },
-        { name: "🏠 Servidor", value: `\`${guildName}\``, inline: true },
-        { name: "🆔 ID", value: `\`${member.id}\``, inline: true }
-      );
-
-    if (rolesAdded.length > 0) {
-      embed.addFields({ name: "✅ Cargos atribuídos", value: rolesAdded.join(", "), inline: false });
-    } else {
-      embed.addFields({ name: "⚠️ Aviso", value: "Nenhum cargo foi atribuído automaticamente.", inline: false });
-    }
-
-    embed.setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-      .setFooter({ text: `ID: ${member.id}` });
-
-    await logChannel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("[ExternalLogs] Erro ao logar regras aceites:", err.message);
-  }
-}
-
-// ========== BAN/UNBAN (canal COMMUNITY_LOGS) ==========
-export async function logExternalMemberBan(ban) {
-  try {
-    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.COMMUNITY_LOGS);
-    if (!logChannel) return;
-
-    const embed = createBaseEmbed("🔨 Membro Banido", 0xff0000)
-      .setDescription(`<@${ban.user.id}> | \`${ban.user.tag}\` foi banido.`)
-      .addFields(
-        { name: "🆔 ID", value: `\`${ban.user.id}\``, inline: true },
-        { name: "🏠 Servidor", value: `\`${ban.guild.name}\``, inline: true }
-      )
-      .setFooter({ text: `ID: ${ban.user.id}` });
-
-    await logChannel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("[ExternalLogs] Erro ao logar ban:", err.message);
-  }
-}
-
-export async function logExternalMemberUnban(user, guild) {
-  try {
-    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.COMMUNITY_LOGS);
-    if (!logChannel) return;
-
-    const embed = createBaseEmbed("🔓 Membro Desbanido", 0x00ff00)
-      .setDescription(`<@${user.id}> | \`${user.tag}\` foi desbanido.`)
-      .addFields({ name: "🆔 ID", value: `\`${user.id}\``, inline: true })
-      .setFooter({ text: `ID: ${user.id}` });
-
-    await logChannel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("[ExternalLogs] Erro ao logar unban:", err.message);
-  }
-}
-
-// ========== VOICE EVENTS (canal 1510402716008972520) ==========
+// ========== VOICE EVENTS ==========
 export async function logExternalVoiceJoin(member, channel) {
   try {
     const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.MEMBER_LOGS);
@@ -285,7 +217,7 @@ export async function logExternalVoiceLeave(member, channel) {
   }
 }
 
-// ========== CHANNEL EVENTS (canal COMMUNITY_LOGS) ==========
+// ========== CHANNEL EVENTS ==========
 export async function logExternalChannelCreate(channel) {
   try {
     const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.COMMUNITY_LOGS);
@@ -324,7 +256,7 @@ export async function logExternalChannelDelete(channel) {
   }
 }
 
-// ========== ROLE EVENTS (canal COMMUNITY_LOGS) ==========
+// ========== ROLE EVENTS ==========
 export async function logExternalRoleCreate(role) {
   try {
     const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.COMMUNITY_LOGS);
@@ -360,7 +292,72 @@ export async function logExternalRoleDelete(role) {
   }
 }
 
-// ========== SEARCH LOG (canal MESSAGE_LOGS) ==========
+// ========== BAN/UNBAN ==========
+export async function logExternalMemberBan(ban) {
+  try {
+    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.COMMUNITY_LOGS);
+    if (!logChannel) return;
+
+    const embed = createBaseEmbed("🔨 Membro Banido", 0xff0000)
+      .setDescription(`<@${ban.user.id}> | \`${ban.user.tag}\` foi banido.`)
+      .addFields(
+        { name: "🆔 ID", value: `\`${ban.user.id}\``, inline: true },
+        { name: "🏠 Servidor", value: `\`${ban.guild.name}\``, inline: true }
+      )
+      .setFooter({ text: `ID: ${ban.user.id}` });
+
+    await logChannel.send({ embeds: [embed] });
+  } catch (err) {
+    console.error("[ExternalLogs] Erro ao logar ban:", err.message);
+  }
+}
+
+export async function logExternalMemberUnban(user, guild) {
+  try {
+    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.COMMUNITY_LOGS);
+    if (!logChannel) return;
+
+    const embed = createBaseEmbed("🔓 Membro Desbanido", 0x00ff00)
+      .setDescription(`<@${user.id}> | \`${user.tag}\` foi desbanido.`)
+      .addFields({ name: "🆔 ID", value: `\`${user.id}\``, inline: true })
+      .setFooter({ text: `ID: ${user.id}` });
+
+    await logChannel.send({ embeds: [embed] });
+  } catch (err) {
+    console.error("[ExternalLogs] Erro ao logar unban:", err.message);
+  }
+}
+
+// ========== RULES ACCEPTANCE ==========
+export async function logExternalRulesAccepted(member, guildName, rolesAdded = []) {
+  try {
+    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.MEMBER_UPDATES);
+    if (!logChannel) return;
+
+    const embed = createBaseEmbed("📜 Regras Aceites", 0x00ff88)
+      .setDescription(`<@${member.id}> | \`${member.user.tag}\` aceitou as regras.`)
+      .addFields(
+        { name: "👤 Utilizador", value: `<@${member.id}>`, inline: true },
+        { name: "🏠 Servidor", value: `\`${guildName}\``, inline: true },
+        { name: "🆔 ID", value: `\`${member.id}\``, inline: true }
+      );
+
+    if (rolesAdded.length > 0) {
+      embed.addFields({ name: "✅ Cargos atribuídos", value: rolesAdded.join(", "), inline: false });
+    } else {
+      embed.addFields({ name: "⚠️ Aviso", value: "Nenhum cargo foi atribuído automaticamente.", inline: false });
+    }
+
+    embed.setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+      .setFooter({ text: `ID: ${member.id}` });
+
+    await logChannel.send({ embeds: [embed] });
+  } catch (err) {
+    console.error("[ExternalLogs] Erro ao logar regras aceites:", err.message);
+  }
+}
+
+// ========== SEARCH LOG ==========
 export async function logExternalSearch(user, query, results) {
   try {
     const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.MESSAGE_LOGS);
@@ -377,51 +374,5 @@ export async function logExternalSearch(user, query, results) {
     await logChannel.send({ embeds: [embed] });
   } catch (err) {
     console.error("[ExternalLogs] Erro ao logar pesquisa:", err.message);
-  }
-}
-
-// ========== AUTO-SETUP DE CANAIS NO SERVIDOR EXTERNO ==========
-export async function setupExternalLogChannels(guild) {
-  try {
-    const requiredChannels = [
-      { name: "📝-membros-logs", id: EXTERNAL_CHANNELS.MEMBER_LOGS, topic: "Entradas, saídas, voice" },
-      { name: "💬-mensagens-logs", id: EXTERNAL_CHANNELS.MESSAGE_LOGS, topic: "Mensagens apagadas/editadas" },
-      { name: "👤-membro-updates", id: EXTERNAL_CHANNELS.MEMBER_UPDATES, topic: "Roles, avatar, regras aceites" },
-      { name: "🏠-comunidade-logs", id: EXTERNAL_CHANNELS.COMMUNITY_LOGS, topic: "Canais, cargos, bans" },
-    ];
-
-    const created = [];
-    const existing = [];
-
-    for (const ch of requiredChannels) {
-      const channel = await guild.channels.fetch(ch.id).catch(() => null);
-      if (!channel) {
-        try {
-          const newChannel = await guild.channels.create({
-            name: ch.name,
-            type: 0, // GuildText
-            topic: ch.topic,
-            permissionOverwrites: [
-              { id: guild.id, deny: ["ViewChannel"] }, // Esconde de @everyone
-            ],
-          });
-          created.push(newChannel.name);
-          console.log(`[ExternalLogs] Canal criado: ${newChannel.name} (${newChannel.id})`);
-        } catch (e) {
-          console.error(`[ExternalLogs] Erro ao criar canal ${ch.name}:`, e.message);
-        }
-      } else {
-        existing.push(channel.name);
-      }
-    }
-
-    if (created.length > 0) {
-      console.log(`[ExternalLogs] Canais criados: ${created.join(", ")}`);
-    }
-    if (existing.length > 0) {
-      console.log(`[ExternalLogs] Canais existentes: ${existing.join(", ")}`);
-    }
-  } catch (err) {
-    console.error("[ExternalLogs] Erro no setup:", err.message);
   }
 }
