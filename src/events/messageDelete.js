@@ -1,12 +1,11 @@
-import { logMessageDelete } from "../services/externalLogs.js";
+import { CONFIG } from "../config/index.js";
+import { db } from "../utils/db.js";
+import { logExternalMessageDelete } from "../services/externalLogs.js";
 
-const JOCKIE_BOT_IDS = ["411916947773587456", "412347257233604609", "696354359568695317", "696363427599958127"];
+export async function handleMessageDelete(message, client) {
+  if (message.author?.bot) return;
+  if (!message.guild) return;
 
-export default {
-  name: "messageDelete",
-  async execute(message, client) {
-    if (message.author?.bot && JOCKIE_BOT_IDS.includes(message.author.id)) return;
-    if (!message.guild) return;
-    await logMessageDelete(client, message);
-  }
-};
+  // Log externo (servidor 1510401803974475947, canal 1511421322134163547)
+  await logExternalMessageDelete(message);
+}
