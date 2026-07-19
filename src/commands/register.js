@@ -76,8 +76,8 @@ export async function registerCommands() {
     );
     console.log("[Register] ✅ Comandos registados no servidor principal!");
 
-    // Servidor de recrutamento (só se GUILD_ID_RECRUTAMENTO estiver definido e diferente do principal)
-    if (CONFIG.GUILD_ID_RECRUTAMENTO && CONFIG.GUILD_ID_RECRUTAMENTO !== "undefined" && CONFIG.GUILD_ID_RECRUTAMENTO !== CONFIG.GUILD_ID) {
+    // Servidor de recrutamento (so se GUILD_ID_RECRUTAMENTO estiver definido e diferente do principal)
+    if (CONFIG.GUILD_ID_RECRUTAMENTO && CONFIG.GUILD_ID_RECRUTAMENTO !== "undefined" && CONFIG.GUILD_ID_RECRUTAMENTO !== "" && CONFIG.GUILD_ID_RECRUTAMENTO !== CONFIG.GUILD_ID) {
       try {
         await rest.put(
           Routes.applicationGuildCommands(CONFIG.CLIENT_ID, CONFIG.GUILD_ID_RECRUTAMENTO),
@@ -85,8 +85,10 @@ export async function registerCommands() {
         );
         console.log("[Register] ✅ Comandos registados no servidor de recrutamento!");
       } catch (recError) {
-        console.warn("[Register] ⚠️ Não foi possivel registar comandos no servidor de recrutamento:", recError.message);
+        console.warn("[Register] ⚠️ Nao foi possivel registar comandos no servidor de recrutamento:", recError.message);
       }
+    } else {
+      console.log("[Register] ℹ️ Servidor de recrutamento ignorado (nao configurado)");
     }
   } catch (error) {
     console.error("[Register] ❌ Erro ao registar comandos:", error);
