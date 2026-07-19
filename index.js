@@ -1,7 +1,3 @@
-// ============================================================
-// PAC Bot - Portugal Alfa Community
-// ============================================================
-
 import {
   Client,
   GatewayIntentBits,
@@ -9,28 +5,23 @@ import {
   Events,
 } from "discord.js";
 import http from 'node:http';
-import { connectDB, db, saveDB } from "./src/utils/db.js";
-import { CONFIG } from "./src/config/index.js";
+import { loadDB, db, connectDB } from "./src/utils/db.js";
 import { handleReady } from "./src/events/ready.js";
-import { handleInteractionCreate } from "./src/events/interactionCreate.js";
 import { handleGuildMemberAdd } from "./src/events/guildMemberAdd.js";
 import { handleGuildMemberRemove } from "./src/events/guildMemberRemove.js";
+import { handleInteractionCreate } from "./src/events/interactionCreate.js";
 import { handleMessageCreate } from "./src/events/messageCreate.js";
 import { handleMessageDelete } from "./src/events/messageDelete.js";
 import { handleMessageUpdate } from "./src/events/messageUpdate.js";
-import { sendPainelGeral, sendPainelRecrutamento, sendPainelRegras } from "./src/services/panels.js";
-import { registerCommands } from "./src/commands/register.js";
-
-console.log("[DIAG] 🚀 A iniciar bot...");
+import { setExternalClient } from "./src/services/externalLogs.js";
 
 // ==================== VALIDAR ENV VARS ====================
 const requiredEnv = ["TOKEN", "CLIENT_ID"];
 const missing = requiredEnv.filter(e => !process.env[e]);
 if (missing.length > 0) {
-  console.error("[DIAG] ❌ Variaveis em falta:", missing.join(", "));
+  console.error("Variaveis em falta:", missing.join(", "));
   process.exit(1);
 }
-console.log("[DIAG] ✅ ENV vars OK");
 
 // ==================== CLIENT SETUP ====================
 const client = new Client({
@@ -44,213 +35,123 @@ const client = new Client({
     GatewayIntentBits.GuildVoiceStates,
   ],
   partials: [Partials.Channel, Partials.Message, Partials.GuildMember],
+  sweepers: {
+    messages: {
+      interval: 300,
+      lifetime: 1800,
+    },
+  },
 });
-console.log("[DIAG] ✅ Client criado");
 
 // ==================== LOAD DATABASE ====================
-try {
-  await connectDB();
-  console.log("[DIAG] ✅ Base de dados conectada");
-} catch (e) {
-  console.error("[DIAG] ❌ Erro na base de dados:", e.message);
-}
+loadDB();
 
-// ==================== REGISTER SLASH COMMANDS ====================
-try {
-  await registerCommands();
-  console.log("[DIAG] ✅ Comandos slash registados");
-} catch (e) {
-  console.error("[DIAG] ❌ Erro ao registar comandos:", e.message);
-}
+// ==================== CONNECT MONGODB ====================
+connectDB().catch(err => console.error("[DB] Erro ao conectar:", err));
 
 // ==================== EVENTS ====================
-
-// Ready
-client.once(Events.ClientReady, async () => {
-  console.log("[DIAG] ✅ Bot ONLINE:", client.user.tag);
-  console.log("[DIAG] ✅ ID:", client.user.id);
-
-  await handleReady(client);
-
-  // Aguardar 2 segundos para garantir que o bot esta pronto
-  await new Promise(r => setTimeout(r, 2000));
-
-  // Auto-setup dos paineis de tickets
-  try {
-    // === SERVIDOR PRINCIPAL ===
-    const guild = await client.guilds.fetch(CONFIG.GUILD_ID).catch((e) => {
-      console.warn("[DIAG] ⚠️ Erro ao aceder servidor principal:", e.message);
-      return null;
-    });
-
-    if (guild) {
-      console.log("[DIAG] ✅ Servidor principal encontrado:", guild.name);
-
-      // Painel Geral
-      const canalGeral = await guild.channels.fetch(CONFIG.CANAL_TICKETS_GERAL).catch((e) => {
-        console.warn("[DIAG] ⚠️ Erro ao aceder canal tickets geral:", e.message);
-        return null;
-      });
-      if (canalGeral) {
-        const msgs = await canalGeral.messages.fetch({ limit: 10 }).catch(() => null);
-        const temPainelGeral = msgs?.some(m => 
-          m.author.id === client.user.id && 
-          m.components?.length > 0
-        );
-        if (!temPainelGeral) {
-          await sendPainelGeral(canalGeral);
-          console.log("[DIAG] ✅ Painel geral enviado");
-        } else {
-          console.log("[DIAG] ℹ️ Painel geral ja existe");
-        }
-      }
-
-      // Painel Regras
-      const canalRegras = await guild.channels.fetch(CONFIG.CANAL_REGRAS).catch((e) => {
-        console.warn("[DIAG] ⚠️ Erro ao aceder canal regras:", e.message);
-        return null;
-      });
-      if (canalRegras) {
-        const msgs = await canalRegras.messages.fetch({ limit: 10 }).catch(() => null);
-        const temPainelRegras = msgs?.some(m => 
-          m.author.id === client.user.id && 
-          m.components?.length > 0
-        );
-        if (!temPainelRegras) {
-          await sendPainelRegras(canalRegras);
-          console.log("[DIAG] ✅ Painel de regras enviado");
-        } else {
-          console.log("[DIAG] ℹ️ Painel de regras ja existe");
-        }
-      }
-    } else {
-      console.warn("[DIAG] ⚠️ Servidor principal nao encontrado:", CONFIG.GUILD_ID);
-    }
-
-    // === SERVIDOR DE RECRUTAMENTO ===
-    console.log("[DIAG] 🔄 A procurar servidor de recrutamento:", CONFIG.GUILD_ID_RECRUTAMENTO);
-
-    const guildRec = await client.guilds.fetch(CONFIG.GUILD_ID_RECRUTAMENTO).catch((e) => {
-      console.warn("[DIAG] ⚠️ Erro ao aceder servidor de recrutamento:", e.message);
-      return null;
-    });
-
-    if (guildRec) {
-      console.log("[DIAG] ✅ Servidor de recrutamento encontrado:", guildRec.name);
-
-      const canalRec = await guildRec.channels.fetch(CONFIG.CANAL_TICKETS_RECRUTAMENTO).catch((e) => {
-        console.warn("[DIAG] ⚠️ Erro ao aceder canal recrutamento:", e.message);
-        return null;
-      });
-
-      if (canalRec) {
-        console.log("[DIAG] ✅ Canal de recrutamento encontrado:", canalRec.name);
-        const msgs = await canalRec.messages.fetch({ limit: 10 }).catch(() => null);
-        const temPainelRec = msgs?.some(m => 
-          m.author.id === client.user.id && 
-          m.components?.length > 0
-        );
-        if (!temPainelRec) {
-          await sendPainelRecrutamento(canalRec);
-          console.log("[DIAG] ✅ Painel de recrutamento enviado");
-        } else {
-          console.log("[DIAG] ℹ️ Painel de recrutamento ja existe");
-        }
-      } else {
-        console.warn("[DIAG] ⚠️ Canal de tickets recrutamento nao encontrado:", CONFIG.CANAL_TICKETS_RECRUTAMENTO);
-      }
-    } else {
-      console.warn("[DIAG] ⚠️ Servidor de recrutamento nao encontrado. Verifica se o bot esta no servidor:", CONFIG.GUILD_ID_RECRUTAMENTO);
-      console.warn("[DIAG] ⚠️ Convida o bot para o servidor de recrutamento: https://discord.com/oauth2/authorize?client_id=" + CONFIG.CLIENT_ID + "&permissions=8&scope=bot+applications.commands&guild_id=" + CONFIG.GUILD_ID_RECRUTAMENTO);
-    }
-  } catch (err) {
-    console.error("[DIAG] ❌ Erro no auto-setup dos paineis:", err.message);
-  }
+client.once(Events.ClientReady, () => {
+  handleReady(client);
+  setExternalClient(client);
 });
 
-// Interaction Create (comandos, botoes, dropdowns, modals)
-client.on(Events.InteractionCreate, async (interaction) => {
+client.on(Events.GuildMemberAdd, (member) => handleGuildMemberAdd(member, client));
+
+client.on(Events.GuildMemberRemove, (member) => handleGuildMemberRemove(member, client));
+
+client.on(Events.InteractionCreate, (interaction) => handleInteractionCreate(interaction, client));
+
+client.on(Events.MessageCreate, (message) => handleMessageCreate(message, client));
+
+client.on(Events.MessageDelete, (message) => handleMessageDelete(message, client));
+
+client.on(Events.MessageUpdate, (oldMessage, newMessage) => handleMessageUpdate(oldMessage, newMessage, client));
+
+// Voice state updates for external logging
+client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+  if (oldState.channelId === newState.channelId) return;
   try {
-    await handleInteractionCreate(interaction, client);
-  } catch (error) {
-    console.error("[Interaction] Erro:", error.message);
-  }
+    const { logExternalVoiceJoin, logExternalVoiceLeave } = await import("./src/services/externalLogs.js");
+    if (newState.channel) logExternalVoiceJoin(newState.member, newState.channel);
+    if (oldState.channel) logExternalVoiceLeave(oldState.member, oldState.channel);
+  } catch (e) {}
 });
 
-// Guild Member Add
-client.on(Events.GuildMemberAdd, async (member) => {
+// Channel events for external logging
+client.on(Events.ChannelCreate, async (channel) => {
   try {
-    await handleGuildMemberAdd(member, client);
-  } catch (error) {
-    console.error("[MemberAdd] Erro:", error.message);
-  }
+    const { logExternalChannelCreate } = await import("./src/services/externalLogs.js");
+    logExternalChannelCreate(channel);
+  } catch (e) {}
 });
 
-// Guild Member Remove
-client.on(Events.GuildMemberRemove, async (member) => {
+client.on(Events.ChannelDelete, async (channel) => {
   try {
-    await handleGuildMemberRemove(member, client);
-  } catch (error) {
-    console.error("[MemberRemove] Erro:", error.message);
-  }
+    const { logExternalChannelDelete } = await import("./src/services/externalLogs.js");
+    logExternalChannelDelete(channel);
+  } catch (e) {}
 });
 
-// Message Create (assistente inteligente)
-client.on(Events.MessageCreate, async (message) => {
+// Role events for external logging
+client.on(Events.GuildRoleCreate, async (role) => {
   try {
-    await handleMessageCreate(message, client);
-  } catch (error) {
-    console.error("[MessageCreate] Erro:", error.message);
-  }
+    const { logExternalRoleCreate } = await import("./src/services/externalLogs.js");
+    logExternalRoleCreate(role);
+  } catch (e) {}
 });
 
-// Message Delete (logs)
-client.on(Events.MessageDelete, async (message) => {
+client.on(Events.GuildRoleDelete, async (role) => {
   try {
-    await handleMessageDelete(message, client);
-  } catch (error) {
-    console.error("[MessageDelete] Erro:", error.message);
-  }
+    const { logExternalRoleDelete } = await import("./src/services/externalLogs.js");
+    logExternalRoleDelete(role);
+  } catch (e) {}
 });
 
-// Message Update (logs)
-client.on(Events.MessageUpdate, async (oldMessage, newMessage) => {
+// Member update for external logging
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   try {
-    await handleMessageUpdate(oldMessage, newMessage, client);
-  } catch (error) {
-    console.error("[MessageUpdate] Erro:", error.message);
-  }
+    const { logExternalMemberUpdate } = await import("./src/services/externalLogs.js");
+    logExternalMemberUpdate(oldMember, newMember);
+  } catch (e) {}
 });
 
-// Error handling
+// Ban/Unban for external logging
+client.on(Events.GuildBanAdd, async (ban) => {
+  try {
+    const { logExternalMemberBan } = await import("./src/services/externalLogs.js");
+    logExternalMemberBan(ban);
+  } catch (e) {}
+});
+
+client.on(Events.GuildBanRemove, async (ban) => {
+  try {
+    const { logExternalMemberUnban } = await import("./src/services/externalLogs.js");
+    logExternalMemberUnban(ban.user, ban.guild);
+  } catch (e) {}
+});
+
+// ==================== ERROR HANDLING ====================
 client.on(Events.Error, (error) => {
-  console.error("[DIAG] ❌ Erro do cliente Discord:", error.message);
+  console.error("Erro do cliente Discord:", error);
 });
 
 process.on('unhandledRejection', (error) => {
-  console.error("[DIAG] ❌ Unhandled Rejection:", error?.message || error);
+  console.error("Unhandled Rejection:", error);
 });
 
 process.on('uncaughtException', (error) => {
-  console.error("[DIAG] ❌ Uncaught Exception:", error?.message || error);
+  console.error("Uncaught Exception:", error);
 });
 
-// ==================== WEB SERVER ====================
+// ==================== WEB SERVER (RENDER) ====================
 http.createServer((req, res) => {
+  const ticketsAbertos = Object.values(db.tickets || {}).filter(t => !t.closed).length;
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.write("PAC Bot - Online\n");
+  res.write("PAC Bot Online!\n");
   res.write("Uptime: " + Math.floor(process.uptime()) + "s\n");
-  res.write("Tickets: " + Object.values(db.tickets).filter(t => !t.closed).length + "\n");
+  res.write("Tickets abertos: " + ticketsAbertos + "\n");
   res.end();
 }).listen(process.env.PORT || 3000);
 
 // ==================== LOGIN ====================
-console.log("[DIAG] 🔄 A fazer login...");
-client.login(process.env.TOKEN)
-  .then(() => {
-    console.log("[DIAG] ✅ Login iniciado");
-  })
-  .catch((err) => {
-    console.error("[DIAG] ❌ Erro no login:", err.message);
-    console.error("[DIAG] Verifica se o TOKEN esta correto no Render");
-  });
+client.login(process.env.TOKEN);
