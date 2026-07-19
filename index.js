@@ -5,7 +5,7 @@ import {
   Events,
 } from "discord.js";
 import http from 'node:http';
-import { loadDB, db, connectDB } from "./src/utils/db.js";
+import { db, connectDB } from "./src/utils/db.js";
 import { handleReady } from "./src/events/ready.js";
 import { handleGuildMemberAdd } from "./src/events/guildMemberAdd.js";
 import { handleGuildMemberRemove } from "./src/events/guildMemberRemove.js";
@@ -43,10 +43,7 @@ const client = new Client({
   },
 });
 
-// ==================== LOAD DATABASE ====================
-loadDB();
-
-// ==================== CONNECT MONGODB ====================
+// ==================== CONNECT DATABASE ====================
 connectDB().catch(err => console.error("[DB] Erro ao conectar:", err));
 
 // ==================== EVENTS ====================
