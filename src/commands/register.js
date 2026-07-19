@@ -7,10 +7,10 @@ export async function registerCommands() {
   const commands = [
     new SlashCommandBuilder()
       .setName("apagar")
-      .setDescription("Apaga mensagens do bot em todos os canais ou em canais específicos")
+      .setDescription("Apaga mensagens do bot em todos os canais ou em canais especificos")
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
       .addStringOption((option) =>
-        option.setName("canais").setDescription("IDs dos canais separados por vírgula (deixe vazio para todos)").setRequired(false),
+        option.setName("canais").setDescription("IDs dos canais separados por virgula (deixe vazio para todos)").setRequired(false),
       )
       .toJSON(),
     new SlashCommandBuilder()
@@ -23,7 +23,7 @@ export async function registerCommands() {
       .setDescription("Limpa mensagens do canal e guarda transcript")
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
       .addIntegerOption((option) =>
-        option.setName("quantidade").setDescription("Número de mensagens a apagar (1-100)").setRequired(true).setMinValue(1).setMaxValue(100),
+        option.setName("quantidade").setDescription("Numero de mensagens a apagar (1-100)").setRequired(true).setMinValue(1).setMaxValue(100),
       )
       .addStringOption((option) =>
         option.setName("motivo").setDescription("Motivo da limpeza").setRequired(false),
@@ -31,7 +31,7 @@ export async function registerCommands() {
       .toJSON(),
     new SlashCommandBuilder()
       .setName("status")
-      .setDescription("Mostra o status do bot e informações do servidor")
+      .setDescription("Mostra o status do bot e informacoes do servidor")
       .setDefaultMemberPermissions(null)
       .toJSON(),
     new SlashCommandBuilder()
@@ -41,7 +41,7 @@ export async function registerCommands() {
       .toJSON(),
     new SlashCommandBuilder()
       .setName("painelmembro")
-      .setDescription("Abre o painel do membro para chamar staff específica")
+      .setDescription("Abre o painel do membro para chamar staff especifica")
       .setDefaultMemberPermissions(null)
       .toJSON(),
     new SlashCommandBuilder()
@@ -54,7 +54,7 @@ export async function registerCommands() {
       .toJSON(),
     new SlashCommandBuilder()
       .setName("pedirassumo")
-      .setDescription("Pedir assumo de um ticket que está com outro staff")
+      .setDescription("Pedir assumo de um ticket que esta com outro staff")
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
       .toJSON(),
     new SlashCommandBuilder()
@@ -74,21 +74,21 @@ export async function registerCommands() {
       Routes.applicationGuildCommands(CONFIG.CLIENT_ID, CONFIG.GUILD_ID),
       { body: commands },
     );
-    console.log("[Register] Comandos registados no servidor principal!");
+    console.log("[Register] ✅ Comandos registados no servidor principal!");
 
     // Servidor de recrutamento (só se GUILD_ID_RECRUTAMENTO estiver definido e diferente do principal)
-    if (CONFIG.GUILD_ID_RECRUTAMENTO && CONFIG.GUILD_ID_RECRUTAMENTO !== CONFIG.GUILD_ID) {
+    if (CONFIG.GUILD_ID_RECRUTAMENTO && CONFIG.GUILD_ID_RECRUTAMENTO !== "undefined" && CONFIG.GUILD_ID_RECRUTAMENTO !== CONFIG.GUILD_ID) {
       try {
         await rest.put(
           Routes.applicationGuildCommands(CONFIG.CLIENT_ID, CONFIG.GUILD_ID_RECRUTAMENTO),
           { body: commands },
         );
-        console.log("[Register] Comandos registados no servidor de recrutamento!");
+        console.log("[Register] ✅ Comandos registados no servidor de recrutamento!");
       } catch (recError) {
-        console.warn("[Register] Nao foi possivel registar comandos no servidor de recrutamento (bot pode nao estar la):", recError.message);
+        console.warn("[Register] ⚠️ Não foi possivel registar comandos no servidor de recrutamento:", recError.message);
       }
     }
   } catch (error) {
-    console.error("[Register] Erro ao registar comandos:", error);
+    console.error("[Register] ❌ Erro ao registar comandos:", error);
   }
 }
