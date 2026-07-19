@@ -16,7 +16,7 @@ export async function handleReady(client) {
     status: 'online',
   });
 
-  // Configura o serviço de logs externo
+  // Configura o servico de logs externo
   setExternalClient(client);
 
   // Registar comandos de barra
@@ -86,7 +86,7 @@ export async function handleReady(client) {
 
   // ========== AUTO-SETUP PAINEL RECRUTAMENTO ==========
   try {
-    if (!CONFIG.GUILD_ID_RECRUTAMENTO || CONFIG.GUILD_ID_RECRUTAMENTO === "undefined") {
+    if (!CONFIG.GUILD_ID_RECRUTAMENTO || CONFIG.GUILD_ID_RECRUTAMENTO === "undefined" || CONFIG.GUILD_ID_RECRUTAMENTO === "") {
       console.log("[Ready] ℹ️ GUILD_ID_RECRUTAMENTO nao definido, a ignorar servidor de recrutamento");
       return;
     }
@@ -177,9 +177,9 @@ async function enviarPainelRegras(canal) {
   const embed = new EmbedBuilder()
     .setTitle(`${CONFIG.EMOJI_INFO} Regras | Portugal Alfa Community`)
     .setDescription([
-      `${CONFIG.EMOJI_INFO} Lê atentamente as regras antes de aceitares.`,
+      `${CONFIG.EMOJI_INFO} Le atentamente as regras antes de aceitares.`,
       "",
-      "Clica no botão abaixo para aceitar as regras e obteres acesso a Comunidade.",
+      "Clica no botao abaixo para aceitar as regras e obteres acesso a Comunidade.",
     ].join("\n"))
     .setImage(CONFIG.IMAGEM_REGRAS)
     .setColor(0x262af1)
@@ -236,9 +236,9 @@ async function enviarPainelRegrasRecrutamento(canal) {
   const embed = new EmbedBuilder()
     .setTitle(`${CONFIG.EMOJI_INFO} Regras | Portugal Alfa Truckers`)
     .setDescription([
-      `${CONFIG.EMOJI_INFO} Lê atentamente as regras antes de aceitares.`,
+      `${CONFIG.EMOJI_INFO} Le atentamente as regras antes de aceitares.`,
       "",
-      "Clica no botão abaixo para aceitar as regras e obteres acesso a Comunidade.",
+      "Clica no botao abaixo para aceitar as regras e obteres acesso ao servidor de recrutamento.",
     ].join("\n"))
     .setImage(CONFIG.IMAGEM_REGRAS)
     .setColor(0x262af1)
