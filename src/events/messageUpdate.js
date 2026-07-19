@@ -1,13 +1,13 @@
 import { logExternalMessageUpdate } from "../services/externalLogs.js";
 
 export async function handleMessageUpdate(oldMessage, newMessage, client) {
-  if (oldMessage.author?.bot) return;
-  if (oldMessage.content === newMessage.content) return;
-  if (!oldMessage.guild) return;
+  if (newMessage.author?.bot) return;
+  if (!newMessage.guild) return;
 
+  // Log externo
   try {
     await logExternalMessageUpdate(oldMessage, newMessage);
   } catch (e) {
-    console.error("[MessageUpdate] Erro:", e.message);
+    // Silencioso
   }
 }
