@@ -1,3 +1,4 @@
+interactionCreate
 import {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   ModalBuilder, TextInputBuilder, TextInputStyle, PermissionFlagsBits,
@@ -11,6 +12,7 @@ import { sendPainelChamada, criarCall, apagarCall, chamarMembro } from "../servi
 import { sendLog, enviarLogAvaliacao, enviarAvaliacaoDM } from "../services/logs.js";
 import { handleAjudaCommand, handleAjudaProcurar, handleAjudaModal, assistantMemory } from "../services/ajuda.js";
 import { gerarTranscript } from "../utils/transcript.js";
+import { handleIAFeedback } from "../assistant/ets2AI.js";
 
 // IDs a excluir da lista normal (bot e Diego)
 const EXCLUDED_IDS = ["1498462519818326117", "849132183112384573"];
@@ -621,6 +623,12 @@ export async function handleInteractionCreate(interaction, client) {
   // ========== BUTTONS ==========
   if (interaction.isButton()) {
     const customId = interaction.customId;
+
+    // ========== IA FEEDBACK BOTOES ==========
+    if (customId.startsWith("ia_ajudou_") || customId.startsWith("ia_nao_ajudou_") || customId.startsWith("ia_ticket_")) {
+      await handleIAFeedback(interaction, client);
+      return;
+    }
 
     if (customId === "ajuda_procurar") {
       await handleAjudaProcurar(interaction);
