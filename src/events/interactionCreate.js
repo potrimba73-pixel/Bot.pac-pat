@@ -24,7 +24,7 @@ export async function handleInteractionCreate(interaction, client) {
       const estrelas = parseInt(parts[3]);
       const ticket = db.tickets[ticketId];
       if (!ticket) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Ticket nao encontrado.`, flags: 64 });
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Ticket não encontrado.`, flags: 64 });
       }
       const mensagem = interaction.fields.getTextInputValue("mensagem_avaliacao") || "";
       const deferred = await safeDeferReply(interaction, { flags: 64 });
@@ -40,7 +40,7 @@ export async function handleInteractionCreate(interaction, client) {
         avaliador: interaction.user.id,
       });
       saveDB();
-      await safeEditReply(interaction, { content: `${CONFIG.EMOJI_STAR} Obrigado pela sua avaliacao de ${estrelas} estrelas!`, flags: 64 });
+      await safeEditReply(interaction, { content: `${CONFIG.EMOJI_STAR} Obrigado pela sua avaliação de ${estrelas} estrelas!`, flags: 64 });
       return;
     }
     if (interaction.customId === "modal_ajuda") {
@@ -55,7 +55,7 @@ export async function handleInteractionCreate(interaction, client) {
       const ticketId = interaction.customId.split("_")[3];
       const ticket = db.tickets[ticketId];
       if (!ticket) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Ticket nao encontrado.`, flags: 64 });
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Ticket não encontrado.`, flags: 64 });
       }
       const staffId = interaction.fields.getTextInputValue("staff_id");
       const nota = interaction.fields.getTextInputValue("nota_staff") || "Sem nota adicional";
@@ -65,21 +65,21 @@ export async function handleInteractionCreate(interaction, client) {
       try {
         const staffUser = await client.users.fetch(staffId).catch(() => null);
         if (!staffUser) {
-          return safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Staff nao encontrada.`, flags: 64 });
+          return safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Staff não encontrada.`, flags: 64 });
         }
 
         const embed = new EmbedBuilder()
           .setTitle(`${CONFIG.EMOJI_CHAMAR} Staff a Chamar!`)
           .setDescription([
-            `Ola ${staffUser.username}!`,
+            `Olá ${staffUser.username}!`,
             "",
-            `Um membro da staff esta a chamar-te no teu ticket <#${ticket.channelId}>.`,
+            `Um membro da staff está a chamar-te no teu ticket <#${ticket.channelId}>.`,
             "",
             `${CONFIG.EMOJI_INFO} Motivo: ${ticket.label}`,
             `${CONFIG.EMOJI_STAFF} Staff: ${interaction.user.username}`,
             `${CONFIG.EMOJI_EDIT} Nota: ${nota}`,
             "",
-            `${CONFIG.EMOJI_TIME} Importante: Responde o mais breve possivel!`
+            `${CONFIG.EMOJI_TIME} Importante: Responde o mais breve possível!`
           ].join("\n"))
           .setColor(0x00ff88)
           .setTimestamp()
@@ -197,7 +197,7 @@ export async function handleInteractionCreate(interaction, client) {
       saveDB();
 
       const resposta = [
-        `${CONFIG.EMOJI_BROOM} Limpeza concluida!`,
+        `${CONFIG.EMOJI_BROOM} Limpeza concluída!`,
         `${CONFIG.EMOJI_CHECK} Total: ${totalApagadas} mensagens`,
         `${CONFIG.EMOJI_FILE} Transcripts (TXT + HTML) enviados em cada canal`,
         ...(erros.length > 0 ? [`${CONFIG.EMOJI_WARNING} Erros: ${erros.length}`] : []),
@@ -207,7 +207,7 @@ export async function handleInteractionCreate(interaction, client) {
       return;
     }
 
-    // /ajuda - CORRIGIDO: deferReply ANTES de chamar handleAjudaCommand
+    // /ajuda
     if (interaction.commandName === "ajuda") {
       await interaction.deferReply({ flags: 64 });
       await handleAjudaCommand(interaction, client);
@@ -217,7 +217,7 @@ export async function handleInteractionCreate(interaction, client) {
     // /limpar
     if (interaction.commandName === "limpar") {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Nao tens permissao para usar este comando.`, flags: 64 });
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Não tens permissão para usar este comando.`, flags: 64 });
       }
       const quantidade = interaction.options.getInteger("quantidade");
       const motivo = interaction.options.getString("motivo") || "Sem motivo especificado";
@@ -225,7 +225,6 @@ export async function handleInteractionCreate(interaction, client) {
 
       const messages = await interaction.channel.messages.fetch({ limit: quantidade });
 
-      // Gerar TXT transcript ANTES de apagar
       let txtContent = `TRANSCRIPT - MENSAGENS APAGADAS\n`;
       txtContent += `================================\n`;
       txtContent += `Canal: #${interaction.channel.name}\n`;
@@ -245,7 +244,6 @@ export async function handleInteractionCreate(interaction, client) {
         txtContent += `\n`;
       }
 
-      // Gerar HTML transcript
       let htmlAttachment = null;
       try {
         htmlAttachment = await gerarTranscript(interaction.channel, `limpo-${interaction.channel.id}-${Date.now()}`);
@@ -253,14 +251,12 @@ export async function handleInteractionCreate(interaction, client) {
         console.error("Erro ao gerar HTML transcript:", e);
       }
 
-      // Apagar mensagens
       for (const msg of messages.values()) {
         if (msg.deletable) {
           await msg.delete().catch(() => {});
         }
       }
 
-      // Enviar ficheiros no canal
       const files = [];
       files.push({ attachment: Buffer.from(txtContent, "utf-8"), name: `limpo-${interaction.channel.name}-${Date.now()}.txt` });
       if (htmlAttachment) {
@@ -299,7 +295,7 @@ export async function handleInteractionCreate(interaction, client) {
         t => t.channelId === interaction.channel.id && !t.closed
       );
       if (!ticket) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Este canal nao e um ticket ativo.`, flags: 64 });
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Este canal não é um ticket ativo.`, flags: 64 });
       }
       const member = interaction.member;
       if (!member.roles.cache.has(CONFIG.CARGO_STAFF)) {
@@ -311,10 +307,12 @@ export async function handleInteractionCreate(interaction, client) {
         "",
         `${CONFIG.EMOJI_USER} Criador: ${ticket.username}`,
         `${CONFIG.EMOJI_INFO} Tipo: ${ticket.label}`,
-        `${CONFIG.EMOJI_STAFF} Assumido por: ${ticket.claimedBy ? `<@${ticket.claimedBy}> | ${ticket.claimedByName}` : "Ninguem"}`,
+        `${CONFIG.EMOJI_STAFF} Assumido por: ${ticket.claimedBy ? `<@${ticket.claimedBy}> | ${ticket.claimedByName}` : "Ninguém"}`,
         `${CONFIG.EMOJI_CALL} Call: ${ticket.callActive ? "Ativa" : "Inativa"}`,
         "",
-        `${CONFIG.EMOJI_INFO} Seleciona uma opcao abaixo:`,
+        `${CONFIG.EMOJI_INFO} Comandos disponíveis:`,
+        `**/painelstaff** — Abrir este painel`,
+        `**/pedirassumo** — Pedir assumo do ticket`,
       ].join("\n");
       const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`criar_call_${ticket.id}`).setLabel(`${CONFIG.EMOJI_CALL} Criar Call`).setStyle(ButtonStyle.Primary),
@@ -339,7 +337,7 @@ export async function handleInteractionCreate(interaction, client) {
         t => t.channelId === interaction.channel.id && !t.closed
       );
       if (!ticket) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Este canal nao e um ticket ativo.`, flags: 64 });
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Este canal não é um ticket ativo.`, flags: 64 });
       }
       if (ticket.userId !== interaction.user.id) {
         return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Apenas o criador do ticket pode usar este comando.`, flags: 64 });
@@ -348,7 +346,7 @@ export async function handleInteractionCreate(interaction, client) {
       const guild = interaction.guild;
       const staffRole = await guild.roles.fetch(CONFIG.CARGO_STAFF).catch(() => null);
       if (!staffRole) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Cargo de staff nao encontrado.`, flags: 64 });
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Cargo de staff não encontrado.`, flags: 64 });
       }
 
       const staffMembers = staffRole.members.map(m => m).sort((a, b) => a.user.username.localeCompare(b.user.username));
@@ -385,19 +383,19 @@ export async function handleInteractionCreate(interaction, client) {
         t => t.channelId === interaction.channel.id && !t.closed
       );
       if (!ticket) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Este canal nao e um ticket ativo.`, flags: 64 });
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Este canal não é um ticket ativo.`, flags: 64 });
       }
       const member = interaction.member;
       if (!member.roles.cache.has(CONFIG.CARGO_STAFF)) {
         return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Apenas staff pode usar este comando.`, flags: 64 });
       }
       if (ticket.claimedBy && ticket.claimedBy !== interaction.user.id) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_WARNING} So quem assumiu o ticket pode passa-lo. Usa /pedirassumo primeiro.`, flags: 64 });
+        return interaction.reply({ content: `${CONFIG.EMOJI_WARNING} Só quem assumiu o ticket pode passá-lo. Usa /pedirassumo primeiro.`, flags: 64 });
       }
       const targetStaff = interaction.options.getUser("staff");
       const targetMember = await interaction.guild.members.fetch(targetStaff.id).catch(() => null);
       if (!targetMember || !targetMember.roles.cache.has(CONFIG.CARGO_STAFF)) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} O utilizador selecionado nao e staff.`, flags: 64 });
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} O utilizador selecionado não é staff.`, flags: 64 });
       }
       await interaction.deferReply({ flags: 64 });
       const oldClaimed = ticket.claimedByName;
@@ -418,7 +416,7 @@ export async function handleInteractionCreate(interaction, client) {
         t => t.channelId === interaction.channel.id && !t.closed
       );
       if (!ticket) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Este canal nao e um ticket ativo.`, flags: 64 });
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Este canal não é um ticket ativo.`, flags: 64 });
       }
       const member = interaction.member;
       if (!member.roles.cache.has(CONFIG.CARGO_STAFF)) {
@@ -429,14 +427,14 @@ export async function handleInteractionCreate(interaction, client) {
         ticket.claimedByName = interaction.user.username;
         saveDB();
         await updateTicketEmbed(interaction.channel, ticket.id);
-        await interaction.reply({ content: `${CONFIG.EMOJI_SUCCESS} Ticket assumido! Ninguem tinha assumido ainda.`, flags: 64 });
+        await interaction.reply({ content: `${CONFIG.EMOJI_SUCCESS} Ticket assumido! Ninguém tinha assumido ainda.`, flags: 64 });
         await interaction.channel.send(
           `${CONFIG.EMOJI_STAFF} <@${interaction.user.id}> | ${interaction.user.username} assumiu este ticket.`
         );
         return;
       }
       if (ticket.claimedBy === interaction.user.id) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_WARNING} Ja assumiste este ticket!`, flags: 64 });
+        return interaction.reply({ content: `${CONFIG.EMOJI_WARNING} Já assumiste este ticket!`, flags: 64 });
       }
       const currentStaff = await client.users.fetch(ticket.claimedBy).catch(() => null);
       if (!currentStaff) {
@@ -444,7 +442,7 @@ export async function handleInteractionCreate(interaction, client) {
         ticket.claimedByName = interaction.user.username;
         saveDB();
         await updateTicketEmbed(interaction.channel, ticket.id);
-        await interaction.reply({ content: `${CONFIG.EMOJI_SUCCESS} O staff anterior nao foi encontrado. Ticket assumido por ti!`, flags: 64 });
+        await interaction.reply({ content: `${CONFIG.EMOJI_SUCCESS} O staff anterior não foi encontrado. Ticket assumido por ti!`, flags: 64 });
         return;
       }
       await interaction.deferReply({ flags: 64 });
@@ -464,7 +462,7 @@ export async function handleInteractionCreate(interaction, client) {
           .setTimestamp();
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId(`aceitar_assumo_${ticket.id}_${interaction.user.id}`).setLabel(`${CONFIG.EMOJI_ACEITAR} Sim, Passar`).setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId(`recusar_assumo_${ticket.id}_${interaction.user.id}`).setLabel(`${CONFIG.EMOJI_RECUSAR} Nao, Ficar`).setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId(`recusar_assumo_${ticket.id}_${interaction.user.id}`).setLabel(`${CONFIG.EMOJI_RECUSAR} Não, Ficar`).setStyle(ButtonStyle.Danger),
         );
         await currentStaff.send({ embeds: [requestEmbed], components: [row] });
         await interaction.editReply({ content: `${CONFIG.EMOJI_SUCCESS} Pedido enviado para ${currentStaff.username}! Aguarda resposta...`, flags: 64 });
@@ -492,9 +490,9 @@ export async function handleInteractionCreate(interaction, client) {
       const type = interaction.values[0];
       const labels = {
         bugs: `${CONFIG.EMOJI_BUGS} Bugs`,
-        denuncia: `${CONFIG.EMOJI_DENUNCIA} Denuncia`,
+        denuncia: `${CONFIG.EMOJI_DENUNCIA} Denúncia`,
         suporte: `${CONFIG.EMOJI_SUPORTE} Suporte`,
-        criador: `${CONFIG.EMOJI_CRIADOR} Criador De Conteudo`,
+        criador: `${CONFIG.EMOJI_CRIADOR} Criador De Conteúdo`,
       };
       const { createTicket } = await import("../services/tickets.js");
       await createTicket(interaction, type, labels[type], client);
@@ -510,13 +508,13 @@ export async function handleInteractionCreate(interaction, client) {
       const ticketId = interaction.customId.split("_")[2];
       const ticket = db.tickets[ticketId];
       if (!ticket) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Ticket nao encontrado.`, flags: 64 });
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Ticket não encontrado.`, flags: 64 });
       }
 
       const staffId = interaction.values[0];
       const staffUser = await client.users.fetch(staffId).catch(() => null);
       if (!staffUser) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Staff nao encontrada.`, flags: 64 });
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Staff não encontrada.`, flags: 64 });
       }
 
       const now = Date.now();
@@ -539,7 +537,7 @@ export async function handleInteractionCreate(interaction, client) {
 
       const inputStaffId = new TextInputBuilder()
         .setCustomId("staff_id")
-        .setLabel("ID da Staff (nao alterar)")
+        .setLabel("ID da Staff (não alterar)")
         .setStyle(TextInputStyle.Short)
         .setRequired(true)
         .setValue(staffId)
@@ -585,7 +583,7 @@ export async function handleInteractionCreate(interaction, client) {
       return;
     }
     if (customId.startsWith("smart_not_helpful_")) {
-      await interaction.update({ content: "❌ O utilizador indicou que nao resolveu. Staff pode ajudar!", components: [] });
+      await interaction.update({ content: "❌ O utilizador indicou que não resolveu. Staff pode ajudar!", components: [] });
       return;
     }
     if (customId.startsWith("smart_search_")) {
@@ -606,7 +604,7 @@ export async function handleInteractionCreate(interaction, client) {
       const userId = parts[3];
       const nomeTrucky = parts.slice(4).join("_");
       if (interaction.user.id !== userId) {
-        return interaction.editReply({ content: `${CONFIG.EMOJI_ERROR} Nao podes aceitar por outra pessoa!`, components: [] });
+        return interaction.editReply({ content: `${CONFIG.EMOJI_ERROR} Não podes aceitar por outra pessoa!`, components: [] });
       }
       await criarTicketRecrutamento(interaction, client, nomeTrucky);
       return;
@@ -615,24 +613,38 @@ export async function handleInteractionCreate(interaction, client) {
       await interaction.deferUpdate();
       const userId = customId.split("_")[3];
       if (interaction.user.id !== userId) {
-        return interaction.editReply({ content: `${CONFIG.EMOJI_ERROR} Nao podes recusar por outra pessoa!`, components: [] });
+        return interaction.editReply({ content: `${CONFIG.EMOJI_ERROR} Não podes recusar por outra pessoa!`, components: [] });
       }
       await interaction.editReply({
-        content: `${CONFIG.EMOJI_CROSS} Recusaste as regras. Nao foi criado nenhum ticket de recrutamento.`,
+        content: `${CONFIG.EMOJI_CROSS} Recusaste as regras. Não foi criado nenhum ticket de recrutamento.`,
         components: [], embeds: [],
       });
       return;
     }
     if (customId === "aceitar_regras") {
-      const deferred = await safeDeferReply(interaction, { flags: 64 });
-      if (!deferred) return;
+      try {
+        await interaction.deferReply({ flags: 64 });
+      } catch (e) {
+        console.error("[Interaction] Erro ao deferReply em aceitar_regras:", e.message);
+        try {
+          await interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Erro ao processar. Tenta novamente.`, flags: 64 });
+        } catch (e2) {}
+        return;
+      }
+
       const member = interaction.member;
       const userId = member.id;
-      const temCargoMembro = member.roles.cache.has(CONFIG.CARGO_MEMBRO) || member.roles.cache.has(CONFIG.CARGO_VERIFICADO);
+
+      let temCargoMembro = false;
+      try {
+        temCargoMembro = member.roles.cache.has(CONFIG.CARGO_MEMBRO) || member.roles.cache.has(CONFIG.CARGO_VERIFICADO);
+      } catch (e) {}
+
       const jaAceitou = db.acceptedRules.includes(userId);
       if (jaAceitou && temCargoMembro) {
-        return safeEditReply(interaction, { content: `${CONFIG.EMOJI_CHECK} Ja aceitaste as regras e tens o cargo atribuido!`, flags: 64 });
+        return interaction.editReply({ content: `${CONFIG.EMOJI_CHECK} Já aceitaste as regras e tens o cargo atribuído!`, flags: 64 });
       }
+
       try {
         const guildId = interaction.guild.id;
         const isRecrutamentoGuild = guildId === CONFIG.GUILD_ID_RECRUTAMENTO;
@@ -642,6 +654,7 @@ export async function handleInteractionCreate(interaction, client) {
         } else {
           rolesToAdd = [CONFIG.CARGO_MEMBRO, CONFIG.CARGO_VERIFICADO];
         }
+
         const rolesAdded = [];
         for (const roleId of rolesToAdd) {
           if (roleId && roleId !== "ID_CARGO_X") {
@@ -656,18 +669,20 @@ export async function handleInteractionCreate(interaction, client) {
             }
           }
         }
+
         if (!db.acceptedRules.includes(userId)) {
           db.acceptedRules.push(userId);
         }
         saveDB();
-        let mensagem = `${CONFIG.EMOJI_SUCCESS} Regras aceites! Bem-vindo a comunidade.`;
+
+        let mensagem = `${CONFIG.EMOJI_SUCCESS} Regras aceites! Bem-vindo à comunidade.`;
         if (rolesAdded.length > 0) {
-          mensagem += `\n${CONFIG.EMOJI_CHECK} Cargos atribuidos: ${rolesAdded.join(", ")}`;
+          mensagem += `\n${CONFIG.EMOJI_CHECK} Cargos atribuídos: ${rolesAdded.join(", ")}`;
         }
-        await safeEditReply(interaction, { content: mensagem, flags: 64 });
+        await interaction.editReply({ content: mensagem, flags: 64 });
       } catch (error) {
         console.error("Erro ao aceitar regras:", error);
-        await safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Ocorreu um erro ao processar. Tenta novamente ou contacta a staff.`, flags: 64 });
+        await interaction.editReply({ content: `${CONFIG.EMOJI_ERROR} Ocorreu um erro ao processar. Tenta novamente ou contacta a staff.`, flags: 64 });
       }
       return;
     }
@@ -678,7 +693,7 @@ export async function handleInteractionCreate(interaction, client) {
       const ticket = db.tickets[ticketId];
       if (ticket && ticket.userId === interaction.user.id) {
         await interaction.channel.permissionOverwrites.delete(interaction.user.id);
-        await safeEditReply(interaction, { content: `${CONFIG.EMOJI_SAIR} Saiste do ticket. Podes fecha-lo se desejares.`, flags: 64 });
+        await safeEditReply(interaction, { content: `${CONFIG.EMOJI_SAIR} Saíste do ticket. Podes fechá-lo se desejares.`, flags: 64 });
       } else {
         await safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Apenas o criador do ticket pode sair.`, flags: 64 });
       }
@@ -695,7 +710,7 @@ export async function handleInteractionCreate(interaction, client) {
         return safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Apenas staff pode assumir tickets.`, flags: 64 });
       }
       if (ticket.claimedBy) {
-        return safeEditReply(interaction, { content: `${CONFIG.EMOJI_WARNING} Este ticket ja foi assumido por <@${ticket.claimedBy}> | ${ticket.claimedByName}.`, flags: 64 });
+        return safeEditReply(interaction, { content: `${CONFIG.EMOJI_WARNING} Este ticket já foi assumido por <@${ticket.claimedBy}> | ${ticket.claimedByName}.`, flags: 64 });
       }
       ticket.claimedBy = interaction.user.id;
       ticket.claimedByName = interaction.user.username;
@@ -740,7 +755,7 @@ export async function handleInteractionCreate(interaction, client) {
       const guild = interaction.guild;
       const staffRole = await guild.roles.fetch(CONFIG.CARGO_STAFF).catch(() => null);
       if (!staffRole) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Cargo de staff nao encontrado.`, flags: 64 });
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Cargo de staff não encontrado.`, flags: 64 });
       }
 
       const staffMembers = staffRole.members.map(m => m).sort((a, b) => a.user.username.localeCompare(b.user.username));
@@ -774,7 +789,7 @@ export async function handleInteractionCreate(interaction, client) {
       const ticketId = customId.split("_")[1];
       const ticket = db.tickets[ticketId];
       if (!ticket) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Ticket nao encontrado.`, flags: 64 });
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Ticket não encontrado.`, flags: 64 });
       }
       const member = interaction.member;
       if (!member.roles.cache.has(CONFIG.CARGO_STAFF) && ticket.userId !== interaction.user.id) {
@@ -798,21 +813,21 @@ export async function handleInteractionCreate(interaction, client) {
       }
       if (ticket.type === "recrutamento") {
         const embedRecrutamento = new EmbedBuilder()
-          .setTitle(`${CONFIG.EMOJI_RECRUTAMENTO} Ticket de Recrutamento - Aguardando Decisao`)
+          .setTitle(`${CONFIG.EMOJI_RECRUTAMENTO} Ticket de Recrutamento - Aguardando Decisão`)
           .setDescription([
             `${CONFIG.EMOJI_INFO} Este ticket de recrutamento foi marcado para fecho.`,
             "",
             `${CONFIG.EMOJI_STAFF} Fechado por: ${interaction.user.username}`,
             "",
-            `${CONFIG.EMOJI_TIME} Aguardando decisao da staff...`,
+            `${CONFIG.EMOJI_TIME} Aguardando decisão da staff...`,
             "",
             `${CONFIG.EMOJI_QUESTION} O utilizador foi recrutado?`
           ].join("\n"))
           .setColor(0xFFA500);
         const rowRecrutamento = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId(`recrutado_sim_${ticketId}`).setLabel(`${CONFIG.EMOJI_RECRUTADO} Sim - Recrutado`).setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId(`recrutado_nao_${ticketId}`).setLabel(`${CONFIG.EMOJI_NAO_RECRUTADO} Nao - Nao Recrutado`).setStyle(ButtonStyle.Danger),
-          new ButtonBuilder().setCustomId(`fechar_definitivo_${ticketId}`).setLabel(`${CONFIG.EMOJI_FECHAR_DEF} Fechar Definitivo (Nao Recrutamento)`).setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(`recrutado_nao_${ticketId}`).setLabel(`${CONFIG.EMOJI_NAO_RECRUTADO} Não - Não Recrutado`).setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId(`fechar_definitivo_${ticketId}`).setLabel(`${CONFIG.EMOJI_FECHAR_DEF} Fechar Definitivo (Não Recrutamento)`).setStyle(ButtonStyle.Secondary),
         );
         await interaction.channel.send({ embeds: [embedRecrutamento], components: [rowRecrutamento] });
         ticket.closedBy = interaction.user.id;
@@ -820,7 +835,7 @@ export async function handleInteractionCreate(interaction, client) {
         ticket.closedAt = new Date().toISOString();
         ticket.closed = true;
         saveDB();
-        await safeEditReply(interaction, { content: `${CONFIG.EMOJI_INFO} Ticket de recrutamento aguarda decisao da staff.` });
+        await safeEditReply(interaction, { content: `${CONFIG.EMOJI_INFO} Ticket de recrutamento aguarda decisão da staff.` });
         return;
       }
       const dataFechamento = new Date().toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" });
@@ -835,7 +850,7 @@ export async function handleInteractionCreate(interaction, client) {
           `${CONFIG.EMOJI_TIME} Fechado em:`,
           dataFechamento,
           "",
-          `${CONFIG.EMOJI_TICKET} Caso necessario, nao hesite em abrir ticket novamente!`
+          `${CONFIG.EMOJI_TICKET} Caso necessário, não hesite em abrir ticket novamente!`
         ].join("\n"))
         .setColor(0xFF0000);
       await interaction.channel.send({ embeds: [embedFechamento], content: `${CONFIG.EMOJI_USER} ${ticket.username}` });
@@ -846,7 +861,7 @@ export async function handleInteractionCreate(interaction, client) {
       saveDB();
       await enviarAvaliacaoDM(ticket, client);
       await sendLog(ticketId, "close", client);
-      await safeEditReply(interaction, { content: `${CONFIG.EMOJI_TIME} Ticket sera fechado em 10 segundos...` });
+      await safeEditReply(interaction, { content: `${CONFIG.EMOJI_TIME} Ticket será fechado em 10 segundos...` });
       setTimeout(async () => {
         await interaction.channel.delete().catch(() => {});
       }, 10000);
@@ -858,14 +873,14 @@ export async function handleInteractionCreate(interaction, client) {
       const ticketId = parts[2];
       const ticket = db.tickets[ticketId];
       if (!ticket) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Ticket nao encontrado.`, flags: 64 });
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Ticket não encontrado.`, flags: 64 });
       }
       if (db.avaliacoes[ticketId] && db.avaliacoes[ticketId].some(a => a.avaliador === interaction.user.id)) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_WARNING} Ja avaliaste este ticket!`, flags: 64 });
+        return interaction.reply({ content: `${CONFIG.EMOJI_WARNING} Já avaliaste este ticket!`, flags: 64 });
       }
       const modal = new ModalBuilder()
         .setCustomId(`modal_avaliar_${ticketId}_${estrelas}`)
-        .setTitle(`${CONFIG.EMOJI_STAR} Avaliacao - ${estrelas} Estrelas`);
+        .setTitle(`${CONFIG.EMOJI_STAR} Avaliação - ${estrelas} Estrelas`);
       const inputMensagem = new TextInputBuilder()
         .setCustomId("mensagem_avaliacao")
         .setLabel("Mensagem (opcional)")
@@ -900,7 +915,29 @@ export async function handleInteractionCreate(interaction, client) {
 
       const ticketChannel = await mainGuild.channels.fetch(ticket.channelId).catch(() => null);
       if (ticketChannel) {
-        await ticketChannel.send(`${CONFIG.EMOJI_SUCCESS} Utilizador recrutado com sucesso! Ticket sera fechado em 10 segundos...`);
+        await ticketChannel.send(`${CONFIG.EMOJI_SUCCESS} Utilizador recrutado com sucesso! Ticket será fechado em 10 segundos...`);
+      }
+
+      // Enviar DM de boas-vindas
+      try {
+        const user = await client.users.fetch(ticket.userId);
+        const welcomeEmbed = new EmbedBuilder()
+          .setTitle(`${CONFIG.EMOJI_RECRUTADO} Bem-vindo à Portugal Alfa Truckers!`)
+          .setDescription([
+            `${CONFIG.EMOJI_SUCCESS} Parabéns! Foste recrutado com sucesso!`,
+            "",
+            `${CONFIG.EMOJI_INFO} **Próximos passos:**`,
+            `1. Segue sempre as regras da comunidade`,
+            `2. A tua foto de perfil para o Trucky ficará disponível em <#1200170007418642502>`,
+            `3. Caso precises de ajuda, abre um ticket ou pergunta num chat aberto`,
+            "",
+            `${CONFIG.EMOJI_TRUCK} Boa sorte na estrada!`
+          ].join("\n"))
+          .setColor(0x00ff00)
+          .setTimestamp();
+        await user.send({ embeds: [welcomeEmbed] });
+      } catch (e) {
+        console.error("Erro ao enviar DM de boas-vindas:", e.message);
       }
 
       await sendLog(ticketId, "close", client);
@@ -929,7 +966,7 @@ export async function handleInteractionCreate(interaction, client) {
       if (mainGuild) {
         const ticketChannel = await mainGuild.channels.fetch(ticket.channelId).catch(() => null);
         if (ticketChannel) {
-          await ticketChannel.send(`${CONFIG.EMOJI_CROSS} Utilizador nao foi recrutado. Ticket sera fechado em 10 segundos...`);
+          await ticketChannel.send(`${CONFIG.EMOJI_CROSS} Utilizador não foi recrutado. Ticket será fechado em 10 segundos...`);
         }
       }
 
@@ -946,7 +983,7 @@ export async function handleInteractionCreate(interaction, client) {
       const ticketId = customId.split("_")[2];
       const ticket = db.tickets[ticketId];
       if (!ticket) {
-        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Ticket nao encontrado.`, flags: 64 });
+        return interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Ticket não encontrado.`, flags: 64 });
       }
       const member = interaction.member;
       if (!member.roles.cache.has(CONFIG.CARGO_STAFF)) {
@@ -1009,10 +1046,10 @@ export async function handleInteractionCreate(interaction, client) {
       const requesterId = parts[3];
       const ticket = db.tickets[ticketId];
       if (!ticket) {
-        return interaction.editReply({ content: `${CONFIG.EMOJI_ERROR} Ticket nao encontrado.`, components: [] });
+        return interaction.editReply({ content: `${CONFIG.EMOJI_ERROR} Ticket não encontrado.`, components: [] });
       }
       if (ticket.claimedBy !== interaction.user.id) {
-        return interaction.editReply({ content: `${CONFIG.EMOJI_ERROR} Nao es o staff atual deste ticket.`, components: [] });
+        return interaction.editReply({ content: `${CONFIG.EMOJI_ERROR} Não és o staff atual deste ticket.`, components: [] });
       }
       const oldStaff = ticket.claimedByName;
       ticket.claimedBy = requesterId;
@@ -1029,7 +1066,7 @@ export async function handleInteractionCreate(interaction, client) {
       }
       try {
         const requester = await client.users.fetch(requesterId);
-        await requester.send(`${CONFIG.EMOJI_SUCCESS} O teu pedido de assumo foi aceite! Agora es o responsavel pelo ticket #${ticketId}.`);
+        await requester.send(`${CONFIG.EMOJI_SUCCESS} O teu pedido de assumo foi aceite! Agora és o responsável pelo ticket #${ticketId}.`);
       } catch (e) {}
       await interaction.editReply({ content: `${CONFIG.EMOJI_SUCCESS} Passaste o controlo do ticket para ${ticket.claimedByName}.`, components: [] });
       return;
@@ -1041,11 +1078,11 @@ export async function handleInteractionCreate(interaction, client) {
       const requesterId = parts[3];
       const ticket = db.tickets[ticketId];
       if (!ticket) {
-        return interaction.editReply({ content: `${CONFIG.EMOJI_ERROR} Ticket nao encontrado.`, components: [] });
+        return interaction.editReply({ content: `${CONFIG.EMOJI_ERROR} Ticket não encontrado.`, components: [] });
       }
       try {
         const requester = await client.users.fetch(requesterId);
-        await requester.send(`${CONFIG.EMOJI_CROSS} O teu pedido de assumo foi recusado. O staff atual mantem o controlo do ticket #${ticketId}.`);
+        await requester.send(`${CONFIG.EMOJI_CROSS} O teu pedido de assumo foi recusado. O staff atual mantém o controlo do ticket #${ticketId}.`);
       } catch (e) {}
       await interaction.editReply({ content: `${CONFIG.EMOJI_INFO} Recusaste passar o controlo. O ticket continua contigo.`, components: [] });
       return;
@@ -1056,10 +1093,10 @@ export async function handleInteractionCreate(interaction, client) {
       const ticketId = customId.split("_")[2];
       const ticket = db.tickets[ticketId];
       if (!ticket) {
-        return safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Ticket nao encontrado.`, flags: 64 });
+        return safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Ticket não encontrado.`, flags: 64 });
       }
       if (ticket.claimedBy !== interaction.user.id) {
-        return safeEditReply(interaction, { content: `${CONFIG.EMOJI_WARNING} So quem assumiu pode passar. Usa /pedirassumo.`, flags: 64 });
+        return safeEditReply(interaction, { content: `${CONFIG.EMOJI_WARNING} Só quem assumiu pode passar. Usa /pedirassumo.`, flags: 64 });
       }
       await safeEditReply(interaction, { content: `${CONFIG.EMOJI_INFO} Usa o comando /passar @staff para passar o controlo para outro membro da staff.`, flags: 64 });
       return;
@@ -1068,14 +1105,14 @@ export async function handleInteractionCreate(interaction, client) {
       const ticketId = customId.split("_")[2];
       const ticket = db.tickets[ticketId];
       if (!ticket) return;
-      await interaction.reply({ content: `${CONFIG.EMOJI_INFO} Para adicionar um usuario, menciona-o neste canal e um staff pode adicionar manualmente nas permissoes.`, flags: 64 });
+      await interaction.reply({ content: `${CONFIG.EMOJI_INFO} Para adicionar um utilizador, menciona-o neste canal e um staff pode adicionar manualmente nas permissões.`, flags: 64 });
       return;
     }
     if (customId.startsWith("remove_user_")) {
       const ticketId = customId.split("_")[2];
       const ticket = db.tickets[ticketId];
       if (!ticket) return;
-      await interaction.reply({ content: `${CONFIG.EMOJI_INFO} Para remover um usuario, um staff pode remover manualmente nas permissoes do canal.`, flags: 64 });
+      await interaction.reply({ content: `${CONFIG.EMOJI_INFO} Para remover um utilizador, um staff pode remover manualmente nas permissões do canal.`, flags: 64 });
       return;
     }
   }
