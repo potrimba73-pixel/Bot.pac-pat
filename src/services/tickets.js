@@ -20,6 +20,11 @@ const REGRAS_RECRUTAMENTO = [
   "Aqui a estrada é amizade, não competição.",
 ];
 
+// ===== FUNCAO AUXILIAR: Link de pesquisa TruckersMP =====
+function getTruckersMPSearchLink(username) {
+  return `https://truckersmp.com/user/search?search=${encodeURIComponent(username)}`;
+}
+
 export async function createTicket(interaction, type, label, client) {
   const isRecrutamentoGuild = interaction.guildId === CONFIG.GUILD_ID_RECRUTAMENTO;
   const targetGuildId = isRecrutamentoGuild ? CONFIG.GUILD_ID_RECRUTAMENTO : CONFIG.GUILD_ID;
@@ -75,9 +80,19 @@ async function iniciarFluxoRecrutamento(interaction, client) {
     .setRequired(false)
     .setMaxLength(50);
 
+  // ===== NOVO CAMPO: Link do perfil Trucky (opcional) =====
+  const inputLink = new TextInputBuilder()
+    .setCustomId("trucky_link")
+    .setLabel("Link do teu perfil Trucky (opcional)")
+    .setPlaceholder("https://truckyapp.com/profile/12345")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false)
+    .setMaxLength(100);
+
   modal.addComponents(
     new ActionRowBuilder().addComponents(inputTrucky),
     new ActionRowBuilder().addComponents(inputNome),
+    new ActionRowBuilder().addComponents(inputLink),
   );
 
   await interaction.showModal(modal);
@@ -86,6 +101,9 @@ async function iniciarFluxoRecrutamento(interaction, client) {
 export async function handleTruckyVerification(interaction, client) {
   const temTrucky = interaction.fields.getTextInputValue("trucky_instalado").toLowerCase().trim();
   const nomeTrucky = interaction.fields.getTextInputValue("trucky_nome")?.trim() || "Não informado";
+
+  // ===== NOVO: Capturar o link do perfil =====
+  const linkTrucky = interaction.fields.getTextInputValue("trucky_link")?.trim() || null;
 
   await interaction.deferReply({ flags: 64 });
 
@@ -113,10 +131,12 @@ export async function handleTruckyVerification(interaction, client) {
     return;
   }
 
-  await mostrarRegrasRecrutamento(interaction, client, nomeTrucky);
+  // ===== Passar o link para a próxima função =====
+  await mostrarRegrasRecrutamento(interaction, client, nomeTrucky, linkTrucky);
 }
 
-async function mostrarRegrasRecrutamento(interaction, client, nomeTrucky) {
+// ===== ALTERADO: Adicionado linkTrucky aos parâmetros =====
+async function mostrarRegrasRecrutamento(interaction, client, nomeTrucky, linkTrucky = null) {
   const regrasTexto = REGRAS_RECRUTAMENTO.map((r, i) => `${CONFIG.EMOJI_CHECK} ${i + 1}. ${r}`).join("\n");
 
   const embed = new EmbedBuilder()
@@ -130,6 +150,13 @@ async function mostrarRegrasRecrutamento(interaction, client, nomeTrucky) {
     ].join("\n"))
     .setColor(0x262af1)
     .setTimestamp();
+
+  // Guardar dados temporariamente no client para passar entre interações
+  if (!client._tempRecrutamento) client._tempRecrutamento = {};
+  client._tempRecrutamento[interaction.user.id] = {
+    nomeTrucky,
+    linkTrucky
+  };
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -171,6 +198,16 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
   cooldown.add(user.id);
   setTimeout(() => cooldown.delete(user.id), 3000);
 
+  // ===== RECUPERAR DADOS GUARDADOS =====
+  const tempData = client._tempRecrutamento?.[user.id] || {};
+  const nomeFinal = tempData.nomeTrucky || nomeTrucky || "Não informado";
+  const linkTrucky = tempData.linkTrucky || null;
+
+  // Limpar dados temporários
+  if (client._tempRecrutamento) {
+    delete client._tempRecrutamento[user.id];
+  }
+
   const channelName = `rec-${user.username}-${user.id.slice(0, 4)}`.toLowerCase().replace(/[^a-z0-9-]/g, "").substring(0, 25);
 
   let categoria = CONFIG.CATEGORIA_TICKETS_RECRUTAMENTO;
@@ -201,6 +238,18 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
     const channel = await guild.channels.create(channelData);
     const ticketId = Date.now().toString();
 
+    // ===== CONSTRUIR DISPLAY DO TRUCKY =====
+    let truckyDisplay;
+
+    if (linkTrucky && (linkTrucky.startsWith("http://") || linkTrucky.startsWith("https://"))) {
+      // Link direto do Trucky fornecido pelo candidato
+      truckyDisplay = `[${nomeFinal}](${linkTrucky})`;
+    } else {
+      // Sem link direto — criar link de pesquisa no TruckersMP
+      const searchLink = getTruckersMPSearchLink(nomeFinal);
+      truckyDisplay = `[${nomeFinal}](${searchLink})`;
+    }
+
     db.tickets[ticketId] = {
       id: ticketId,
       channelId: channel.id,
@@ -220,7 +269,8 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
       panelMessageId: null,
       recrutado: null,
       fotoNome: null,
-      truckyNome: nomeTrucky,
+      truckyNome: nomeFinal,
+      truckyLink: linkTrucky,
       regrasAceites: true,
       guildId: targetGuildId,
     };
@@ -235,7 +285,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
         "",
         `${CONFIG.EMOJI_USER} Olá ${user.username}, aguarde ser atendido.`,
         "",
-        `${CONFIG.EMOJI_TRUCK} Trucky: ${nomeTrucky}`,
+        `${CONFIG.EMOJI_TRUCK} Trucky: ${truckyDisplay}`,
         "",
         `${CONFIG.EMOJI_CHECK} Regras aceites: Sim`
       ].join("\n"))
