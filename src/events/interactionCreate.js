@@ -209,7 +209,6 @@ export async function handleInteractionCreate(interaction, client) {
 
     // /ajuda
     if (interaction.commandName === "ajuda") {
-      await interaction.deferReply({ flags: 64 });
       await handleAjudaCommand(interaction, client);
       return;
     }
@@ -225,6 +224,7 @@ export async function handleInteractionCreate(interaction, client) {
 
       const messages = await interaction.channel.messages.fetch({ limit: quantidade });
 
+      // Gerar TXT transcript ANTES de apagar
       let txtContent = `TRANSCRIPT - MENSAGENS APAGADAS\n`;
       txtContent += `================================\n`;
       txtContent += `Canal: #${interaction.channel.name}\n`;
@@ -244,6 +244,7 @@ export async function handleInteractionCreate(interaction, client) {
         txtContent += `\n`;
       }
 
+      // Gerar HTML transcript
       let htmlAttachment = null;
       try {
         htmlAttachment = await gerarTranscript(interaction.channel, `limpo-${interaction.channel.id}-${Date.now()}`);
@@ -251,12 +252,14 @@ export async function handleInteractionCreate(interaction, client) {
         console.error("Erro ao gerar HTML transcript:", e);
       }
 
+      // Apagar mensagens
       for (const msg of messages.values()) {
         if (msg.deletable) {
           await msg.delete().catch(() => {});
         }
       }
 
+      // Enviar ficheiros no canal
       const files = [];
       files.push({ attachment: Buffer.from(txtContent, "utf-8"), name: `limpo-${interaction.channel.name}-${Date.now()}.txt` });
       if (htmlAttachment) {
@@ -310,9 +313,7 @@ export async function handleInteractionCreate(interaction, client) {
         `${CONFIG.EMOJI_STAFF} Assumido por: ${ticket.claimedBy ? `<@${ticket.claimedBy}> | ${ticket.claimedByName}` : "Ninguém"}`,
         `${CONFIG.EMOJI_CALL} Call: ${ticket.callActive ? "Ativa" : "Inativa"}`,
         "",
-        `${CONFIG.EMOJI_INFO} Comandos disponíveis:`,
-        `**/painelstaff** — Abrir este painel`,
-        `**/pedirassumo** — Pedir assumo do ticket`,
+        `${CONFIG.EMOJI_INFO} Seleciona uma opção abaixo:`,
       ].join("\n");
       const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`criar_call_${ticket.id}`).setLabel(`${CONFIG.EMOJI_CALL} Criar Call`).setStyle(ButtonStyle.Primary),
@@ -622,29 +623,15 @@ export async function handleInteractionCreate(interaction, client) {
       return;
     }
     if (customId === "aceitar_regras") {
-      try {
-        await interaction.deferReply({ flags: 64 });
-      } catch (e) {
-        console.error("[Interaction] Erro ao deferReply em aceitar_regras:", e.message);
-        try {
-          await interaction.reply({ content: `${CONFIG.EMOJI_ERROR} Erro ao processar. Tenta novamente.`, flags: 64 });
-        } catch (e2) {}
-        return;
-      }
-
+      const deferred = await safeDeferReply(interaction, { flags: 64 });
+      if (!deferred) return;
       const member = interaction.member;
       const userId = member.id;
-
-      let temCargoMembro = false;
-      try {
-        temCargoMembro = member.roles.cache.has(CONFIG.CARGO_MEMBRO) || member.roles.cache.has(CONFIG.CARGO_VERIFICADO);
-      } catch (e) {}
-
+      const temCargoMembro = member.roles.cache.has(CONFIG.CARGO_MEMBRO) || member.roles.cache.has(CONFIG.CARGO_VERIFICADO);
       const jaAceitou = db.acceptedRules.includes(userId);
       if (jaAceitou && temCargoMembro) {
-        return interaction.editReply({ content: `${CONFIG.EMOJI_CHECK} Já aceitaste as regras e tens o cargo atribuído!`, flags: 64 });
+        return safeEditReply(interaction, { content: `${CONFIG.EMOJI_CHECK} Já aceitaste as regras e tens o cargo atribuído!`, flags: 64 });
       }
-
       try {
         const guildId = interaction.guild.id;
         const isRecrutamentoGuild = guildId === CONFIG.GUILD_ID_RECRUTAMENTO;
@@ -654,7 +641,6 @@ export async function handleInteractionCreate(interaction, client) {
         } else {
           rolesToAdd = [CONFIG.CARGO_MEMBRO, CONFIG.CARGO_VERIFICADO];
         }
-
         const rolesAdded = [];
         for (const roleId of rolesToAdd) {
           if (roleId && roleId !== "ID_CARGO_X") {
@@ -669,20 +655,18 @@ export async function handleInteractionCreate(interaction, client) {
             }
           }
         }
-
         if (!db.acceptedRules.includes(userId)) {
           db.acceptedRules.push(userId);
         }
         saveDB();
-
         let mensagem = `${CONFIG.EMOJI_SUCCESS} Regras aceites! Bem-vindo à comunidade.`;
         if (rolesAdded.length > 0) {
           mensagem += `\n${CONFIG.EMOJI_CHECK} Cargos atribuídos: ${rolesAdded.join(", ")}`;
         }
-        await interaction.editReply({ content: mensagem, flags: 64 });
+        await safeEditReply(interaction, { content: mensagem, flags: 64 });
       } catch (error) {
         console.error("Erro ao aceitar regras:", error);
-        await interaction.editReply({ content: `${CONFIG.EMOJI_ERROR} Ocorreu um erro ao processar. Tenta novamente ou contacta a staff.`, flags: 64 });
+        await safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Ocorreu um erro ao processar. Tenta novamente ou contacta a staff.`, flags: 64 });
       }
       return;
     }
@@ -842,7 +826,7 @@ export async function handleInteractionCreate(interaction, client) {
       const embedFechamento = new EmbedBuilder()
         .setTitle(`${CONFIG.EMOJI_FECHAR} Ticket Fechado`)
         .setDescription([
-          `${CONFIG.EMOJI_INFO} Seu ticket foi fechado com sucesso, avalie nosso atendimento enviado no seu privado.`,
+          `${CONFIG.EMOJI_INFO} O teu ticket foi fechado com sucesso, avalia o nosso atendimento enviado no teu privado.`,
           "",
           `${CONFIG.EMOJI_STAFF} Fechado por:`,
           interaction.user.username,
@@ -850,7 +834,7 @@ export async function handleInteractionCreate(interaction, client) {
           `${CONFIG.EMOJI_TIME} Fechado em:`,
           dataFechamento,
           "",
-          `${CONFIG.EMOJI_TICKET} Caso necessário, não hesite em abrir ticket novamente!`
+          `${CONFIG.EMOJI_TICKET} Caso necessário, não hesites em abrir ticket novamente!`
         ].join("\n"))
         .setColor(0xFF0000);
       await interaction.channel.send({ embeds: [embedFechamento], content: `${CONFIG.EMOJI_USER} ${ticket.username}` });
@@ -913,31 +897,24 @@ export async function handleInteractionCreate(interaction, client) {
       ticket.closed = true;
       saveDB();
 
+      // ===== MENSAGEM DE BOAS-VINDAS NO TICKET =====
+      const embedBoasVindas = new EmbedBuilder()
+        .setTitle(`${CONFIG.EMOJI_RECRUTADO} Bem-vindo à Portugal Alfa Truckers!`)
+        .setDescription([
+          `${CONFIG.EMOJI_INFO} Parabéns! Foste recrutado com sucesso.`,
+          "",
+          `${CONFIG.EMOJI_CHECK} Segue as regras da empresa e diverte-te!`,
+          `${CONFIG.EMOJI_TRUCK} A tua foto de perfil para o Trucky ficará disponível em <#1200170007418642502>.`,
+          "",
+          `${CONFIG.EMOJI_INFO} Caso precises de ajuda, abre um ticket ou coloca a tua dúvida num chat aberto.`,
+        ].join("\n"))
+        .setColor(0x00ff00)
+        .setTimestamp();
+
       const ticketChannel = await mainGuild.channels.fetch(ticket.channelId).catch(() => null);
       if (ticketChannel) {
+        await ticketChannel.send({ embeds: [embedBoasVindas] });
         await ticketChannel.send(`${CONFIG.EMOJI_SUCCESS} Utilizador recrutado com sucesso! Ticket será fechado em 10 segundos...`);
-      }
-
-      // Enviar DM de boas-vindas
-      try {
-        const user = await client.users.fetch(ticket.userId);
-        const welcomeEmbed = new EmbedBuilder()
-          .setTitle(`${CONFIG.EMOJI_RECRUTADO} Bem-vindo à Portugal Alfa Truckers!`)
-          .setDescription([
-            `${CONFIG.EMOJI_SUCCESS} Parabéns! Foste recrutado com sucesso!`,
-            "",
-            `${CONFIG.EMOJI_INFO} **Próximos passos:**`,
-            `1. Segue sempre as regras da comunidade`,
-            `2. A tua foto de perfil para o Trucky ficará disponível em <#1200170007418642502>`,
-            `3. Caso precises de ajuda, abre um ticket ou pergunta num chat aberto`,
-            "",
-            `${CONFIG.EMOJI_TRUCK} Boa sorte na estrada!`
-          ].join("\n"))
-          .setColor(0x00ff00)
-          .setTimestamp();
-        await user.send({ embeds: [welcomeEmbed] });
-      } catch (e) {
-        console.error("Erro ao enviar DM de boas-vindas:", e.message);
       }
 
       await sendLog(ticketId, "close", client);
@@ -1001,7 +978,7 @@ export async function handleInteractionCreate(interaction, client) {
       const embedFechamento = new EmbedBuilder()
         .setTitle(`${CONFIG.EMOJI_LOCK} Ticket Fechado Definitivamente`)
         .setDescription([
-          `${CONFIG.EMOJI_INFO} Seu ticket foi fechado com sucesso.`,
+          `${CONFIG.EMOJI_INFO} O teu ticket foi fechado com sucesso.`,
           "",
           `${CONFIG.EMOJI_STAFF} Fechado por:`,
           interaction.user.username,
