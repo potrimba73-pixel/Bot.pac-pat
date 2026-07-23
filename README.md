@@ -173,5 +173,13 @@ Em caso de problemas, abre um ticket no Discord da PAC.
 ---
 
 **Versão:** 2.3.0  
-**Autor:** Diego  
-**Licença:** MIT
+**Autor:** Arteex  
+**Licença:** Copyright (c) 2026 Arteex (potrimba73-pixel). Todos os direitos reservados.
+
+É estritamente proibida a cópia, modificação, distribuição, sublicenciamento, 
+venda ou utilização comercial deste código-fonte e dos ficheiros associados, 
+por qualquer meio ou formato, sem a autorização prévia e expressa por escrito 
+do detentor dos direitos de autor.
+
+O código é fornecido "como está", para uso estritamente pessoal ou interno do 
+desenvolvedor, sem garantias de qualquer tipo.
