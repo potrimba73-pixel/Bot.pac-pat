@@ -6,7 +6,7 @@ import { Events } from "discord.js";
 import { setExternalClient, setupExternalLogChannels } from "../services/externalLogs.js";
 import { sendPainelGeral, sendPainelRecrutamento, sendPainelRegras } from "../services/panels.js";
 import { CONFIG } from "../config/index.js";
-import { getDb, saveDb } from "../utils/db.js";
+import { db, saveDB } from "../utils/db.js"; // ← CORRIGIDO
 
 export async function handleReady(client) {
   console.log(`[Ready] 🤖 Bot online: ${client.user.tag}`);
@@ -40,7 +40,7 @@ export async function handleReady(client) {
       return;
     }
 
-    const db = getDb();
+    // Usar db diretamente (já importado)
     if (!db.painels) db.painels = {};
 
     // ===== PAINEL GERAL =====
@@ -71,7 +71,7 @@ export async function handleReady(client) {
           const msg = await sendPainelGeral(canal);
           if (msg) {
             db.painels.geral = msg.id;
-            saveDb(db);
+            saveDB(db); // ← CORRIGIDO
             console.log("[Ready] ✅ Painel geral enviado e guardado na DB");
           }
         } else {
@@ -107,7 +107,7 @@ export async function handleReady(client) {
           const msg = await sendPainelRecrutamento(canal);
           if (msg) {
             db.painels.recrutamento = msg.id;
-            saveDb(db);
+            saveDB(db); // ← CORRIGIDO
             console.log("[Ready] ✅ Painel de recrutamento enviado e guardado na DB");
           }
         } else {
@@ -143,7 +143,7 @@ export async function handleReady(client) {
           const msg = await sendPainelRegras(canal);
           if (msg) {
             db.painels.regras = msg.id;
-            saveDb(db);
+            saveDB(db); // ← CORRIGIDO
             console.log("[Ready] ✅ Painel de regras enviado e guardado na DB");
           }
         } else {
