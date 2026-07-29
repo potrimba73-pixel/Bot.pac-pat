@@ -13,14 +13,21 @@ const __dirname = path.dirname(__filename);
 const FONTS_DIR = path.join(__dirname, "../../assets/fonts");
 const TEMPLATES_DIR = path.join(__dirname, "../../assets");
 
-// Tenta registar Arturo, senão usa Impact
+// Tenta registar Arturo, senao usa Impact
 let FONT_FAMILY = "Impact";
 try {
-    const arturoPath = path.join(FONTS_DIR, "Arturo-Bold.ttf");
-    if (fs.existsSync(arturoPath)) {
-        GlobalFonts.registerFromPath(arturoPath, "Arturo");
+    // Tenta Arturo-Bold primeiro, depois Arturo normal
+    const arturoBoldPath = path.join(FONTS_DIR, "Arturo-Bold.ttf");
+    const arturoPath = path.join(FONTS_DIR, "Arturo.ttf");
+    
+    if (fs.existsSync(arturoBoldPath)) {
+        GlobalFonts.registerFromPath(arturoBoldPath, "Arturo");
         FONT_FAMILY = "Arturo";
         console.log("[ImageGen] Fonte Arturo-Bold carregada!");
+    } else if (fs.existsSync(arturoPath)) {
+        GlobalFonts.registerFromPath(arturoPath, "Arturo");
+        FONT_FAMILY = "Arturo";
+        console.log("[ImageGen] Fonte Arturo carregada!");
     }
 } catch (e) {
     console.log("[ImageGen] Arturo nao encontrada, usando Impact como fallback");
