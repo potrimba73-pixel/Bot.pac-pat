@@ -55,10 +55,10 @@ export const CONFIG = {
   // MEMBER_UPDATES: "1511422765486444544"
   // COMMUNITY_LOGS: "1510402518629482587"
 
-  // === IMAGENS ===
-  IMAGEM_GERAL: "https://media.discordapp.net/attachments/1494713560440242200/1503029978051248188/Tickets_Portugal_Alfa_Community.png",
-  IMAGEM_RECRUTAMENTO: "https://media.discordapp.net/attachments/1494713560440242200/1503029978802163823/Tickets_Portugal_Alfa_Truckers.png",
-  IMAGEM_REGRAS: "https://media.discordapp.net/attachments/1494713560440242200/1503029979422654606/Regras_Portugal_Alfa_Communitypng.png",
+  // === IMAGENS ATUALIZADAS ===
+  IMAGEM_GERAL: "https://cdn.discordapp.com/attachments/1510402588174975059/1510402952383299625/Tickets_Portugal_Alfa_Community.png?ex=6a6a785d&is=6a6926dd&hm=266442c78644023c68843b0760e13f13df524e151faa9afd7b2a2883822ae1dc&",
+  IMAGEM_RECRUTAMENTO: "https://cdn.discordapp.com/attachments/1510402588174975059/1510402953096462388/Tickets_Portugal_Alfa_Truckers.png?ex=6a6a785d&is=6a6926dd&hm=61501fea701e4471396bdab87fc147394ff37ab5abc91ff4cf1cd00d72488352&",
+  IMAGEM_REGRAS: "https://cdn.discordapp.com/attachments/1510402588174975059/1510402953717223596/Regras_Portugal_Alfa_Communitypng.png?ex=6a6a785e&is=6a6926de&hm=a3eab3b400ebdd7ffb912880ced1430d511c18d585f5ae95d6909c0376e59663&",
 
   // === EMOJIS ===
   EMOJI_BUGS: "🐛",
