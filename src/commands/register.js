@@ -2,6 +2,7 @@ import {
   REST, Routes, SlashCommandBuilder, PermissionFlagsBits,
 } from "discord.js";
 import { CONFIG } from "../config/index.js";
+import { truckyImageSlashCommands } from "./truckyImageCommands.js";
 
 export async function registerCommands() {
   const commands = [
@@ -62,6 +63,8 @@ export async function registerCommands() {
       .setDescription("Gera um transcript completo do canal atual (HTML + TXT) - Apenas Staff")
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
       .toJSON(),
+    // === COMANDOS TRUCKY IMAGE ===
+    ...truckyImageSlashCommands,
   ];
 
   const rest = new REST({ version: "10" }).setToken(CONFIG.TOKEN);
@@ -74,7 +77,7 @@ export async function registerCommands() {
       Routes.applicationGuildCommands(CONFIG.CLIENT_ID, CONFIG.GUILD_ID),
       { body: commands },
     );
-    console.log("[Register] ✅ Comandos registados no servidor principal!");
+    console.log("[Register] Comandos registados no servidor principal!");
 
     // Servidor de recrutamento (so se GUILD_ID_RECRUTAMENTO estiver definido e diferente do principal)
     if (CONFIG.GUILD_ID_RECRUTAMENTO && CONFIG.GUILD_ID_RECRUTAMENTO !== "undefined" && CONFIG.GUILD_ID_RECRUTAMENTO !== "" && CONFIG.GUILD_ID_RECRUTAMENTO !== CONFIG.GUILD_ID) {
@@ -83,14 +86,14 @@ export async function registerCommands() {
           Routes.applicationGuildCommands(CONFIG.CLIENT_ID, CONFIG.GUILD_ID_RECRUTAMENTO),
           { body: commands },
         );
-        console.log("[Register] ✅ Comandos registados no servidor de recrutamento!");
+        console.log("[Register] Comandos registados no servidor de recrutamento!");
       } catch (recError) {
-        console.warn("[Register] ⚠️ Nao foi possivel registar comandos no servidor de recrutamento:", recError.message);
+        console.warn("[Register] Nao foi possivel registar comandos no servidor de recrutamento:", recError.message);
       }
     } else {
-      console.log("[Register] ℹ️ Servidor de recrutamento ignorado (nao configurado)");
+      console.log("[Register] Servidor de recrutamento ignorado (nao configurado)");
     }
   } catch (error) {
-    console.error("[Register] ❌ Erro ao registar comandos:", error);
+    console.error("[Register] Erro ao registar comandos:", error);
   }
 }
