@@ -6,10 +6,19 @@ import { Events } from "discord.js";
 import { setExternalClient, setupExternalLogChannels } from "../services/externalLogs.js";
 import { sendPainelGeral, sendPainelRecrutamento, sendPainelRegras } from "../services/panels.js";
 import { CONFIG } from "../config/index.js";
-import { db, saveDB } from "../utils/db.js"; // ← CORRIGIDO
+import { db, saveDB } from "../utils/db.js";
+import { registerCommands } from "../commands/register.js"; // ← NOVO
 
 export async function handleReady(client) {
-  console.log(`[Ready] 🤖 Bot online: ${client.user.tag}`);
+  console.log(`[Ready] Bot online: ${client.user.tag}`);
+
+  // ===== REGISTAR COMANDOS SLASH =====
+  try {
+    await registerCommands();
+    console.log("[Ready] Comandos slash registados com sucesso!");
+  } catch (err) {
+    console.error("[Ready] Erro ao registar comandos:", err.message);
+  }
 
   // Configura o estado do bot
   client.user.setPresence({
@@ -26,7 +35,7 @@ export async function handleReady(client) {
     if (externalGuild) {
       await setupExternalLogChannels(externalGuild);
     } else {
-      console.warn("[Ready] Servidor externo de logs não encontrado.");
+      console.warn("[Ready] Servidor externo de logs nao encontrado.");
     }
   } catch (err) {
     console.error("[Ready] Erro no setup de canais externos:", err.message);
@@ -36,11 +45,10 @@ export async function handleReady(client) {
   try {
     const guild = await client.guilds.fetch(CONFIG.GUILD_ID).catch(() => null);
     if (!guild) {
-      console.warn("[Ready] Servidor principal não encontrado:", CONFIG.GUILD_ID);
+      console.warn("[Ready] Servidor principal nao encontrado:", CONFIG.GUILD_ID);
       return;
     }
 
-    // Usar db diretamente (já importado)
     if (!db.painels) db.painels = {};
 
     // ===== PAINEL GERAL =====
@@ -56,12 +64,11 @@ export async function handleReady(client) {
             if (msg) painelExiste = true;
           } catch (e) {
             painelExiste = false;
-            console.log("[Ready] ℹ️ Painel geral anterior não encontrado (foi apagado)");
+            console.log("[Ready] Painel geral anterior nao encontrado (foi apagado)");
           }
         }
 
         if (!painelExiste) {
-          // Apagar mensagens antigas do bot no canal
           const msgs = await canal.messages.fetch({ limit: 10 });
           const botMsgs = msgs.filter(m => m.author.id === client.user.id);
           for (const msg of botMsgs.values()) {
@@ -71,11 +78,11 @@ export async function handleReady(client) {
           const msg = await sendPainelGeral(canal);
           if (msg) {
             db.painels.geral = msg.id;
-            saveDB(db); // ← CORRIGIDO
-            console.log("[Ready] ✅ Painel geral enviado e guardado na DB");
+            saveDB(db);
+            console.log("[Ready] Painel geral enviado e guardado na DB");
           }
         } else {
-          console.log("[Ready] ℹ️ Painel geral já existe (ID: " + painelId + ")");
+          console.log("[Ready] Painel geral ja existe (ID: " + painelId + ")");
         }
       }
     }
@@ -93,7 +100,7 @@ export async function handleReady(client) {
             if (msg) painelExiste = true;
           } catch (e) {
             painelExiste = false;
-            console.log("[Ready] ℹ️ Painel de recrutamento anterior não encontrado");
+            console.log("[Ready] Painel de recrutamento anterior nao encontrado");
           }
         }
 
@@ -107,11 +114,11 @@ export async function handleReady(client) {
           const msg = await sendPainelRecrutamento(canal);
           if (msg) {
             db.painels.recrutamento = msg.id;
-            saveDB(db); // ← CORRIGIDO
-            console.log("[Ready] ✅ Painel de recrutamento enviado e guardado na DB");
+            saveDB(db);
+            console.log("[Ready] Painel de recrutamento enviado e guardado na DB");
           }
         } else {
-          console.log("[Ready] ℹ️ Painel de recrutamento já existe (ID: " + painelId + ")");
+          console.log("[Ready] Painel de recrutamento ja existe (ID: " + painelId + ")");
         }
       }
     }
@@ -129,7 +136,7 @@ export async function handleReady(client) {
             if (msg) painelExiste = true;
           } catch (e) {
             painelExiste = false;
-            console.log("[Ready] ℹ️ Painel de regras anterior não encontrado");
+            console.log("[Ready] Painel de regras anterior nao encontrado");
           }
         }
 
@@ -143,16 +150,16 @@ export async function handleReady(client) {
           const msg = await sendPainelRegras(canal);
           if (msg) {
             db.painels.regras = msg.id;
-            saveDB(db); // ← CORRIGIDO
-            console.log("[Ready] ✅ Painel de regras enviado e guardado na DB");
+            saveDB(db);
+            console.log("[Ready] Painel de regras enviado e guardado na DB");
           }
         } else {
-          console.log("[Ready] ℹ️ Painel de regras já existe (ID: " + painelId + ")");
+          console.log("[Ready] Painel de regras ja existe (ID: " + painelId + ")");
         }
       }
     }
 
   } catch (err) {
-    console.error("[Ready] Erro no auto-setup de painéis:", err.message);
+    console.error("[Ready] Erro no auto-setup de paineis:", err.message);
   }
 }
