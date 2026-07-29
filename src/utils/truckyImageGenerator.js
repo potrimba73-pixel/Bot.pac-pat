@@ -8,242 +8,189 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ============================================
+// PATHS
+// ============================================
+const ASSETS_DIR = path.join(__dirname, "../../assets");
+const FONTS_DIR = path.join(ASSETS_DIR, "fonts");
+const TEMPLATE_PATH = path.join(ASSETS_DIR, "template-padrao.png");
+
+// ============================================
+// DIAGNOSTICO NO ARRANQUE
+// ============================================
+console.log("[ImageGen] ========== DIAGNOSTICO ==========");
+console.log("[ImageGen] __dirname:", __dirname);
+console.log("[ImageGen] ASSETS_DIR:", ASSETS_DIR);
+console.log("[ImageGen] TEMPLATE_PATH:", TEMPLATE_PATH);
+
+try {
+    const assetsFiles = fs.readdirSync(ASSETS_DIR);
+    console.log("[ImageGen] Ficheiros em src/assets:", assetsFiles.join(", "));
+} catch (e) {
+    console.error("[ImageGen] ERRO: Pasta src/assets nao existe!", e.message);
+}
+
+try {
+    const fontFiles = fs.readdirSync(FONTS_DIR);
+    console.log("[ImageGen] Ficheiros em src/assets/fonts:", fontFiles.join(", "));
+} catch (e) {
+    console.error("[ImageGen] ERRO: Pasta src/assets/fonts nao existe!", e.message);
+}
+
+console.log("[ImageGen] Template existe?", fs.existsSync(TEMPLATE_PATH));
+console.log("[ImageGen] ========================================");
+
+// ============================================
 // FONTES
 // ============================================
-const FONTS_DIR = path.join(__dirname, "../../assets/fonts");
-const TEMPLATES_DIR = path.join(__dirname, "../../assets");
-
-// Tenta registar Arturo, senao usa Impact
 let FONT_FAMILY = "Impact";
 try {
-    // Tenta Arturo-Bold primeiro, depois Arturo normal
-    const arturoBoldPath = path.join(FONTS_DIR, "Arturo-Bold.ttf");
     const arturoPath = path.join(FONTS_DIR, "Arturo.ttf");
-    
-    if (fs.existsSync(arturoBoldPath)) {
-        GlobalFonts.registerFromPath(arturoBoldPath, "Arturo");
-        FONT_FAMILY = "Arturo";
-        console.log("[ImageGen] Fonte Arturo-Bold carregada!");
-    } else if (fs.existsSync(arturoPath)) {
+    if (fs.existsSync(arturoPath)) {
         GlobalFonts.registerFromPath(arturoPath, "Arturo");
         FONT_FAMILY = "Arturo";
-        console.log("[ImageGen] Fonte Arturo carregada!");
+        console.log("[ImageGen] Fonte Arturo carregada com sucesso!");
+    } else {
+        console.log("[ImageGen] Arturo.ttf nao encontrado, usando Impact");
     }
 } catch (e) {
-    console.log("[ImageGen] Arturo nao encontrada, usando Impact como fallback");
+    console.error("[ImageGen] ERRO ao carregar fonte:", e.message);
 }
 
 // ============================================
-// TEMPLATES
-// ============================================
-const TEMPLATES = {
-    padrao: path.join(TEMPLATES_DIR, "template-padrao.png"),
-};
-
-// ============================================
-// FUNCAO PRINCIPAL: Gerar foto de membro
+// GERAR FOTO DE MEMBRO
 // ============================================
 
-/**
- * Gera foto de membro PAT usando o template + nome
- * Otimizado para o template 500x500 da Portugal Alfa Truckers
- */
 export async function gerarFotoMembro(nome, options = {}) {
+    console.log("[ImageGen] gerarFotoMembro() chamado para:", nome);
+    
     const {
         corTexto = "#FFFFFF",
         efeito = "outline",
         tamanhoFonte = null,
     } = options;
 
-    const templatePath = TEMPLATES.padrao;
-    let template;
+    let canvas, ctx;
+    let templateLoaded = false;
+    let templateWidth = 500;
+    let templateHeight = 500;
+
+    // Tenta carregar template
+    try {
+        if (fs.existsSync(TEMPLATE_PATH)) {
+            console.log("[ImageGen] A carregar template...");
+            const template = await loadImage(TEMPLATE_PATH);
+            templateWidth = template.width;
+            templateHeight = template.height;
+            canvas = createCanvas(templateWidth, templateHeight);
+            ctx = canvas.getContext("2d");
+            ctx.drawImage(template, 0, 0);
+            templateLoaded = true;
+            console.log("[ImageGen] Template carregado:", templateWidth, "x", templateHeight);
+        } else {
+            console.log("[ImageGen] Template nao encontrado em:", TEMPLATE_PATH);
+        }
+    } catch (e) {
+        console.error("[ImageGen] ERRO ao carregar template:", e.message);
+    }
+
+    // Fallback: imagem gerada do zero
+    if (!templateLoaded) {
+        console.log("[ImageGen] A usar fallback (sem template)");
+        canvas = createCanvas(500, 500);
+        ctx = canvas.getContext("2d");
+        
+        const gradient = ctx.createLinearGradient(0, 0, 500, 500);
+        gradient.addColorStop(0, "#1a1a2e");
+        gradient.addColorStop(0.5, "#16213e");
+        gradient.addColorStop(1, "#0f3460");
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 500, 500);
+
+        ctx.strokeStyle = "#e94560";
+        ctx.lineWidth = 8;
+        ctx.strokeRect(10, 10, 480, 480);
+    }
 
     try {
-        template = await loadImage(templatePath);
-    } catch (e) {
-        console.error("[ImageGen] Template nao encontrado:", templatePath);
-        throw new Error("Template nao encontrado. Coloca 'template-padrao.png' em src/assets/");
-    }
-
-    const canvas = createCanvas(template.width, template.height);
-    const ctx = canvas.getContext("2d");
-
-    // Desenha template
-    ctx.drawImage(template, 0, 0);
-
-    // Centro exato do template
-    const centerX = template.width / 2;
-    const centerY = template.height / 2;
-
-    // Calcula tamanho da fonte automaticamente
-    let fontSize = tamanhoFonte || 72;
-    ctx.font = `bold ${fontSize}px "${FONT_FAMILY}"`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-
-    // Ajusta se nome for muito grande (max 280px de largura)
-    const maxWidth = 280;
-    while (ctx.measureText(nome).width > maxWidth && fontSize > 24) {
-        fontSize -= 4;
+        // Texto
+        let fontSize = tamanhoFonte || 72;
         ctx.font = `bold ${fontSize}px "${FONT_FAMILY}"`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        const centerX = templateWidth / 2;
+        const centerY = templateHeight / 2;
+        const maxWidth = templateLoaded ? 280 : 400;
+
+        while (ctx.measureText(nome).width > maxWidth && fontSize > 24) {
+            fontSize -= 4;
+            ctx.font = `bold ${fontSize}px "${FONT_FAMILY}"`;
+        }
+
+        // Efeitos
+        if (efeito === "outline") {
+            ctx.lineWidth = Math.max(fontSize * 0.12, 4);
+            ctx.strokeStyle = "#000000";
+            ctx.lineJoin = "round";
+            ctx.strokeText(nome, centerX, centerY);
+        } else if (efeito === "shadow") {
+            ctx.shadowColor = "rgba(0,0,0,0.9)";
+            ctx.shadowBlur = 8;
+            ctx.shadowOffsetX = 3;
+            ctx.shadowOffsetY = 3;
+        } else if (efeito === "glow") {
+            ctx.shadowColor = corTexto;
+            ctx.shadowBlur = 15;
+        }
+
+        ctx.fillStyle = corTexto;
+        ctx.fillText(nome, centerX, centerY);
+        ctx.shadowColor = "transparent";
+
+        console.log("[ImageGen] A gerar PNG...");
+        const buffer = await canvas.encode("png");
+        console.log("[ImageGen] PNG gerado! Tamanho:", buffer.length, "bytes");
+        
+        return new AttachmentBuilder(buffer, { 
+            name: `pat-${nome.toLowerCase().replace(/\s+/g, "-")}.png` 
+        });
+    } catch (e) {
+        console.error("[ImageGen] ERRO ao gerar imagem:", e.message);
+        console.error("[ImageGen] Stack:", e.stack);
+        throw e;
     }
-
-    // Aplica efeito
-    if (efeito === "outline") {
-        // Outline preto forte
-        ctx.lineWidth = Math.max(fontSize * 0.12, 4);
-        ctx.strokeStyle = "#000000";
-        ctx.lineJoin = "round";
-        ctx.strokeText(nome, centerX, centerY);
-
-        // Outline branco fino por cima
-        ctx.lineWidth = Math.max(fontSize * 0.06, 2);
-        ctx.strokeStyle = "rgba(255,255,255,0.3)";
-        ctx.strokeText(nome, centerX, centerY);
-
-    } else if (efeito === "shadow") {
-        ctx.shadowColor = "rgba(0,0,0,0.9)";
-        ctx.shadowBlur = 8;
-        ctx.shadowOffsetX = 3;
-        ctx.shadowOffsetY = 3;
-    } else if (efeito === "glow") {
-        ctx.shadowColor = corTexto;
-        ctx.shadowBlur = 15;
-    }
-
-    // Texto principal
-    ctx.fillStyle = corTexto;
-    ctx.fillText(nome, centerX, centerY);
-
-    // Reset shadow
-    ctx.shadowColor = "transparent";
-
-    const buffer = await canvas.encode("png");
-    return new AttachmentBuilder(buffer, { 
-        name: `pat-${nome.toLowerCase().replace(/\s+/g, "-")}.png` 
-    });
 }
 
 // ============================================
-// GERAR FOTO DE PATENTE COM PROGRESSO
+// GERAR FOTO DE PATENTE
 // ============================================
 
 export async function gerarFotoPatente(nome, patente, km, kmProxima) {
-    const templatePath = TEMPLATES.padrao;
+    console.log("[ImageGen] gerarFotoPatente() chamado");
+    
     let template;
-
     try {
-        template = await loadImage(templatePath);
+        if (fs.existsSync(TEMPLATE_PATH)) {
+            template = await loadImage(TEMPLATE_PATH);
+        }
     } catch (e) {
-        throw new Error("Template nao encontrado. Coloca 'template-padrao.png' em src/assets/");
+        console.log("[ImageGen] Template nao disponivel para patente");
     }
 
-    const w = template.width;
-    const h = template.height;
+    const w = template ? template.width : 500;
+    const h = template ? template.height : 500;
     const canvas = createCanvas(w, h);
     const ctx = canvas.getContext("2d");
 
-    ctx.drawImage(template, 0, 0);
-
-    // Nome no centro (ligeiramente acima do meio)
-    let fontSize = 60;
-    ctx.font = `bold ${fontSize}px "${FONT_FAMILY}"`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-
-    // Ajusta nome
-    while (ctx.measureText(nome).width > 260 && fontSize > 24) {
-        fontSize -= 4;
-        ctx.font = `bold ${fontSize}px "${FONT_FAMILY}"`;
-    }
-
-    // Outline
-    ctx.lineWidth = Math.max(fontSize * 0.12, 4);
-    ctx.strokeStyle = "#000000";
-    ctx.lineJoin = "round";
-    ctx.strokeText(nome, w/2, h*0.42);
-    ctx.lineWidth = Math.max(fontSize * 0.06, 2);
-    ctx.strokeStyle = "rgba(255,255,255,0.3)";
-    ctx.strokeText(nome, w/2, h*0.42);
-
-    ctx.fillStyle = "#FFFFFF";
-    ctx.fillText(nome, w/2, h*0.42);
-
-    // Patente (dourada)
-    fontSize = 32;
-    ctx.font = `bold ${fontSize}px "${FONT_FAMILY}"`;
-    ctx.fillStyle = "#FFD700";
-
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "#000000";
-    ctx.strokeText(patente, w/2, h*0.55);
-    ctx.fillText(patente, w/2, h*0.55);
-
-    // KM
-    fontSize = 22;
-    ctx.font = `bold ${fontSize}px "${FONT_FAMILY}"`;
-    ctx.fillStyle = "#FFFFFF";
-    ctx.fillText(`${Math.round(km).toLocaleString("pt-PT")} km`, w/2, h*0.65);
-
-    // Barra de progresso
-    if (kmProxima > 0) {
-        const progresso = Math.min(km / kmProxima, 1);
-        const barWidth = 200;
-        const barHeight = 12;
-        const barX = w/2 - barWidth/2;
-        const barY = h * 0.72;
-
-        // Fundo
-        ctx.fillStyle = "rgba(0,0,0,0.5)";
-        ctx.fillRect(barX, barY, barWidth, barHeight);
-
-        // Progresso
-        ctx.fillStyle = "#FFD700";
-        ctx.fillRect(barX, barY, barWidth * progresso, barHeight);
-
-        // Borda
-        ctx.strokeStyle = "#FFFFFF";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(barX, barY, barWidth, barHeight);
-
-        // %
-        fontSize = 16;
-        ctx.font = `bold ${fontSize}px "${FONT_FAMILY}"`;
-        ctx.fillStyle = "#FFFFFF";
-        ctx.fillText(`${Math.round(progresso * 100)}%`, w/2, h*0.78);
+    if (template) {
+        ctx.drawImage(template, 0, 0);
     } else {
-        fontSize = 24;
-        ctx.font = `bold ${fontSize}px "${FONT_FAMILY}"`;
-        ctx.fillStyle = "#FFD700";
-        ctx.fillText("🏆 Patente Maxima!", w/2, h*0.75);
+        const gradient = ctx.createLinearGradient(0, 0, w, h);
+        gradient.addColorStop(0, "#0d1b2a");
+        gradient.addColorStop(1, "#415a77");
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, w, h);
     }
-
-    const buffer = await canvas.encode("png");
-    return new AttachmentBuilder(buffer, { 
-        name: `patente-${nome.toLowerCase().replace(/\s+/g, "-")}.png` 
-    });
-}
-
-// ============================================
-// GERAR FOTO DE BOAS-VINDAS
-// ============================================
-
-export async function gerarFotoBoasVindas(nome, patente = "Novo Membro") {
-    const templatePath = TEMPLATES.padrao;
-    let template;
-
-    try {
-        template = await loadImage(templatePath);
-    } catch (e) {
-        throw new Error("Template nao encontrado");
-    }
-
-    const w = template.width;
-    const h = template.height;
-    const canvas = createCanvas(w, h);
-    const ctx = canvas.getContext("2d");
-
-    ctx.drawImage(template, 0, 0);
 
     // Nome
     let fontSize = 60;
@@ -259,28 +206,57 @@ export async function gerarFotoBoasVindas(nome, patente = "Novo Membro") {
     ctx.lineWidth = Math.max(fontSize * 0.12, 4);
     ctx.strokeStyle = "#000000";
     ctx.lineJoin = "round";
-    ctx.strokeText(nome, w/2, h*0.45);
+    ctx.strokeText(nome, w/2, h*0.42);
     ctx.fillStyle = "#FFFFFF";
-    ctx.fillText(nome, w/2, h*0.45);
+    ctx.fillText(nome, w/2, h*0.42);
 
     // Patente
-    fontSize = 28;
+    fontSize = 32;
     ctx.font = `bold ${fontSize}px "${FONT_FAMILY}"`;
     ctx.fillStyle = "#FFD700";
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 3;
     ctx.strokeStyle = "#000000";
-    ctx.strokeText(patente, w/2, h*0.58);
-    ctx.fillText(patente, w/2, h*0.58);
+    ctx.strokeText(patente, w/2, h*0.55);
+    ctx.fillText(patente, w/2, h*0.55);
 
-    // Texto boas-vindas
-    fontSize = 18;
+    // KM
+    fontSize = 22;
     ctx.font = `bold ${fontSize}px "${FONT_FAMILY}"`;
     ctx.fillStyle = "#FFFFFF";
-    ctx.fillText("Bem-vindo a Portugal Alfa!", w/2, h*0.70);
+    ctx.fillText(`${Math.round(km).toLocaleString("pt-PT")} km`, w/2, h*0.65);
+
+    // Barra progresso
+    if (kmProxima > 0) {
+        const progresso = Math.min(km / kmProxima, 1);
+        const barWidth = 200;
+        const barHeight = 12;
+        const barX = w/2 - barWidth/2;
+        const barY = h * 0.72;
+
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+
+        ctx.fillStyle = "#FFD700";
+        ctx.fillRect(barX, barY, barWidth * progresso, barHeight);
+
+        ctx.strokeStyle = "#FFFFFF";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barX, barY, barWidth, barHeight);
+
+        fontSize = 16;
+        ctx.font = `bold ${fontSize}px "${FONT_FAMILY}"`;
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillText(`${Math.round(progresso * 100)}%`, w/2, h*0.78);
+    } else {
+        fontSize = 24;
+        ctx.font = `bold ${fontSize}px "${FONT_FAMILY}"`;
+        ctx.fillStyle = "#FFD700";
+        ctx.fillText("Patente Maxima!", w/2, h*0.75);
+    }
 
     const buffer = await canvas.encode("png");
     return new AttachmentBuilder(buffer, { 
-        name: `boasvindas-${nome.toLowerCase().replace(/\s+/g, "-")}.png` 
+        name: `patente-${nome.toLowerCase().replace(/\s+/g, "-")}.png` 
     });
 }
 
@@ -289,9 +265,9 @@ export async function gerarFotoBoasVindas(nome, patente = "Novo Membro") {
 // ============================================
 
 export function verificarTemplate() {
-    return fs.existsSync(TEMPLATES.padrao);
+    return fs.existsSync(TEMPLATE_PATH);
 }
 
 export function getTemplatePath() {
-    return TEMPLATES.padrao;
+    return TEMPLATE_PATH;
 }
