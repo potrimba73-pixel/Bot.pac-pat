@@ -7,7 +7,20 @@ import { setExternalClient, setupExternalLogChannels } from "../services/externa
 import { sendPainelGeral, sendPainelRecrutamento, sendPainelRegras } from "../services/panels.js";
 import { CONFIG } from "../config/index.js";
 import { db, saveDB } from "../utils/db.js";
-import { registerCommands } from "../commands/register.js"; // ← NOVO
+import { registerCommands } from "../commands/register.js";
+import crypto from "crypto";
+
+// Função para calcular hash do conteúdo de um embed
+function hashPainel(embed, components) {
+  const data = JSON.stringify({
+    title: embed.data?.title || "",
+    description: embed.data?.description || "",
+    image: embed.data?.image?.url || "",
+    color: embed.data?.color || 0,
+    components: components.map(c => c.toJSON())
+  });
+  return crypto.createHash("md5").update(data).digest("hex");
+}
 
 export async function handleReady(client) {
   console.log(`[Ready] Bot online: ${client.user.tag}`);
@@ -41,7 +54,7 @@ export async function handleReady(client) {
     console.error("[Ready] Erro no setup de canais externos:", err.message);
   }
 
-  // ===== AUTO-SETUP DOS PAINÉIS (com anti-duplicação) =====
+  // ===== AUTO-SETUP DOS PAINÉIS (com anti-duplicação + verificação de conteúdo) =====
   try {
     const guild = await client.guilds.fetch(CONFIG.GUILD_ID).catch(() => null);
     if (!guild) {
@@ -50,116 +63,109 @@ export async function handleReady(client) {
     }
 
     if (!db.painels) db.painels = {};
+    if (!db.painelsHash) db.painelsHash = {};
 
     // ===== PAINEL GERAL =====
     if (CONFIG.CANAL_TICKETS_GERAL) {
-      const canal = await guild.channels.fetch(CONFIG.CANAL_TICKETS_GERAL).catch(() => null);
-      if (canal) {
-        const painelId = db.painels?.geral;
-        let painelExiste = false;
-
-        if (painelId) {
-          try {
-            const msg = await canal.messages.fetch(painelId);
-            if (msg) painelExiste = true;
-          } catch (e) {
-            painelExiste = false;
-            console.log("[Ready] Painel geral anterior nao encontrado (foi apagado)");
-          }
-        }
-
-        if (!painelExiste) {
-          const msgs = await canal.messages.fetch({ limit: 10 });
-          const botMsgs = msgs.filter(m => m.author.id === client.user.id);
-          for (const msg of botMsgs.values()) {
-            await msg.delete().catch(() => {});
-          }
-
-          const msg = await sendPainelGeral(canal);
-          if (msg) {
-            db.painels.geral = msg.id;
-            saveDB(db);
-            console.log("[Ready] Painel geral enviado e guardado na DB");
-          }
-        } else {
-          console.log("[Ready] Painel geral ja existe (ID: " + painelId + ")");
-        }
-      }
+      await verificarEPainel(
+        client, guild, CONFIG.CANAL_TICKETS_GERAL,
+        "geral", sendPainelGeral
+      );
     }
 
     // ===== PAINEL DE RECRUTAMENTO =====
     if (CONFIG.CANAL_TICKETS_RECRUTAMENTO) {
-      const canal = await guild.channels.fetch(CONFIG.CANAL_TICKETS_RECRUTAMENTO).catch(() => null);
-      if (canal) {
-        const painelId = db.painels?.recrutamento;
-        let painelExiste = false;
-
-        if (painelId) {
-          try {
-            const msg = await canal.messages.fetch(painelId);
-            if (msg) painelExiste = true;
-          } catch (e) {
-            painelExiste = false;
-            console.log("[Ready] Painel de recrutamento anterior nao encontrado");
-          }
-        }
-
-        if (!painelExiste) {
-          const msgs = await canal.messages.fetch({ limit: 10 });
-          const botMsgs = msgs.filter(m => m.author.id === client.user.id);
-          for (const msg of botMsgs.values()) {
-            await msg.delete().catch(() => {});
-          }
-
-          const msg = await sendPainelRecrutamento(canal);
-          if (msg) {
-            db.painels.recrutamento = msg.id;
-            saveDB(db);
-            console.log("[Ready] Painel de recrutamento enviado e guardado na DB");
-          }
-        } else {
-          console.log("[Ready] Painel de recrutamento ja existe (ID: " + painelId + ")");
-        }
-      }
+      await verificarEPainel(
+        client, guild, CONFIG.CANAL_TICKETS_RECRUTAMENTO,
+        "recrutamento", sendPainelRecrutamento
+      );
     }
 
     // ===== PAINEL DE REGRAS =====
     if (CONFIG.CANAL_REGRAS) {
-      const canal = await guild.channels.fetch(CONFIG.CANAL_REGRAS).catch(() => null);
-      if (canal) {
-        const painelId = db.painels?.regras;
-        let painelExiste = false;
-
-        if (painelId) {
-          try {
-            const msg = await canal.messages.fetch(painelId);
-            if (msg) painelExiste = true;
-          } catch (e) {
-            painelExiste = false;
-            console.log("[Ready] Painel de regras anterior nao encontrado");
-          }
-        }
-
-        if (!painelExiste) {
-          const msgs = await canal.messages.fetch({ limit: 10 });
-          const botMsgs = msgs.filter(m => m.author.id === client.user.id);
-          for (const msg of botMsgs.values()) {
-            await msg.delete().catch(() => {});
-          }
-
-          const msg = await sendPainelRegras(canal);
-          if (msg) {
-            db.painels.regras = msg.id;
-            saveDB(db);
-            console.log("[Ready] Painel de regras enviado e guardado na DB");
-          }
-        } else {
-          console.log("[Ready] Painel de regras ja existe (ID: " + painelId + ")");
-        }
-      }
+      await verificarEPainel(
+        client, guild, CONFIG.CANAL_REGRAS,
+        "regras", sendPainelRegras
+      );
     }
 
   } catch (err) {
     console.error("[Ready] Erro no auto-setup de paineis:", err.message);
+  }
+}
+
+// ===== FUNÇÃO AUXILIAR: Verificar e enviar painel =====
+async function verificarEPainel(client, guild, canalId, tipo, sendFn) {
+  const canal = await guild.channels.fetch(canalId).catch(() => null);
+  if (!canal) {
+    console.warn(`[Ready] Canal ${tipo} não encontrado:`, canalId);
+    return;
+  }
+
+  const painelId = db.painels?.[tipo];
+  let painelExiste = false;
+  let precisaReenviar = false;
+
+  // 1. Verificar se a mensagem ainda existe
+  if (painelId) {
+    try {
+      const msg = await canal.messages.fetch(painelId);
+      if (msg) {
+        painelExiste = true;
+
+        // 2. Verificar se o conteúdo mudou (comparar hash)
+        const embedAtual = msg.embeds[0];
+        const componentsAtual = msg.components;
+        if (embedAtual) {
+          const hashAtual = hashPainel(embedAtual, componentsAtual);
+          const hashGuardado = db.painelsHash?.[tipo];
+
+          if (hashGuardado && hashAtual !== hashGuardado) {
+            console.log(`[Ready] Painel ${tipo} mudou de conteúdo. A reenviar...`);
+            precisaReenviar = true;
+            // Apagar a mensagem antiga
+            await msg.delete().catch(() => {});
+          } else {
+            console.log(`[Ready] Painel ${tipo} já existe e está atualizado (ID: ${painelId})`);
+          }
+        }
+      }
+    } catch (e) {
+      painelExiste = false;
+      precisaReenviar = true;
+      console.log(`[Ready] Painel ${tipo} anterior não encontrado (foi apagado)`);
+    }
+  } else {
+    precisaReenviar = true;
+  }
+
+  // 3. Se não existe ou precisa reenviar, enviar novo
+  if (!painelExiste || precisaReenviar) {
+    // Apagar mensagens antigas do bot no canal (só as dos últimos 10)
+    try {
+      const msgs = await canal.messages.fetch({ limit: 10 });
+      const botMsgs = msgs.filter(m => m.author.id === client.user.id);
+      for (const msg of botMsgs.values()) {
+        await msg.delete().catch(() => {});
+      }
+    } catch (e) {
+      // ignorar erro
+    }
+
+    // Enviar novo painel
+    const msg = await sendFn(canal);
+    if (msg) {
+      db.painels[tipo] = msg.id;
+
+      // Guardar hash do novo painel
+      const embedNovo = msg.embeds[0];
+      const componentsNovo = msg.components;
+      if (embedNovo) {
+        db.painelsHash[tipo] = hashPainel(embedNovo, componentsNovo);
+      }
+
+      await saveDB();
+      console.log(`[Ready] Painel ${tipo} enviado e guardado na DB (ID: ${msg.id})`);
+    }
   }
 }
