@@ -1,6 +1,6 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
+// Configurações do Bot - Portugal Alfa Community
 
-const config = {
+export const CONFIG = {
   TOKEN: process.env.TOKEN,
   CLIENT_ID: process.env.CLIENT_ID,
   MONGODB_URI: process.env.MONGODB_URI || "",
@@ -308,4 +308,4 @@ export const ASSISTANT_CONFIG = {
   SERPER_API_KEY: process.env.SERPER_API_KEY,
 };
 
-module.exports = config;
+export default CONFIG;
