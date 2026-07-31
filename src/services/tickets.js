@@ -60,7 +60,7 @@ async function iniciarFluxoRecrutamento(interaction, client) {
 
   const modal = new ModalBuilder()
     .setCustomId(`modal_trucky_${user.id}_${Date.now()}`)
-    .setTitle(`Verificação - Trucky App`);
+    .setTitle(`${CONFIG.EMOJI_TRUCK} Verificação - Trucky App`);
 
   const inputTrucky = new TextInputBuilder()
     .setCustomId("trucky_instalado")
@@ -104,22 +104,22 @@ export async function handleTruckyVerification(interaction, client) {
 
   if (temTrucky.includes("não") || temTrucky.includes("nao") || temTrucky.startsWith("n")) {
     const embed = new EmbedBuilder()
-      .setTitle(`Trucky App - Instalação Necessária`)
+      .setTitle(`${CONFIG.EMOJI_TRUCK} Trucky App - Instalação Necessária`)
       .setDescription([
-        `Precisas de instalar o Trucky App antes de te candidatares!`,
-        ``,
-        `**Passos:**`,
+        `${CONFIG.EMOJI_INFO} Precisas de instalar o Trucky App antes de te candidatares!`,
+        "",
+        `${CONFIG.EMOJI_CHECK} Passos:`,
         `1. Acede a: https://hub.truckyapp.com/`,
         `2. Cria a tua conta e liga ao Steam`,
         `3. Instala a app no computador`,
-        ``,
-        `Depois de instalado, volta a abrir o ticket de recrutamento!`
+        "",
+        `${CONFIG.EMOJI_TIME} Depois de instalado, volta a abrir o ticket de recrutamento!`
       ].join("\n"))
       .setColor(0xff9800)
       .setTimestamp();
 
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setLabel(`Trucky App`).setStyle(ButtonStyle.Link).setURL("https://hub.truckyapp.com/"),
+      new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TRUCK} Trucky App`).setStyle(ButtonStyle.Link).setURL("https://hub.truckyapp.com/"),
     );
 
     await interaction.editReply({ embeds: [embed], components: [row], flags: 64 });
@@ -130,16 +130,16 @@ export async function handleTruckyVerification(interaction, client) {
 }
 
 async function mostrarRegrasRecrutamento(interaction, client, nomeTrucky, linkTrucky = null) {
-  const regrasTexto = REGRAS_RECRUTAMENTO.map((r, i) => `${i + 1}. ${r}`).join("\n");
+  const regrasTexto = REGRAS_RECRUTAMENTO.map((r, i) => `${CONFIG.EMOJI_CHECK} ${i + 1}. ${r}`).join("\n");
 
   const embed = new EmbedBuilder()
-    .setTitle(`Regras da Portugal Alfa Truckers`)
+    .setTitle(`${CONFIG.EMOJI_RECRUTAMENTO} Regras da Portugal Alfa Truckers`)
     .setDescription([
-      `Antes de prosseguires, lê atentamente as regras:`,
-      ``,
+      `${CONFIG.EMOJI_INFO} Antes de prosseguires, lê atentamente as regras:`,
+      "",
       regrasTexto,
-      ``,
-      `Aceitas cumprir todas as regras acima?`
+      "",
+      `${CONFIG.EMOJI_QUESTION} Aceitas cumprir todas as regras acima?`
     ].join("\n"))
     .setColor(0x262af1)
     .setTimestamp();
@@ -153,11 +153,11 @@ async function mostrarRegrasRecrutamento(interaction, client, nomeTrucky, linkTr
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`aceitar_regras_rec_${interaction.user.id}_${nomeTrucky}`)
-      .setLabel(`Aceito as Regras`)
+      .setLabel(`${CONFIG.EMOJI_ACEITAR} Aceito as Regras`)
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId(`recusar_regras_rec_${interaction.user.id}`)
-      .setLabel(`Não Aceito`)
+      .setLabel(`${CONFIG.EMOJI_RECUSAR} Não Aceito`)
       .setStyle(ButtonStyle.Danger),
   );
 
@@ -181,7 +181,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
 
   if (cooldown.has(user.id)) {
     return interaction.editReply({
-      content: `Espera um pouco antes de abrir outro ticket (3 segundos).`,
+      content: `${CONFIG.EMOJI_TIME} Espera um pouco antes de abrir outro ticket (3 segundos).`,
       components: [],
       embeds: []
     });
@@ -242,7 +242,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
       userId: user.id,
       username: user.username,
       type: "recrutamento",
-      label: `Recrutamento PAT`,
+      label: `${CONFIG.EMOJI_RECRUTAMENTO} Recrutamento PAT`,
       openedAt: new Date().toISOString(),
       closedAt: null,
       claimedBy: null,
@@ -264,28 +264,28 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
     await saveDB();
 
     const embed = new EmbedBuilder()
-      .setTitle(`Sistema de Ticket | Portugal Alfa Truckers`)
+      .setTitle(`${CONFIG.EMOJI_TICKET} Sistema de Ticket | Portugal Alfa Truckers`)
       .setDescription([
-        `Motivo: Recrutamento PAT`,
-        `Assumido: Aguardando staff...`,
-        ``,
-        `Olá ${user.username}, aguarda ser atendido.`,
-        ``,
-        `Trucky: ${truckyDisplay}`,
-        ``,
-        `Regras aceites: Sim`
+        `${CONFIG.EMOJI_INFO} Motivo: ${CONFIG.EMOJI_RECRUTAMENTO} Recrutamento PAT`,
+        `${CONFIG.EMOJI_STAFF} Assumido: Aguardando staff...`,
+        "",
+        `${CONFIG.EMOJI_USER} Olá ${user.username}, aguarda ser atendido.`,
+        "",
+        `${CONFIG.EMOJI_TRUCK} Trucky: ${truckyDisplay}`,
+        "",
+        `${CONFIG.EMOJI_CHECK} Regras aceites: Sim`
       ].join("\n"))
       .setColor(0x262af1);
 
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`assumir_${ticketId}`).setLabel(`Assumir`).setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId(`painel_membro_${ticketId}`).setLabel(`Painel Membro`).setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId(`sair_${ticketId}`).setLabel(`Sair`).setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(`deletar_${ticketId}`).setLabel(`Fechar`).setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(`assumir_${ticketId}`).setLabel(`${CONFIG.EMOJI_ASSUMIR} Assumir`).setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`painel_membro_${ticketId}`).setLabel(`${CONFIG.EMOJI_PAINEL} Painel Membro`).setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`sair_${ticketId}`).setLabel(`${CONFIG.EMOJI_SAIR} Sair`).setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`deletar_${ticketId}`).setLabel(`${CONFIG.EMOJI_FECHAR} Fechar`).setStyle(ButtonStyle.Danger),
     );
 
     const panelMsg = await channel.send({
-      content: `<@${user.id}> | ID: \`${user.id}\``,
+      content: `${CONFIG.EMOJI_USER} <@${user.id}> | ID: \`${user.id}\``,
       embeds: [embed],
       components: [row]
     });
@@ -294,11 +294,11 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
     await sendLog(ticketId, "open", client);
 
     const rowIrTicket = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setLabel(`Ir para o Ticket`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${targetGuildId}/${channel.id}`),
+      new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TICKET} Ir para o Ticket`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${targetGuildId}/${channel.id}`),
     );
 
     await interaction.editReply({
-      content: `O teu ticket de recrutamento foi criado!`,
+      content: `${CONFIG.EMOJI_SUCCESS} O teu ticket de recrutamento foi criado!`,
       components: [rowIrTicket],
       embeds: []
     });
@@ -306,7 +306,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
   } catch (error) {
     console.error("Erro ao criar ticket de recrutamento:", error);
     await interaction.editReply({
-      content: `Erro ao criar o ticket. Contacta a staff.`,
+      content: `${CONFIG.EMOJI_ERROR} Erro ao criar o ticket. Contacta a staff.`,
       components: [],
       embeds: []
     });
@@ -315,14 +315,14 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
 
 async function criarTicketNormal(interaction, type, label, client, guild, user) {
   if (cooldown.has(user.id)) {
-    return safeEditReply(interaction, { content: `Espera um pouco antes de abrir outro ticket (3 segundos).`, flags: 64 });
+    return safeEditReply(interaction, { content: `${CONFIG.EMOJI_TIME} Espera um pouco antes de abrir outro ticket (3 segundos).`, flags: 64 });
   }
 
   const existingTicket = Object.values(db.tickets).find((t) => t.userId === user.id && !t.closed);
   if (existingTicket) {
     const existingChannel = await guild.channels.fetch(existingTicket.channelId).catch(() => null);
     if (existingChannel) {
-      return safeEditReply(interaction, { content: `Já tens um ticket aberto!`, flags: 64 });
+      return safeEditReply(interaction, { content: `${CONFIG.EMOJI_WARNING} Já tens um ticket aberto!`, flags: 64 });
     }
   }
 
@@ -362,7 +362,7 @@ async function criarTicketNormal(interaction, type, label, client, guild, user) 
 
   let descricaoExtra = "";
   if (type === "ajuda" && interaction._ajudaEspecificacoes) {
-    descricaoExtra = `\nEspecificações: ${interaction._ajudaEspecificacoes}`;
+    descricaoExtra = `\n${CONFIG.EMOJI_INFO} Especificações: ${interaction._ajudaEspecificacoes}`;
   }
 
   db.tickets[ticketId] = {
@@ -391,27 +391,27 @@ async function criarTicketNormal(interaction, type, label, client, guild, user) 
   await saveDB();
 
   const embed = new EmbedBuilder()
-    .setTitle(`Sistema de Ticket | Portugal Alfa Community`)
+    .setTitle(`${CONFIG.EMOJI_TICKET} Sistema de Ticket | Portugal Alfa Community`)
     .setDescription([
-      `Motivo: ${label}`,
-      `Assumido: Aguardando staff...`,
-      ``,
-      `Olá ${user.username}, aguarda ser atendido.`,
+      `${CONFIG.EMOJI_INFO} Motivo: ${label}`,
+      `${CONFIG.EMOJI_STAFF} Assumido: Aguardando staff...`,
+      "",
+      `${CONFIG.EMOJI_USER} Olá ${user.username}, aguarda ser atendido.`,
       descricaoExtra,
-      ``,
-      `Lembra-te: Qualquer incumprimento das regras levará ao encerramento do ticket sem aviso prévio!`
+      "",
+      `${CONFIG.EMOJI_WARNING} Lembra-te: Qualquer incumprimento das regras levará ao encerramento do ticket sem aviso prévio!`
     ].filter(Boolean).join("\n"))
     .setColor(0x262af1);
 
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`assumir_${ticketId}`).setLabel(`Assumir`).setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId(`painel_membro_${ticketId}`).setLabel(`Painel Membro`).setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(`sair_${ticketId}`).setLabel(`Sair`).setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`deletar_${ticketId}`).setLabel(`Fechar`).setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(`assumir_${ticketId}`).setLabel(`${CONFIG.EMOJI_ASSUMIR} Assumir`).setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`painel_membro_${ticketId}`).setLabel(`${CONFIG.EMOJI_PAINEL} Painel Membro`).setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(`sair_${ticketId}`).setLabel(`${CONFIG.EMOJI_SAIR} Sair`).setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`deletar_${ticketId}`).setLabel(`${CONFIG.EMOJI_FECHAR} Fechar`).setStyle(ButtonStyle.Danger),
   );
 
   const panelMsg = await channel.send({
-    content: `<@${user.id}> | ID: \`${user.id}\``,
+    content: `${CONFIG.EMOJI_USER} <@${user.id}> | ID: \`${user.id}\``,
     embeds: [embed],
     components: [row]
   });
@@ -420,10 +420,10 @@ async function criarTicketNormal(interaction, type, label, client, guild, user) 
   await sendLog(ticketId, "open", client);
 
   const rowIrTicket = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setLabel(`Ir para o Ticket`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${guild.id}/${channel.id}`),
+    new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TICKET} Ir para o Ticket`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${guild.id}/${channel.id}`),
   );
 
-  await safeEditReply(interaction, { content: `O teu ticket foi criado com sucesso!`, components: [rowIrTicket], flags: 64 });
+  await safeEditReply(interaction, { content: `${CONFIG.EMOJI_SUCCESS} O teu ticket foi criado com sucesso!`, components: [rowIrTicket], flags: 64 });
 }
 
 export async function updateTicketEmbed(channel, ticketId) {
@@ -436,17 +436,17 @@ export async function updateTicketEmbed(channel, ticketId) {
 
     const claimedText = ticket.claimedBy
       ? `<@${ticket.claimedBy}> | ${ticket.claimedByName}`
-      : `Aguardando staff...`;
+      : `${CONFIG.EMOJI_TIME} Aguardando staff...`;
 
     const embed = new EmbedBuilder()
-      .setTitle(`Sistema de Ticket | Portugal Alfa Community`)
+      .setTitle(`${CONFIG.EMOJI_TICKET} Sistema de Ticket | Portugal Alfa Community`)
       .setDescription([
-        `Motivo: ${ticket.label}`,
-        `Assumido: ${claimedText}`,
-        ``,
-        `Olá, aguarda ser atendido.`,
-        ``,
-        `Lembra-te: Qualquer incumprimento das regras levará ao encerramento do ticket sem aviso prévio!`
+        `${CONFIG.EMOJI_INFO} Motivo: ${ticket.label}`,
+        `${CONFIG.EMOJI_STAFF} Assumido: ${claimedText}`,
+        "",
+        `${CONFIG.EMOJI_USER} Olá, aguarda ser atendido.`,
+        "",
+        `${CONFIG.EMOJI_WARNING} Lembra-te: Qualquer incumprimento das regras levará ao encerramento do ticket sem aviso prévio!`
       ].join("\n"))
       .setColor(ticket.claimedBy ? 0x00ff00 : 0x040021);
 
@@ -457,7 +457,7 @@ export async function updateTicketEmbed(channel, ticketId) {
       for (const btn of oldButtons) {
         const newBtn = ButtonBuilder.from(btn);
         if (btn.customId?.startsWith("assumir_")) {
-          newBtn.setDisabled(true).setLabel(`Assumido`);
+          newBtn.setDisabled(true).setLabel(`${CONFIG.EMOJI_ASSUMIR} Assumido`);
         }
         newRow.addComponents(newBtn);
       }
