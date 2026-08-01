@@ -1,48 +1,24 @@
-// ============================================================
-// ready.js - Evento quando o bot fica online
-// ============================================================
-
 import { Events } from "discord.js";
 import { setExternalClient, setupExternalLogChannels } from "../services/externalLogs.js";
-import { sendPainelGeral, sendPainelRecrutamento, sendPainelRegras } from "../services/panels.js";
 import { CONFIG } from "../config/index.js";
+import { sendPainelGeral, sendPainelRecrutamento, sendPainelRegras } from "../services/panels.js";
 import { db, saveDB } from "../utils/db.js";
-import { registerCommands } from "../commands/register.js";
 import crypto from "crypto";
 
-// Função para calcular hash do conteúdo de um embed
-function hashPainel(embed, components) {
-  const data = JSON.stringify({
-    title: embed.data?.title || "",
-    description: embed.data?.description || "",
-    image: embed.data?.image?.url || "",
-    color: embed.data?.color || 0,
-    components: components.map(c => c.toJSON())
-  });
-  return crypto.createHash("md5").update(data).digest("hex");
+function hashContent(content) {
+  return crypto.createHash("md5").update(JSON.stringify(content)).digest("hex");
 }
 
 export async function handleReady(client) {
-  console.log(`[Ready] Bot online: ${client.user.tag}`);
+  console.log(`[Ready] 🤖 Bot online: ${client.user.tag}`);
 
-  // ===== REGISTAR COMANDOS SLASH =====
-  try {
-    await registerCommands();
-    console.log("[Ready] Comandos slash registados com sucesso!");
-  } catch (err) {
-    console.error("[Ready] Erro ao registar comandos:", err.message);
-  }
-
-  // Configura o estado do bot
   client.user.setPresence({
     activities: [{ name: '/ajuda | Portugal Alfa Community', type: 0 }],
     status: 'online',
   });
 
-  // Configura o serviço de logs externo
   setExternalClient(client);
 
-  // Auto-setup dos canais de log no servidor externo
   try {
     const externalGuild = await client.guilds.fetch(CONFIG.EXTERNAL_LOG_GUILD_ID).catch(() => null);
     if (externalGuild) {
@@ -54,118 +30,109 @@ export async function handleReady(client) {
     console.error("[Ready] Erro no setup de canais externos:", err.message);
   }
 
-  // ===== AUTO-SETUP DOS PAINÉIS (com anti-duplicação + verificação de conteúdo) =====
-  try {
-    const guild = await client.guilds.fetch(CONFIG.GUILD_ID).catch(() => null);
-    if (!guild) {
-      console.warn("[Ready] Servidor principal nao encontrado:", CONFIG.GUILD_ID);
-      return;
-    }
+  // === LIMPEZA DE TICKETS FANTASMAS ===
+  await limparTicketsFantasma(client);
 
-    if (!db.painels) db.painels = {};
-    if (!db.painelsHash) db.painelsHash = {};
+  // === AUTO-SETUP DOS PAINÉIS ===
+  if (!db.painelsHash) db.painelsHash = {};
 
-    // ===== PAINEL GERAL =====
-    if (CONFIG.CANAL_TICKETS_GERAL) {
-      await verificarEPainel(
-        client, guild, CONFIG.CANAL_TICKETS_GERAL,
-        "geral", sendPainelGeral
-      );
-    }
-
-    // ===== PAINEL DE RECRUTAMENTO =====
-    if (CONFIG.CANAL_TICKETS_RECRUTAMENTO) {
-      await verificarEPainel(
-        client, guild, CONFIG.CANAL_TICKETS_RECRUTAMENTO,
-        "recrutamento", sendPainelRecrutamento
-      );
-    }
-
-    // ===== PAINEL DE REGRAS =====
-    if (CONFIG.CANAL_REGRAS) {
-      await verificarEPainel(
-        client, guild, CONFIG.CANAL_REGRAS,
-        "regras", sendPainelRegras
-      );
-    }
-
-  } catch (err) {
-    console.error("[Ready] Erro no auto-setup de paineis:", err.message);
-  }
-}
-
-// ===== FUNÇÃO AUXILIAR: Verificar e enviar painel =====
-async function verificarEPainel(client, guild, canalId, tipo, sendFn) {
-  const canal = await guild.channels.fetch(canalId).catch(() => null);
-  if (!canal) {
-    console.warn(`[Ready] Canal ${tipo} não encontrado:`, canalId);
+  const guild = await client.guilds.fetch(CONFIG.GUILD_ID).catch(() => null);
+  if (!guild) {
+    console.warn("[Ready] Servidor principal nao encontrado.");
     return;
   }
 
-  const painelId = db.painels?.[tipo];
-  let painelExiste = false;
-  let precisaReenviar = false;
+  await new Promise(r => setTimeout(r, 2000));
 
-  // 1. Verificar se a mensagem ainda existe
-  if (painelId) {
-    try {
-      const msg = await canal.messages.fetch(painelId);
-      if (msg) {
-        painelExiste = true;
+  await setupPainel(client, guild, "geral", CONFIG.CANAL_TICKETS_GERAL, sendPainelGeral);
+  await setupPainel(client, guild, "recrutamento", CONFIG.CANAL_TICKETS_RECRUTAMENTO, sendPainelRecrutamento);
+  await setupPainel(client, guild, "regras", CONFIG.CANAL_REGRAS, sendPainelRegras);
 
-        // 2. Verificar se o conteúdo mudou (comparar hash)
-        const embedAtual = msg.embeds[0];
-        const componentsAtual = msg.components;
-        if (embedAtual) {
-          const hashAtual = hashPainel(embedAtual, componentsAtual);
-          const hashGuardado = db.painelsHash?.[tipo];
+  console.log("[Ready] ✅ Setup de paineis concluido!");
+}
 
-          if (hashGuardado && hashAtual !== hashGuardado) {
-            console.log(`[Ready] Painel ${tipo} mudou de conteúdo. A reenviar...`);
-            precisaReenviar = true;
-            // Apagar a mensagem antiga
-            await msg.delete().catch(() => {});
-          } else {
-            console.log(`[Ready] Painel ${tipo} já existe e está atualizado (ID: ${painelId})`);
-          }
-        }
-      }
-    } catch (e) {
-      painelExiste = false;
-      precisaReenviar = true;
-      console.log(`[Ready] Painel ${tipo} anterior não encontrado (foi apagado)`);
+async function limparTicketsFantasma(client) {
+  if (!db.tickets) return;
+  let limpos = 0;
+
+  for (const [ticketId, ticket] of Object.entries(db.tickets)) {
+    if (ticket.closed) continue;
+
+    const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
+    if (!channel) {
+      console.log(`[Limpeza] Ticket fantasma: ${ticketId} (canal ${ticket.channelId} nao existe)`);
+      ticket.closed = true;
+      ticket.closedAt = new Date().toISOString();
+      ticket.closedBy = "system";
+      ticket.closedByName = "Limpeza Automatica";
+      limpos++;
     }
-  } else {
-    precisaReenviar = true;
   }
 
-  // 3. Se não existe ou precisa reenviar, enviar novo
-  if (!painelExiste || precisaReenviar) {
-    // Apagar mensagens antigas do bot no canal (só as dos últimos 10)
-    try {
-      const msgs = await canal.messages.fetch({ limit: 10 });
-      const botMsgs = msgs.filter(m => m.author.id === client.user.id);
-      for (const msg of botMsgs.values()) {
-        await msg.delete().catch(() => {});
-      }
-    } catch (e) {
-      // ignorar erro
+  if (limpos > 0) {
+    await saveDB();
+    console.log(`[Limpeza] ${limpos} tickets fantasmas limpos.`);
+  }
+}
+
+async function setupPainel(client, guild, key, canalId, sendFn) {
+  try {
+    const channel = await client.channels.fetch(canalId).catch(() => null);
+    if (!channel) {
+      console.warn(`[Ready] Canal ${key} nao encontrado: ${canalId}`);
+      return;
     }
 
-    // Enviar novo painel
-    const msg = await sendFn(canal);
-    if (msg) {
-      db.painels[tipo] = msg.id;
+    const painelData = db.painelsHash?.[key];
+    console.log(`[Ready] Painel ${key} - Dados na DB:`, painelData ? `messageId=${painelData.messageId}` : "NENHUM");
 
-      // Guardar hash do novo painel
-      const embedNovo = msg.embeds[0];
-      const componentsNovo = msg.components;
-      if (embedNovo) {
-        db.painelsHash[tipo] = hashPainel(embedNovo, componentsNovo);
+    let shouldSend = true;
+
+    if (painelData && painelData.messageId) {
+      try {
+        const oldMsg = await channel.messages.fetch(painelData.messageId);
+        if (oldMsg && oldMsg.author.id === client.user.id) {
+          shouldSend = false;
+          console.log(`[Ready] Painel ${key} encontrado no Discord, nao reenviado.`);
+        } else {
+          console.log(`[Ready] Painel ${key} encontrado mas nao e do bot. Reenviando...`);
+        }
+      } catch (e) {
+        console.log(`[Ready] Painel ${key} messageId=${painelData.messageId} NAO encontrado. Reenviando...`);
+      }
+    } else {
+      console.log(`[Ready] Painel ${key} sem messageId na DB. Reenviando...`);
+    }
+
+    if (shouldSend) {
+      // Limpa TODAS as mensagens do bot no canal
+      try {
+        let fetched;
+        do {
+          fetched = await channel.messages.fetch({ limit: 100 });
+          const botMessages = fetched.filter(m => m.author.id === client.user.id);
+          console.log(`[Ready] Painel ${key} - ${botMessages.size} mensagens do bot para apagar.`);
+          for (const msg of botMessages.values()) {
+            await msg.delete().catch(() => {});
+            await new Promise(r => setTimeout(r, 350));
+          }
+        } while (fetched.size >= 100);
+      } catch (e) {
+        console.warn(`[Ready] Erro ao limpar mensagens no canal ${key}:`, e.message);
       }
 
+      const msg = await sendFn(channel);
+
+      db.painelsHash[key] = {
+        messageId: msg.id,
+        hash: hashContent({ key, canalId, timestamp: Date.now() }),
+        sentAt: new Date().toISOString(),
+      };
       await saveDB();
-      console.log(`[Ready] Painel ${tipo} enviado e guardado na DB (ID: ${msg.id})`);
+
+      console.log(`[Ready] Painel ${key} enviado! Novo ID: ${msg.id}`);
     }
+  } catch (err) {
+    console.error(`[Ready] Erro ao enviar painel ${key}:`, err.message);
   }
 }
