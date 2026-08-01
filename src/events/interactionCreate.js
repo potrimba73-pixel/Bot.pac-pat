@@ -8,6 +8,8 @@ import { criarTicketRecrutamento, handleTruckyVerification, updateTicketEmbed } 
 import { sendLog } from "../services/logs.js";
 
 export async function handleInteractionCreate(interaction, client) {
+  
+  // ============ COMANDOS SLASH ============
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === "transcript") {
       const ticket = Object.values(db.tickets).find(t => t.channelId === interaction.channelId && !t.closed);
@@ -19,51 +21,50 @@ export async function handleInteractionCreate(interaction, client) {
       messages.reverse().forEach(msg => {
         transcript += `[${msg.createdAt.toLocaleString()}] ${msg.author.tag}: ${msg.content}\n`;
       });
-      await interaction.reply({ content: transcript.substring(0, 2000), flags: 64 });
-      return;
+      return interaction.reply({ content: transcript.substring(0, 2000), flags: 64 });
     }
 
     if (interaction.commandName === "painelmembro") {
-      await enviarPainelMembro(interaction);
-      return;
+      return enviarPainelMembro(interaction);
     }
+    
+    return; // Comando desconhecido
   }
 
+  // ============ MODAIS ============
   if (interaction.isModalSubmit()) {
     if (interaction.customId.startsWith("modal_trucky_")) {
-      await handleTruckyVerification(interaction, client);
-      return;
+      return handleTruckyVerification(interaction, client);
     }
-
+    
     if (interaction.customId.startsWith("modal_ajuda_")) {
       const especificacoes = interaction.fields.getTextInputValue("ajuda_especificacoes")?.trim();
       interaction._ajudaEspecificacoes = especificacoes;
       const { criarTicket } = await import("../services/tickets.js");
-      await criarTicket(interaction, "ajuda", `Pedir ajuda`, client);
-      return;
+      return criarTicket(interaction, "ajuda", `Pedir ajuda`, client);
     }
 
     if (interaction.customId.startsWith("modal_foto_trucky_")) {
-      await handleFotoTruckyModal(interaction, client);
-      return;
+      return handleFotoTruckyModal(interaction, client);
     }
+    
+    return;
   }
 
+  // ============ SELECT MENUS ============
   if (interaction.isStringSelectMenu()) {
     if (interaction.customId === "ticket_geral") {
       const value = interaction.values[0];
       const labels = { bugs: `Bugs`, denuncia: `Denuncia`, suporte: `Suporte`, criador: `Criador De Conteudo` };
       const { criarTicket } = await import("../services/tickets.js");
-      await criarTicket(interaction, value, labels[value], client);
-      return;
+      return criarTicket(interaction, value, labels[value], client);
     }
 
     if (interaction.customId === "ticket_recruitamento") {
       const value = interaction.values[0];
       if (value === "recrutamento") {
         const { createTicket } = await import("../services/tickets.js");
-        await createTicket(interaction, "recrutamento", `Recrutamento PAT`, client);
-        return;
+        return createTicket(interaction, "recrutamento", `Recrutamento PAT`, client);
       }
       if (value === "ajuda") {
         const modal = new ModalBuilder()
@@ -77,16 +78,18 @@ export async function handleInteractionCreate(interaction, client) {
           .setRequired(true)
           .setMaxLength(1000);
         modal.addComponents(new ActionRowBuilder().addComponents(input));
-        await interaction.showModal(modal);
-        return;
+        return interaction.showModal(modal);
       }
     }
+    
+    return;
   }
 
+  // ============ BOTOES ============
   if (interaction.isButton()) {
     const customId = interaction.customId;
 
-    // === ACEITAR REGRAS (painel de regras) ===
+    // --- ACEITAR REGRAS ---
     if (customId === "aceitar_regras") {
       const member = interaction.member;
       if (!db.acceptedRules) db.acceptedRules = [];
@@ -98,49 +101,42 @@ export async function handleInteractionCreate(interaction, client) {
       const cargoVerificado = interaction.guild.roles.cache.get(CONFIG.CARGO_VERIFICADO);
       if (cargoMembro) await member.roles.add(cargoMembro).catch(() => {});
       if (cargoVerificado) await member.roles.add(cargoVerificado).catch(() => {});
-      await interaction.reply({ content: `✅ Regras aceites com sucesso! Bem-vindo a comunidade 🎉.`, flags: 64 });
-      return;
+      return interaction.reply({ content: `✅ Regras aceites com sucesso! Bem-vindo a comunidade 🎉.`, flags: 64 });
     }
 
-    // === ACEITAR REGRAS RECRUTAMENTO ===
+    // --- ACEITAR REGRAS RECRUTAMENTO ---
     if (customId.startsWith("aceitar_regras_rec_")) {
       const parts = customId.split("_");
       const userId = parts[3];
       const nomeTrucky = parts.slice(4).join("_");
       if (interaction.user.id !== userId) {
-        await interaction.reply({ content: `Este botao nao e para ti!`, flags: 64 });
-        return;
+        return interaction.reply({ content: `Este botao nao e para ti!`, flags: 64 });
       }
-      await criarTicketRecrutamento(interaction, client, nomeTrucky);
-      return;
+      return criarTicketRecrutamento(interaction, client, nomeTrucky);
     }
 
-    // === RECUSAR REGRAS RECRUTAMENTO ===
+    // --- RECUSAR REGRAS RECRUTAMENTO ---
     if (customId.startsWith("recusar_regras_rec_")) {
       const userId = customId.split("_")[3];
       if (interaction.user.id !== userId) {
-        await interaction.reply({ content: `Este botao nao e para ti!`, flags: 64 });
-        return;
+        return interaction.reply({ content: `Este botao nao e para ti!`, flags: 64 });
       }
-      await interaction.update({
+      return interaction.update({
         content: `Recrutamento cancelado. Se mudares de ideias, podes voltar a candidatar-te mais tarde.`,
         embeds: [],
         components: [],
       });
-      return;
     }
 
-    // === ASSUMIR TICKET ===
+    // --- ASSUMIR TICKET ---
     if (customId.startsWith("assumir_")) {
       const ticketId = customId.replace("assumir_", "");
       const ticket = db.tickets[ticketId];
       if (!ticket || ticket.closed) {
-        await interaction.reply({ content: `Ticket não encontrado ou já fechado.`, flags: 64 });
-        return;
+        return interaction.reply({ content: `Ticket nao encontrado ou ja fechado.`, flags: 64 });
       }
       if (ticket.claimedBy) {
-        await interaction.reply({ content: `Este ticket ja foi assumido por <@${ticket.claimedBy}>.`, flags: 64 });
-        return;
+        return interaction.reply({ content: `Este ticket ja foi assumido por <@${ticket.claimedBy}>.`, flags: 64 });
       }
 
       ticket.claimedBy = interaction.user.id;
@@ -148,40 +144,34 @@ export async function handleInteractionCreate(interaction, client) {
       await saveDB();
 
       const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
-      if (channel) {
-        await updateTicketEmbed(channel, ticketId);
-        // Mensagem visivel para TODOS no canal do ticket
-        await channel.send(`Olá, o teu ticket foi assumido por <@${interaction.user.id}>. Se precisares de chamar a staff, usa a opcao Painel Membro.`);
-        // Mensagem EPHEMERAL so para quem assumiu
-        await interaction.reply({
-          content: `Olá <@${interaction.user.id}>, sabias que podes usar o /painelstaff para teres mais acesso ao ticket.`,
-          flags: 64
-        });
-      } else {
-        await interaction.reply({ content: `Erro: Canal do ticket nao encontrado.`, flags: 64 });
+      if (!channel) {
+        return interaction.reply({ content: `Erro: Canal do ticket nao encontrado.`, flags: 64 });
       }
-      return;
+
+      await updateTicketEmbed(channel, ticketId);
+      await channel.send(`Olá, o teu ticket foi assumido por <@${interaction.user.id}>. Se precisares de chamar a staff, usa a opcao Painel Membro.`);
+      return interaction.reply({
+        content: `Olá <@${interaction.user.id}>, sabias que podes usar o /painelstaff para teres mais acesso ao ticket.`,
+        flags: 64
+      });
     }
 
-    // === PAINEL MEMBRO ===
+    // --- PAINEL MEMBRO ---
     if (customId.startsWith("painel_membro_")) {
       const ticketId = customId.replace("painel_membro_", "");
       const ticket = db.tickets[ticketId];
       if (!ticket || ticket.closed) {
-        await interaction.reply({ content: `Ticket nao encontrado ou ja fechado.`, flags: 64 });
-        return;
+        return interaction.reply({ content: `Ticket nao encontrado ou ja fechado.`, flags: 64 });
       }
 
       const guild = await client.guilds.fetch(ticket.guildId).catch(() => null);
       if (!guild) {
-        await interaction.reply({ content: `Erro ao aceder ao servidor.`, flags: 64 });
-        return;
+        return interaction.reply({ content: `Erro ao aceder ao servidor.`, flags: 64 });
       }
 
       const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
       if (!channel) {
-        await interaction.reply({ content: `Canal nao encontrado.`, flags: 64 });
-        return;
+        return interaction.reply({ content: `Canal nao encontrado.`, flags: 64 });
       }
 
       const members = await channel.members.fetch();
@@ -209,8 +199,7 @@ export async function handleInteractionCreate(interaction, client) {
       });
 
       if (staffList.length === 0) {
-        await interaction.reply({ content: `Nenhum membro da staff encontrado neste ticket.`, flags: 64 });
-        return;
+        return interaction.reply({ content: `Nenhum membro da staff encontrado neste ticket.`, flags: 64 });
       }
 
       const staffText = staffList.map(s => `**${s.roleName}** | ${s.displayName} | <@${s.member.id}>`).join("\n");
@@ -224,40 +213,35 @@ export async function handleInteractionCreate(interaction, client) {
         ].join("\n"))
         .setColor(CONFIG.COR_PRINCIPAL);
 
-      await interaction.reply({ embeds: [embed], flags: 64 });
-      return;
+      return interaction.reply({ embeds: [embed], flags: 64 });
     }
 
-    // === SAIR DO TICKET ===
+    // --- SAIR DO TICKET ---
     if (customId.startsWith("sair_")) {
       const ticketId = customId.replace("sair_", "");
       const ticket = db.tickets[ticketId];
       if (!ticket || ticket.closed) {
-        await interaction.reply({ content: `Ticket nao encontrado ou ja fechado.`, flags: 64 });
-        return;
+        return interaction.reply({ content: `Ticket nao encontrado ou ja fechado.`, flags: 64 });
       }
       if (ticket.userId !== interaction.user.id) {
-        await interaction.reply({ content: `So quem abriu o ticket pode sair.`, flags: 64 });
-        return;
+        return interaction.reply({ content: `So quem abriu o ticket pode sair.`, flags: 64 });
       }
 
       const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
-      if (channel) {
-        await channel.permissionOverwrites.delete(interaction.user.id);
-        await interaction.reply({ content: `Saiste do ticket com sucesso.`, flags: 64 });
-      } else {
-        await interaction.reply({ content: `Canal do ticket nao encontrado.`, flags: 64 });
+      if (!channel) {
+        return interaction.reply({ content: `Canal do ticket nao encontrado.`, flags: 64 });
       }
-      return;
+
+      await channel.permissionOverwrites.delete(interaction.user.id);
+      return interaction.reply({ content: `Saiste do ticket com sucesso.`, flags: 64 });
     }
 
-    // === FECHAR TICKET ===
+    // --- FECHAR TICKET ---
     if (customId.startsWith("deletar_")) {
       const ticketId = customId.replace("deletar_", "");
       const ticket = db.tickets[ticketId];
       if (!ticket || ticket.closed) {
-        await interaction.reply({ content: `Ticket nao encontrado ou ja fechado.`, flags: 64 });
-        return;
+        return interaction.reply({ content: `Ticket nao encontrado ou ja fechado.`, flags: 64 });
       }
 
       if (ticket.type === "recrutamento") {
@@ -267,24 +251,21 @@ export async function handleInteractionCreate(interaction, client) {
           new ButtonBuilder().setCustomId(`fechar_definitivo_${ticketId}`).setLabel(`Fechar Definitivo (Nao Recrutamento. Outros assuntos)`).setStyle(ButtonStyle.Secondary),
         );
 
-        await interaction.reply({
+        return interaction.reply({
           content: `O candidato foi recrutado?`,
           components: [row],
         });
-        return;
       } else {
-        await fecharTicket(interaction, ticketId, client, false);
-        return;
+        return fecharTicket(interaction, ticketId, client, false);
       }
     }
 
-    // === RECRUTADO SIM ===
+    // --- RECRUTADO SIM ---
     if (customId.startsWith("recrutado_sim_")) {
       const ticketId = customId.replace("recrutado_sim_", "");
       const ticket = db.tickets[ticketId];
       if (!ticket) {
-        await interaction.reply({ content: `Ticket nao encontrado.`, flags: 64 });
-        return;
+        return interaction.reply({ content: `Ticket nao encontrado.`, flags: 64 });
       }
 
       const modal = new ModalBuilder()
@@ -300,27 +281,28 @@ export async function handleInteractionCreate(interaction, client) {
         .setMaxLength(100);
 
       modal.addComponents(new ActionRowBuilder().addComponents(input));
-      await interaction.showModal(modal);
-      return;
+      return interaction.showModal(modal);
     }
 
-    // === RECRUTADO NAO ===
+    // --- RECRUTADO NAO ---
     if (customId.startsWith("recrutado_nao_")) {
       const ticketId = customId.replace("recrutado_nao_", "");
-      await fecharTicket(interaction, ticketId, client, false);
-      return;
+      return fecharTicket(interaction, ticketId, client, false);
     }
 
-    // === FECHAR DEFINITIVO ===
+    // --- FECHAR DEFINITIVO ---
     if (customId.startsWith("fechar_definitivo_")) {
       const ticketId = customId.replace("fechar_definitivo_", "");
-      await fecharTicket(interaction, ticketId, client, false);
-      return;
+      return fecharTicket(interaction, ticketId, client, false);
     }
+
+    // Botao desconhecido
+    return interaction.reply({ content: `Acao desconhecida.`, flags: 64 }).catch(() => {});
   }
 }
 
-// === HANDLER DO MODAL DA FOTO TRUCKY ===
+// ============ FUNCOES AUXILIARES ============
+
 async function handleFotoTruckyModal(interaction, client) {
   const ticketId = interaction.customId.replace("modal_foto_trucky_", "");
   const ticket = db.tickets[ticketId];
@@ -406,13 +388,12 @@ async function handleFotoTruckyModal(interaction, client) {
     }, 10000);
   }
 
-  await interaction.reply({
-    content: `✅ Utilizador recrutado com sucesso! Foto do Trucky: ${fotoNome}.\nTicket será fechado em 10 segundos...`,
+  return interaction.reply({
+    content: `✅ Utilizador recrutado com sucesso! Foto do Trucky: ${fotoNome}.\nTicket sera fechado em 10 segundos...`,
     flags: 64
   });
 }
 
-// === FECHAR TICKET (normal ou nao recrutado) ===
 async function fecharTicket(interaction, ticketId, client, recrutado) {
   const ticket = db.tickets[ticketId];
   if (!ticket) return interaction.reply({ content: `Ticket nao encontrado.`, flags: 64 });
@@ -470,10 +451,9 @@ async function fecharTicket(interaction, ticketId, client, recrutado) {
     }, 10000);
   }
 
-  await interaction.reply({ content: `Ticket fechado com sucesso!`, flags: 64 });
+  return interaction.reply({ content: `Ticket fechado com sucesso!`, flags: 64 });
 }
 
-// === PAINEL MEMBRO (comando /painelmembro) ===
 async function enviarPainelMembro(interaction) {
   const ticket = Object.values(db.tickets).find(t => t.channelId === interaction.channelId && !t.closed);
   if (!ticket) {
@@ -522,5 +502,5 @@ async function enviarPainelMembro(interaction) {
     ].join("\n"))
     .setColor(CONFIG.COR_PRINCIPAL);
 
-  await interaction.reply({ embeds: [embed], flags: 64 });
+  return interaction.reply({ embeds: [embed], flags: 64 });
 }
