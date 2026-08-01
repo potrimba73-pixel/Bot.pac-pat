@@ -3,11 +3,6 @@ import { setExternalClient, setupExternalLogChannels } from "../services/externa
 import { CONFIG } from "../config/index.js";
 import { sendPainelGeral, sendPainelRecrutamento, sendPainelRegras } from "../services/panels.js";
 import { db, saveDB } from "../utils/db.js";
-import crypto from "crypto";
-
-function hashContent(content) {
-  return crypto.createHash("md5").update(JSON.stringify(content)).digest("hex");
-}
 
 export async function handleReady(client) {
   console.log(`[Ready] 🤖 Bot online: ${client.user.tag}`);
@@ -31,6 +26,7 @@ export async function handleReady(client) {
   }
 
   // === LIMPEZA DE TICKETS FANTASMAS ===
+  console.log("[Ready] A iniciar limpeza de tickets fantasmas...");
   await limparTicketsFantasma(client);
 
   // === AUTO-SETUP DOS PAINÉIS ===
@@ -42,7 +38,7 @@ export async function handleReady(client) {
     return;
   }
 
-  await new Promise(r => setTimeout(r, 2000));
+  await new Promise(r => setTimeout(r, 3000));
 
   await setupPainel(client, guild, "geral", CONFIG.CANAL_TICKETS_GERAL, sendPainelGeral);
   await setupPainel(client, guild, "recrutamento", CONFIG.CANAL_TICKETS_RECRUTAMENTO, sendPainelRecrutamento);
@@ -52,12 +48,14 @@ export async function handleReady(client) {
 }
 
 async function limparTicketsFantasma(client) {
-  if (!db.tickets) return;
-  let limpos = 0;
+  if (!db.tickets) {
+    console.log("[Limpeza] Sem tickets na DB.");
+    return;
+  }
 
+  let limpos = 0;
   for (const [ticketId, ticket] of Object.entries(db.tickets)) {
     if (ticket.closed) continue;
-
     const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
     if (!channel) {
       console.log(`[Limpeza] Ticket fantasma: ${ticketId} (canal ${ticket.channelId} nao existe)`);
@@ -68,10 +66,9 @@ async function limparTicketsFantasma(client) {
       limpos++;
     }
   }
-
   if (limpos > 0) {
     await saveDB();
-    console.log(`[Limpeza] ${limpos} tickets fantasmas limpos.`);
+    console.log(`[Limpeza] ✅ ${limpos} tickets fantasmas limpos.`);
   }
 }
 
@@ -83,55 +80,67 @@ async function setupPainel(client, guild, key, canalId, sendFn) {
       return;
     }
 
+    // === ESTRATÉGIA: Procurar painel existente do bot no canal ===
+    // 1. Primeiro tenta o messageId guardado na DB
+    // 2. Se nao encontrar, procura nas ultimas 50 mensagens do canal
+    // 3. So reenvia se NAO encontrar NENHUM painel do bot
+
+    let painelExistente = null;
+
+    // Tentativa 1: messageId na DB
     const painelData = db.painelsHash?.[key];
-    console.log(`[Ready] Painel ${key} - Dados na DB:`, painelData ? `messageId=${painelData.messageId}` : "NENHUM");
-
-    let shouldSend = true;
-
-    if (painelData && painelData.messageId) {
+    if (painelData?.messageId) {
       try {
-        const oldMsg = await channel.messages.fetch(painelData.messageId);
-        if (oldMsg && oldMsg.author.id === client.user.id) {
-          shouldSend = false;
-          console.log(`[Ready] Painel ${key} encontrado no Discord, nao reenviado.`);
-        } else {
-          console.log(`[Ready] Painel ${key} encontrado mas nao e do bot. Reenviando...`);
+        const msg = await channel.messages.fetch(painelData.messageId);
+        if (msg && msg.author.id === client.user.id) {
+          painelExistente = msg;
+          console.log(`[Ready] Painel ${key} encontrado via DB (ID: ${msg.id}). Nao reenviado.`);
         }
       } catch (e) {
-        console.log(`[Ready] Painel ${key} messageId=${painelData.messageId} NAO encontrado. Reenviando...`);
+        console.log(`[Ready] Painel ${key} na DB nao encontrado no Discord.`);
       }
-    } else {
-      console.log(`[Ready] Painel ${key} sem messageId na DB. Reenviando...`);
     }
 
-    if (shouldSend) {
-      // Limpa TODAS as mensagens do bot no canal
+    // Tentativa 2: Procurar nas ultimas mensagens do canal
+    if (!painelExistente) {
       try {
-        let fetched;
-        do {
-          fetched = await channel.messages.fetch({ limit: 100 });
-          const botMessages = fetched.filter(m => m.author.id === client.user.id);
-          console.log(`[Ready] Painel ${key} - ${botMessages.size} mensagens do bot para apagar.`);
-          for (const msg of botMessages.values()) {
-            await msg.delete().catch(() => {});
-            await new Promise(r => setTimeout(r, 350));
-          }
-        } while (fetched.size >= 100);
+        const messages = await channel.messages.fetch({ limit: 50 });
+        const botMessages = messages.filter(m => m.author.id === client.user.id);
+        if (botMessages.size > 0) {
+          // Pega a mensagem mais recente do bot (provavelmente o painel)
+          painelExistente = botMessages.first();
+          console.log(`[Ready] Painel ${key} encontrado via scan (ID: ${painelExistente.id}). Nao reenviado.`);
+          
+          // Atualiza a DB com o ID correto
+          db.painelsHash[key] = {
+            messageId: painelExistente.id,
+            sentAt: new Date().toISOString(),
+          };
+          await saveDB();
+        }
       } catch (e) {
-        console.warn(`[Ready] Erro ao limpar mensagens no canal ${key}:`, e.message);
+        console.log(`[Ready] Erro ao procurar painel ${key} no canal:`, e.message);
       }
-
-      const msg = await sendFn(channel);
-
-      db.painelsHash[key] = {
-        messageId: msg.id,
-        hash: hashContent({ key, canalId, timestamp: Date.now() }),
-        sentAt: new Date().toISOString(),
-      };
-      await saveDB();
-
-      console.log(`[Ready] Painel ${key} enviado! Novo ID: ${msg.id}`);
     }
+
+    // Se encontrou painel, NAO faz nada mais
+    if (painelExistente) {
+      return;
+    }
+
+    // === SO REENVIA SE NAO HOUVER PAINEL ===
+    console.log(`[Ready] Painel ${key} NAO encontrado. Enviando novo...`);
+
+    const msg = await sendFn(channel);
+
+    db.painelsHash[key] = {
+      messageId: msg.id,
+      sentAt: new Date().toISOString(),
+    };
+    await saveDB();
+
+    console.log(`[Ready] Painel ${key} enviado! ID: ${msg.id}`);
+
   } catch (err) {
     console.error(`[Ready] Erro ao enviar painel ${key}:`, err.message);
   }
