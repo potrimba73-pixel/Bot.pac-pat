@@ -2,14 +2,10 @@ import { EmbedBuilder } from "discord.js";
 import { CONFIG } from "../config/index.js";
 import { db } from "../utils/db.js";
 
-function formatDatePT(dateStr) {
+function getDiaSemana(dateStr) {
   const date = new Date(dateStr);
   const dias = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
-  const diaSemana = dias[date.getDay()];
-  const dia = String(date.getDate()).padStart(2, "0");
-  const mes = String(date.getMonth() + 1).padStart(2, "0");
-  const ano = date.getFullYear();
-  return `${diaSemana}, ${dia}/${mes}/${ano}`;
+  return dias[date.getDay()];
 }
 
 export async function sendLog(ticketId, type, client) {
@@ -24,14 +20,14 @@ export async function sendLog(ticketId, type, client) {
 
   if (type === "open") {
     const openedTimestamp = Math.floor(new Date(ticket.openedAt).getTime() / 1000);
-    const openedDateText = formatDatePT(ticket.openedAt);
+    const diaSemana = getDiaSemana(ticket.openedAt);
 
     const embed = new EmbedBuilder()
       .setTitle(`🎫 Ticket Aberto - #${ticket.id}`)
       .setDescription([
         `👤 Utilizador: <@${ticket.userId}> | ${ticket.userName || ticket.username}`,
         `📝 Tipo: ${ticket.label}`,
-        `⏰ Abertura: ${openedDateText}, <t:${openedTimestamp}:S>`,
+        `⏰ Abertura: ${diaSemana}, <t:${openedTimestamp}:S>`,
       ].join("\n"))
       .setColor(CONFIG.COR_SUCESSO)
       .setTimestamp();
@@ -55,8 +51,8 @@ export async function sendLog(ticketId, type, client) {
       ? Math.floor(new Date(ticket.closedAt).getTime() / 1000)
       : Math.floor(Date.now() / 1000);
 
-    const openedDateText = formatDatePT(ticket.openedAt);
-    const closedDateText = ticket.closedAt ? formatDatePT(ticket.closedAt) : formatDatePT(new Date().toISOString());
+    const openedDia = getDiaSemana(ticket.openedAt);
+    const closedDia = ticket.closedAt ? getDiaSemana(ticket.closedAt) : getDiaSemana(new Date().toISOString());
 
     const claimedText = ticket.claimedBy
       ? `<@${ticket.claimedBy}> | ${ticket.claimedByName}`
@@ -69,8 +65,8 @@ export async function sendLog(ticketId, type, client) {
     const recrutadoText = ticket.recrutado === true
       ? "Sim 🎉"
       : ticket.recrutado === false
-        ? "Não 😔"
-        : "N/A";
+      ? "Não 😔"
+      : "N/A";
 
     const embed = new EmbedBuilder()
       .setTitle(`🗑️ Ticket Fechado - #${ticket.id}`)
@@ -79,8 +75,8 @@ export async function sendLog(ticketId, type, client) {
         `👮 Assumido por: ${claimedText}`,
         `👮 Fechado por: ${closedText}`,
         "",
-        `⏰ Abertura: ${openedDateText}, <t:${openedTimestamp}:S>`,
-        `⏰ Fechamento: ${closedDateText}, <t:${closedTimestamp}:S>`,
+        `⏰ Abertura: ${openedDia}, <t:${openedTimestamp}:S>`,
+        `⏰ Fechamento: ${closedDia}, <t:${closedTimestamp}:S>`,
         `📝 Tipo: ${ticket.label}`,
       ].join("\n"))
       .setColor(CONFIG.COR_ERRO)
