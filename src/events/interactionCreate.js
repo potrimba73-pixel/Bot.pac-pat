@@ -59,8 +59,8 @@ export async function handleInteractionCreate(interaction, client) {
     }
 
     if (interaction.customId.startsWith("modal_ajuda_")) {
-      const especificações = interaction.fields.getTextInputValue("ajuda_especificações")?.trim();
-      interaction._ajudaEspecificações = especificações;
+      const especificacoes = interaction.fields.getTextInputValue("ajuda_especificacoes")?.trim();
+      interaction._ajudaEspecificacoes = especificacoes;
       return createTicket(interaction, "ajuda", `❓ Pedir ajuda`, client);
     }
 
@@ -77,7 +77,7 @@ export async function handleInteractionCreate(interaction, client) {
       const value = interaction.values[0];
       const labels = {
         bugs: `🐛 Bugs`,
-        denúncia: `🚨 Denúncia`,
+        denuncia: `🚨 Denúncia`,
         suporte: `🔧 Suporte`,
         criador: `🎥 Criador De Conteúdo`
       };
@@ -94,7 +94,7 @@ export async function handleInteractionCreate(interaction, client) {
           .setCustomId(`modal_ajuda_${interaction.user.id}_${Date.now()}`)
           .setTitle(`❓ Especificações do Problema`);
         const input = new TextInputBuilder()
-          .setCustomId("ajuda_especificações")
+          .setCustomId("ajuda_especificacoes")
           .setLabel("Descreve o teu problema ou dúvida")
           .setPlaceholder("Ex: Não consigo instalar o Trucky App...")
           .setStyle(TextInputStyle.Paragraph)
