@@ -52,10 +52,19 @@ async function iniciarFluxoRecrutamento(interaction, client) {
   );
 
   if (existingTicket) {
-    return safeEditReply(interaction, {
-      content: `${CONFIG.EMOJI_WARNING} Já tens um processo de recrutamento em aberto!`,
-      flags: 64
-    });
+    const existingChannel = await client.channels.fetch(existingTicket.channelId).catch(() => null);
+    if (existingChannel) {
+      return safeEditReply(interaction, {
+        content: `${CONFIG.EMOJI_WARNING} Já tens um processo de recrutamento em aberto!`,
+        flags: 64
+      });
+    }
+    // Canal não existe mais, marca como fechado
+    existingTicket.closed = true;
+    existingTicket.closedAt = new Date().toISOString();
+    existingTicket.closedBy = "system";
+    existingTicket.closedByName = "Limpeza";
+    await saveDB();
   }
 
   const modal = new ModalBuilder()
@@ -73,7 +82,7 @@ async function iniciarFluxoRecrutamento(interaction, client) {
   const inputNome = new TextInputBuilder()
     .setCustomId("trucky_nome")
     .setLabel("Nome de utilizador no Trucky")
-    .setPlaceholder("Ex: DiegoGamer")
+    .setPlaceholder("Ex: Diego")
     .setStyle(TextInputStyle.Short)
     .setRequired(false)
     .setMaxLength(50);
@@ -139,7 +148,7 @@ async function mostrarRegrasRecrutamento(interaction, client, nomeTrucky, linkTr
       "",
       regrasTexto,
       "",
-      `${CONFIG.EMOJI_QUESTION} Aceitas cumprir todas as regras acima?`
+      `${CONFIG.EMOJI_AJUDA} Aceitas cumprir todas as regras acima?`
     ].join("\n"))
     .setColor(0x262af1)
     .setTimestamp();
@@ -263,9 +272,11 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
 
     await saveDB();
 
+    // Embed com menção @🎩➣Administração no título (ID: 1390770675567956018)
     const embed = new EmbedBuilder()
-      .setTitle(`${CONFIG.EMOJI_TICKET} Sistema de Ticket | Portugal Alfa Truckers`)
+      .setTitle(`<@&${CONFIG.CARGO_ADMINISTRACAO}>`)
       .setDescription([
+        `${CONFIG.EMOJI_TICKET} **Sistema de Ticket | Portugal Alfa Truckers**`,
         `${CONFIG.EMOJI_INFO} Motivo: ${CONFIG.EMOJI_RECRUTAMENTO} Recrutamento PAT`,
         `${CONFIG.EMOJI_STAFF} Assumido: Aguardando staff...`,
         "",
@@ -298,7 +309,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
     );
 
     await interaction.editReply({
-      content: `${CONFIG.EMOJI_SUCCESS} O teu ticket de recrutamento foi criado!`,
+      content: `${CONFIG.EMOJI_SUCCESS} O seu ticket de recrutamento foi criado com sucesso!`,
       components: [rowIrTicket],
       embeds: []
     });
@@ -390,9 +401,11 @@ async function criarTicketNormal(interaction, type, label, client, guild, user) 
 
   await saveDB();
 
+  // Embed com menção @🎩➣Administração no título (ID: 1390770675567956018)
   const embed = new EmbedBuilder()
-    .setTitle(`${CONFIG.EMOJI_TICKET} Sistema de Ticket | Portugal Alfa Community`)
+    .setTitle(`<@&${CONFIG.CARGO_ADMINISTRACAO}>`)
     .setDescription([
+      `${CONFIG.EMOJI_TICKET} **Sistema de Ticket | Portugal Alfa Community**`,
       `${CONFIG.EMOJI_INFO} Motivo: ${label}`,
       `${CONFIG.EMOJI_STAFF} Assumido: Aguardando staff...`,
       "",
@@ -439,8 +452,9 @@ export async function updateTicketEmbed(channel, ticketId) {
       : `${CONFIG.EMOJI_TIME} Aguardando staff...`;
 
     const embed = new EmbedBuilder()
-      .setTitle(`${CONFIG.EMOJI_TICKET} Sistema de Ticket | Portugal Alfa Community`)
+      .setTitle(`<@&${CONFIG.CARGO_ADMINISTRACAO}>`)
       .setDescription([
+        `${CONFIG.EMOJI_TICKET} **Sistema de Ticket | Portugal Alfa Community**`,
         `${CONFIG.EMOJI_INFO} Motivo: ${ticket.label}`,
         `${CONFIG.EMOJI_STAFF} Assumido: ${claimedText}`,
         "",
