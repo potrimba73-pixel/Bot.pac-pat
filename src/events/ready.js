@@ -19,7 +19,7 @@ export async function handleReady(client) {
     if (externalGuild) {
       await setupExternalLogChannels(externalGuild);
     } else {
-      console.warn("[Ready] Servidor externo de logs nao encontrado.");
+      console.warn("[Ready] Servidor externo de logs não encontrado.");
     }
   } catch (err) {
     console.error("[Ready] Erro no setup de canais externos:", err.message);
@@ -34,7 +34,7 @@ export async function handleReady(client) {
 
   const guild = await client.guilds.fetch(CONFIG.GUILD_ID).catch(() => null);
   if (!guild) {
-    console.warn("[Ready] Servidor principal nao encontrado.");
+    console.warn("[Ready] Servidor principal não encontrado.");
     return;
   }
 
@@ -44,7 +44,7 @@ export async function handleReady(client) {
   await setupPainel(client, guild, "recrutamento", CONFIG.CANAL_TICKETS_RECRUTAMENTO, sendPainelRecrutamento);
   await setupPainel(client, guild, "regras", CONFIG.CANAL_REGRAS, sendPainelRegras);
 
-  console.log("[Ready] ✅ Setup de paineis concluido!");
+  console.log("[Ready] ✅ Setup de painéis concluído!");
 }
 
 async function limparTicketsFantasma(client) {
@@ -58,11 +58,11 @@ async function limparTicketsFantasma(client) {
     if (ticket.closed) continue;
     const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
     if (!channel) {
-      console.log(`[Limpeza] Ticket fantasma: ${ticketId} (canal ${ticket.channelId} nao existe)`);
+      console.log(`[Limpeza] Ticket fantasma: ${ticketId} (canal ${ticket.channelId} não existe)`);
       ticket.closed = true;
       ticket.closedAt = new Date().toISOString();
       ticket.closedBy = "system";
-      ticket.closedByName = "Limpeza Automatica";
+      ticket.closedByName = "Limpeza Automática";
       limpos++;
     }
   }
@@ -76,15 +76,11 @@ async function setupPainel(client, guild, key, canalId, sendFn) {
   try {
     const channel = await client.channels.fetch(canalId).catch(() => null);
     if (!channel) {
-      console.warn(`[Ready] Canal ${key} nao encontrado: ${canalId}`);
+      console.warn(`[Ready] Canal ${key} não encontrado: ${canalId}`);
       return;
     }
 
     // === ESTRATÉGIA: Procurar painel existente do bot no canal ===
-    // 1. Primeiro tenta o messageId guardado na DB
-    // 2. Se nao encontrar, procura nas ultimas 50 mensagens do canal
-    // 3. So reenvia se NAO encontrar NENHUM painel do bot
-
     let painelExistente = null;
 
     // Tentativa 1: messageId na DB
@@ -94,24 +90,22 @@ async function setupPainel(client, guild, key, canalId, sendFn) {
         const msg = await channel.messages.fetch(painelData.messageId);
         if (msg && msg.author.id === client.user.id) {
           painelExistente = msg;
-          console.log(`[Ready] Painel ${key} encontrado via DB (ID: ${msg.id}). Nao reenviado.`);
+          console.log(`[Ready] Painel ${key} encontrado via DB (ID: ${msg.id}). Não reenviado.`);
         }
       } catch (e) {
-        console.log(`[Ready] Painel ${key} na DB nao encontrado no Discord.`);
+        console.log(`[Ready] Painel ${key} na DB não encontrado no Discord.`);
       }
     }
 
-    // Tentativa 2: Procurar nas ultimas mensagens do canal
+    // Tentativa 2: Procurar nas últimas mensagens do canal
     if (!painelExistente) {
       try {
         const messages = await channel.messages.fetch({ limit: 50 });
         const botMessages = messages.filter(m => m.author.id === client.user.id);
         if (botMessages.size > 0) {
-          // Pega a mensagem mais recente do bot (provavelmente o painel)
           painelExistente = botMessages.first();
-          console.log(`[Ready] Painel ${key} encontrado via scan (ID: ${painelExistente.id}). Nao reenviado.`);
-          
-          // Atualiza a DB com o ID correto
+          console.log(`[Ready] Painel ${key} encontrado via scan (ID: ${painelExistente.id}). Não reenviado.`);
+
           db.painelsHash[key] = {
             messageId: painelExistente.id,
             sentAt: new Date().toISOString(),
@@ -123,13 +117,13 @@ async function setupPainel(client, guild, key, canalId, sendFn) {
       }
     }
 
-    // Se encontrou painel, NAO faz nada mais
+    // Se encontrou painel, NÃO faz nada mais
     if (painelExistente) {
       return;
     }
 
-    // === SO REENVIA SE NAO HOUVER PAINEL ===
-    console.log(`[Ready] Painel ${key} NAO encontrado. Enviando novo...`);
+    // === SÓ REENVIA SE NÃO HOUVER PAINEL ===
+    console.log(`[Ready] Painel ${key} NÃO encontrado. Enviando novo...`);
 
     const msg = await sendFn(channel);
 
