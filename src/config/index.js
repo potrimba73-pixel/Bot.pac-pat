@@ -66,7 +66,7 @@ export const CONFIG = {
   IMAGEM_REGRAS: "https://cdn.jsdelivr.net/gh/potrimba73-pixel/cdn@main/assets/3f9e155d5a304f62b6c4a17d04f80bdf.png",
 
   // === CORES ===
-  COR_PRINCIPAL: 0x5865F2,
+  COR_PRINCIPAL: 0x262af1,
   COR_SUCESSO: 0x57F287,
   COR_ERRO: 0xED4245,
   COR_AVISO: 0xFEE75C,
