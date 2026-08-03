@@ -59,8 +59,8 @@ export async function handleInteractionCreate(interaction, client) {
     }
 
     if (interaction.customId.startsWith("modal_ajuda_")) {
-      const especificacoes = interaction.fields.getTextInputValue("ajuda_especificacoes")?.trim();
-      interaction._ajudaEspecificacoes = especificacoes;
+      const especificações = interaction.fields.getTextInputValue("ajuda_especificações")?.trim();
+      interaction._ajudaEspecificações = especificações;
       return createTicket(interaction, "ajuda", `❓ Pedir ajuda`, client);
     }
 
@@ -77,7 +77,7 @@ export async function handleInteractionCreate(interaction, client) {
       const value = interaction.values[0];
       const labels = {
         bugs: `🐛 Bugs`,
-        denuncia: `🚨 Denúncia`,
+        denúncia: `🚨 Denúncia`,
         suporte: `🔧 Suporte`,
         criador: `🎥 Criador De Conteúdo`
       };
@@ -94,7 +94,7 @@ export async function handleInteractionCreate(interaction, client) {
           .setCustomId(`modal_ajuda_${interaction.user.id}_${Date.now()}`)
           .setTitle(`❓ Especificações do Problema`);
         const input = new TextInputBuilder()
-          .setCustomId("ajuda_especificacoes")
+          .setCustomId("ajuda_especificações")
           .setLabel("Descreve o teu problema ou dúvida")
           .setPlaceholder("Ex: Não consigo instalar o Trucky App...")
           .setStyle(TextInputStyle.Paragraph)
@@ -142,12 +142,12 @@ export async function handleInteractionCreate(interaction, client) {
       if (cargoMembro) await member.roles.add(cargoMembro).catch(() => {});
       if (cargoVerificado) await member.roles.add(cargoVerificado).catch(() => {});
 
-return interaction.reply({
-    content: `✅ Regras aceites com sucesso! Bem-vind@ à comunidade da __**\`Portugal Alfa Community\`**__ 🎉
+      return interaction.reply({
+        content: `✅ Regras aceites com sucesso! Bem-vind@ à comunidade da __**\`Portugal Alfa Community\`**__ 🎉
 Aqui poderás ver os conteúdos do Diego, conversar/conviver com o pessoal e entre outros...`,
-    flags: 64
-});
-// Nota: a segunda linha não pode ter indentação, senão aparecem espaços no Discord
+        flags: 64
+      });
+    }
 
     // --- ACEITAR REGRAS RECRUTAMENTO ---
     if (customId.startsWith("aceitar_regras_rec_")) {
@@ -155,7 +155,7 @@ Aqui poderás ver os conteúdos do Diego, conversar/conviver com o pessoal e ent
       const userId = parts[3];
       const nomeTrucky = parts.slice(4).join("_");
       if (interaction.user.id !== userId) {
-        return interaction.reply({ content: `⚠️ Este botão não esta disponível para ti!`, flags: 64 });
+        return interaction.reply({ content: `⚠️ Este botão não está disponível para ti!`, flags: 64 });
       }
       await interaction.deferReply({ flags: 64 });
       try {
