@@ -12,7 +12,7 @@ export async function sendPainelGeral(channel) {
       ``,
       `ℹ️ Através deste sistema poderás contactar a nossa equipa para solicitar suporte, reportar problemas, apresentar denúncias ou esclarecer qualquer dúvida relacionada com a comunidade.`,
       ``,
-      `⚠️ Regras do Sistema`,
+      `⚠️ Regras do Ticket`,
       ``,
       `❌ ➜ Não menciones (ping) membros da equipa sem necessidade.`,
       `❌ ➜ Não partilhes links, ficheiros ou qualquer conteúdo inadequado.`,
@@ -78,7 +78,7 @@ export async function sendPainelRecrutamento(channel) {
       .setPlaceholder(`🎫 Selecione uma opção`)
       .addOptions(
         new StringSelectMenuOptionBuilder().setLabel(`📝 Recrutamento PAT`).setDescription("Clique aqui para abrir ticket de Recrutamento!").setValue("recrutamento").setEmoji("📝"),
-        new StringSelectMenuOptionBuilder().setLabel(`❓ Pedir ajuda`).setDescription("Clique aqui para abrir ticket de ajuda use se não entender algo do recrutamento ou no trucky").setValue("ajuda").setEmoji("❓"),
+        new StringSelectMenuOptionBuilder().setLabel(`❓ Pedir ajuda`).setDescription("Clique aqui para abrir ticket de ajuda use se não entender algo do recrutamento ou no Trucky").setValue("ajuda").setEmoji("❓"),
       ),
   );
 
