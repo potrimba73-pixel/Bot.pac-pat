@@ -24,12 +24,10 @@ export async function handleInteractionCreate(interaction, client) {
         const messages = await interaction.channel.messages.fetch({ limit: 100 });
         const sortedMessages = Array.from(messages.values()).sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 
-        // Gerar HTML profissional
         const htmlContent = generateTranscriptHTML(sortedMessages, ticket, interaction.guild);
         const buffer = Buffer.from(htmlContent, 'utf-8');
         const attachment = new AttachmentBuilder(buffer, { name: `transcript-ticket-${ticket.id}.html` });
 
-        // Resumo em texto
         let textSummary = `📋 **Transcript do Ticket #${ticket.id}**\n\n`;
         sortedMessages.forEach(msg => {
           const content = msg.content || "[sem texto]";
@@ -119,23 +117,21 @@ export async function handleInteractionCreate(interaction, client) {
       const member = interaction.member;
       if (!db.acceptedRules) db.acceptedRules = [];
 
-      // Verifica se já aceitou
       if (db.acceptedRules.includes(member.id)) {
         const acceptedAt = db.acceptedRulesAt?.[member.id];
         if (acceptedAt) {
           const ts = Math.floor(new Date(acceptedAt).getTime() / 1000);
-          return interaction.reply({ 
-            content: `✅ As regras já foram aceites! Aceitaste <t:${ts}:R>.`, 
-            flags: 64 
+          return interaction.reply({
+            content: `✅ As regras já foram aceites! Aceitaste <t:${ts}:R>.`,
+            flags: 64
           });
         }
-        return interaction.reply({ 
-          content: `✅ As regras já foram aceites anteriormente!`, 
-          flags: 64 
+        return interaction.reply({
+          content: `✅ As regras já foram aceites anteriormente!`,
+          flags: 64
         });
       }
 
-      // Primeira vez que aceita
       db.acceptedRules.push(member.id);
       if (!db.acceptedRulesAt) db.acceptedRulesAt = {};
       db.acceptedRulesAt[member.id] = new Date().toISOString();
@@ -146,11 +142,12 @@ export async function handleInteractionCreate(interaction, client) {
       if (cargoMembro) await member.roles.add(cargoMembro).catch(() => {});
       if (cargoVerificado) await member.roles.add(cargoVerificado).catch(() => {});
 
-      return interaction.reply({ 
-        content: `✅ Regras aceites com sucesso! Bem-vindo à comunidade 🎉.`, 
-        flags: 64 
-      });
-    }
+return interaction.reply({
+    content: `✅ Regras aceites com sucesso! Bem-vind@ à comunidade da __**\`Portugal Alfa Community\`**__ 🎉
+Aqui poderás ver os conteúdos do Diego, conversar/conviver com o pessoal e entre outros...`,
+    flags: 64
+});
+// Nota: a segunda linha não pode ter indentação, senão aparecem espaços no Discord
 
     // --- ACEITAR REGRAS RECRUTAMENTO ---
     if (customId.startsWith("aceitar_regras_rec_")) {
@@ -158,9 +155,8 @@ export async function handleInteractionCreate(interaction, client) {
       const userId = parts[3];
       const nomeTrucky = parts.slice(4).join("_");
       if (interaction.user.id !== userId) {
-        return interaction.reply({ content: `⚠️ Este botão não é para ti!`, flags: 64 });
+        return interaction.reply({ content: `⚠️ Este botão não esta disponível para ti!`, flags: 64 });
       }
-      // DEFER imediatamente — criar canal pode demorar
       await interaction.deferReply({ flags: 64 });
       try {
         await criarTicketRecrutamento(interaction, client, nomeTrucky);
@@ -205,9 +201,13 @@ export async function handleInteractionCreate(interaction, client) {
       }
 
       await updateTicketEmbed(channel, ticketId);
-      await channel.send(`👮 <@${interaction.user.id}> | ${interaction.user.username} assumiu este ticket. Se precisares de chamar a staff, usa a opção **Painel Membro**.`);
+
+      // Mensagem no canal (TODOS veem) - parte pública
+      await channel.send(`🎉 Ticket assumido com sucesso!\n👮 <@${interaction.user.id}> assumiu o teu ticket. Se precisares de chamar a staff, usa a opção **Painel Membro**.`);
+
+      // Mensagem SÓ para quem reivindicou (ephemeral) - parte privada
       return interaction.reply({
-        content: `🎉 Ticket assumido com sucesso!\n\nOlá <@${interaction.user.id}>, sabias que podes usar o **/painelstaff** para teres mais acesso ao ticket.\nSe precisares de chamar a staff, usa a opção **Painel Membro**.`,
+        content: `Olá <@${interaction.user.id}>, informo-te que podes usar o **/painelstaff** para teres mais acesso ao ticket se precisares.`,
         flags: 64
       });
     }
@@ -352,6 +352,24 @@ export async function handleInteractionCreate(interaction, client) {
       return fecharTicket(interaction, ticketId, client, false);
     }
 
+    // --- AVALIACAO ESTRELAS ---
+    if (customId.startsWith("avaliar_")) {
+      const parts = customId.split("_");
+      const ticketId = parts[1];
+      const estrelas = parseInt(parts[2]);
+      const ticket = db.tickets[ticketId];
+      if (!ticket) return interaction.reply({ content: `⚠️ Ticket não encontrado.`, flags: 64 });
+
+      ticket.rating = estrelas;
+      await saveDB();
+
+      const stars = "⭐".repeat(estrelas) + "☆".repeat(5 - estrelas);
+      return interaction.update({
+        content: `✅ Obrigado pela tua avaliação!\n\n**Avaliação:** ${stars} (${estrelas}/5)`,
+        components: [],
+      });
+    }
+
     // Botao desconhecido
     return interaction.reply({ content: `⚠️ Ação desconhecida.`, flags: 64 }).catch(() => {});
   }
@@ -362,62 +380,70 @@ export async function handleInteractionCreate(interaction, client) {
 function generateTranscriptHTML(messages, ticket, guild) {
   const msgs = messages.map(m => {
     const avatar = m.author.displayAvatarURL({ format: 'png', size: 64 });
-    const attachments = m.attachments.map(a => `<a href="${a.url}" target="_blank">📎 ${a.name}</a>`).join(' ');
-    const embeds = m.embeds.length > 0 ? `<span class="embed">[${m.embeds.length} embed(s)]</span>` : '';
+    const attachments = m.attachments.map(a => {
+      const isImage = a.contentType?.startsWith('image/');
+      if (isImage) {
+        return `<a href="${a.url}" target="_blank" class="attachment-image"><img src="${a.url}" alt="${a.name}" loading="lazy"></a>`;
+      }
+      return `<a href="${a.url}" target="_blank" class="attachment-file">📎 ${a.name}</a>`;
+    }).join(' ');
+    const embeds = m.embeds.length > 0 ? `[${m.embeds.length} embed(s)]` : '';
     const time = m.createdAt.toLocaleString('pt-PT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const date = m.createdAt.toLocaleDateString('pt-PT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
     return `
-    <div class="message">
-      <img src="${avatar}" class="avatar" alt="${m.author.tag}">
-      <div class="content">
-        <div class="header">
-          <span class="username" style="color: ${m.member?.displayHexColor || '#fff'}">${m.author.tag}</span>
-          <span class="timestamp">${date} às ${time}</span>
+      <div class="message">
+        <img src="${avatar}" class="avatar" alt="${m.author.tag}">
+        <div class="message-content">
+          <div class="message-header">
+            <span class="author">${m.author.tag}</span>
+            <span class="timestamp">${date} às ${time}</span>
+          </div>
+          <div class="message-body">${m.content ? m.content.replace(/\n/g, '<br>') : '<em class="empty">[sem texto]</em>'}</div>
+          ${attachments ? `<div class="attachments">${attachments}</div>` : ''}
+          ${embeds ? `<div class="embeds-info">${embeds}</div>` : ''}
         </div>
-        <div class="text">${m.content || ''}</div>
-        <div class="attachments">${attachments}</div>
-        ${embeds}
       </div>
-    </div>`;
+    `;
   }).join('');
 
   return `<!DOCTYPE html>
 <html lang="pt">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Transcript - Ticket #${ticket.id}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #36393f; color: #dcddde; font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 20px; }
-    .header { background: #2f3136; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #5865f2; }
-    .header h1 { color: #fff; font-size: 24px; margin-bottom: 10px; }
-    .header p { color: #b9bbbe; font-size: 14px; }
-    .message { display: flex; padding: 8px 16px; margin: 2px 0; border-radius: 4px; transition: background 0.1s; }
-    .message:hover { background: rgba(255,255,255,0.03); }
-    .avatar { width: 40px; height: 40px; border-radius: 50%; margin-right: 16px; flex-shrink: 0; }
-    .content { flex: 1; }
-    .header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; background: transparent; padding: 0; border: none; }
-    .username { font-weight: 600; font-size: 16px; }
-    .timestamp { color: #72767d; font-size: 12px; }
-    .text { color: #dcddde; font-size: 15px; line-height: 1.4; word-wrap: break-word; }
-    .attachments { margin-top: 4px; }
-    .attachments a { color: #00b0f4; text-decoration: none; font-size: 14px; }
-    .attachments a:hover { text-decoration: underline; }
-    .embed { color: #72767d; font-size: 12px; font-style: italic; }
-    .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #40444b; text-align: center; color: #72767d; font-size: 12px; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #36393f; color: #dcddde; min-height: 100vh; }
+    .header { background: #202225; padding: 20px; text-align: center; border-bottom: 1px solid #40444b; }
+    .header h1 { color: #fff; font-size: 24px; margin-bottom: 8px; }
+    .header .meta { color: #b9bbbe; font-size: 14px; }
+    .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+    .message { display: flex; padding: 12px 0; border-bottom: 1px solid #40444b; }
+    .avatar { width: 40px; height: 40px; border-radius: 50%; margin-right: 12px; flex-shrink: 0; }
+    .message-content { flex: 1; }
+    .message-header { margin-bottom: 4px; }
+    .author { color: #fff; font-weight: 600; font-size: 15px; }
+    .timestamp { color: #72767d; font-size: 12px; margin-left: 8px; }
+    .message-body { color: #dcddde; font-size: 14px; line-height: 1.5; word-wrap: break-word; }
+    .message-body .empty { color: #72767d; font-style: italic; }
+    .attachments { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; }
+    .attachment-image img { max-width: 300px; max-height: 200px; border-radius: 4px; cursor: pointer; transition: transform 0.2s; }
+    .attachment-image img:hover { transform: scale(1.02); }
+    .attachment-file { background: #40444b; color: #00b0f4; padding: 6px 12px; border-radius: 4px; text-decoration: none; font-size: 13px; }
+    .attachment-file:hover { text-decoration: underline; }
+    .embeds-info { color: #72767d; font-size: 12px; margin-top: 4px; }
+    @media (max-width: 600px) { .container { padding: 10px; } .attachment-image img { max-width: 100%; } }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>🎫 Transcript do Ticket #${ticket.id}</h1>
-    <p>📋 Tipo: ${ticket.label} | 👤 Utilizador: ${ticket.username} | 🏢 Servidor: ${guild?.name || 'N/A'}</p>
-    <p>⏰ Abertura: ${new Date(ticket.openedAt).toLocaleString('pt-PT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+    <h1>🎫 Transcript - Ticket #${ticket.id}</h1>
+    <div class="meta">${guild?.name || 'Servidor'} | ${ticket.label} | Aberto por ${ticket.username}</div>
   </div>
-  ${msgs}
-  <div class="footer">
-    <p>Transcript gerado automaticamente por Portugal Alfa Community Bot</p>
-    <p>${new Date().toLocaleString('pt-PT')}</p>
+  <div class="container">
+    ${msgs}
   </div>
 </body>
 </html>`;
@@ -450,13 +476,14 @@ async function handleFotoTruckyModal(interaction, client) {
     }
   }
 
+  // Enviar mensagem de boas-vindas no canal geral (1200170007418642502)
   const canalGeral = await client.channels.fetch(CONFIG.CANAL_GERAL).catch(() => null);
   if (canalGeral) {
     await canalGeral.send([
       `🎉 Bem-vindo à Portugal Alfa Truckers!`,
       ``,
       `Parabéns <@${ticket.userId}>! Foste recrutado com sucesso.`,
-      `✅ Segue as regras da empresa e diverte-te!`,
+      `✅ Segue as <#1200170228093550712> e diverte-te!`,
       `🚛 A tua foto de perfil para o Trucky ficará disponível em <#${CONFIG.CANAL_TEMPLATE_FOTO}>.`,
       `ℹ️ Caso precises de ajuda, abre um ticket ou coloca a tua dúvida num chat aberto.`
     ].join("\n"));
@@ -478,6 +505,7 @@ async function handleFotoTruckyModal(interaction, client) {
 
     await channel.send({ embeds: [embedFechamento] });
 
+    // DM ao user com estrelas para avaliação
     try {
       const user = await client.users.fetch(ticket.userId);
       const embedDM = new EmbedBuilder()
@@ -485,8 +513,8 @@ async function handleFotoTruckyModal(interaction, client) {
         .setDescription([
           `ℹ️ O teu ticket foi fechado com sucesso, avalia o nosso atendimento clicando nas estrelas abaixo.`,
           ``,
-          `🎫 Ticket ID: #${ticket.id}`,
-          `📝 Tipo: ${ticket.label}`,
+          `🎫 Ticket: #${ticket.id}`,
+          `ℹ️ Tipo: ${ticket.label}`,
           ``,
           `👮 Fechado por:`,
           `${interaction.user.username}`,
@@ -498,7 +526,15 @@ async function handleFotoTruckyModal(interaction, client) {
         ].join("\n"))
         .setColor(CONFIG.COR_PRINCIPAL);
 
-      await user.send({ embeds: [embedDM] });
+      const rowStars = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`avaliar_${ticketId}_1`).setLabel("1 ⭐").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`avaliar_${ticketId}_2`).setLabel("2 ⭐⭐").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`avaliar_${ticketId}_3`).setLabel("3 ⭐⭐⭐").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`avaliar_${ticketId}_4`).setLabel("4 ⭐⭐⭐⭐").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`avaliar_${ticketId}_5`).setLabel("5 ⭐⭐⭐⭐⭐").setStyle(ButtonStyle.Secondary),
+      );
+
+      await user.send({ embeds: [embedDM], components: [rowStars] });
     } catch (e) {
       console.log("Não foi possível enviar DM ao user:", e.message);
     }
@@ -541,6 +577,7 @@ async function fecharTicket(interaction, ticketId, client, recrutado) {
 
     await channel.send({ embeds: [embedFechamento] });
 
+    // DM ao user com estrelas para avaliação
     try {
       const user = await client.users.fetch(ticket.userId);
       const embedDM = new EmbedBuilder()
@@ -548,8 +585,8 @@ async function fecharTicket(interaction, ticketId, client, recrutado) {
         .setDescription([
           `ℹ️ O teu ticket foi fechado com sucesso, avalia o nosso atendimento clicando nas estrelas abaixo.`,
           ``,
-          `🎫 Ticket ID: #${ticket.id}`,
-          `📝 Tipo: ${ticket.label}`,
+          `🎫 Ticket: #${ticket.id}`,
+          `ℹ️ Tipo: ${ticket.label}`,
           ``,
           `👮 Fechado por:`,
           `${interaction.user.username}`,
@@ -561,7 +598,15 @@ async function fecharTicket(interaction, ticketId, client, recrutado) {
         ].join("\n"))
         .setColor(CONFIG.COR_PRINCIPAL);
 
-      await user.send({ embeds: [embedDM] });
+      const rowStars = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`avaliar_${ticketId}_1`).setLabel("1 ⭐").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`avaliar_${ticketId}_2`).setLabel("2 ⭐⭐").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`avaliar_${ticketId}_3`).setLabel("3 ⭐⭐⭐").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`avaliar_${ticketId}_4`).setLabel("4 ⭐⭐⭐⭐").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`avaliar_${ticketId}_5`).setLabel("5 ⭐⭐⭐⭐⭐").setStyle(ButtonStyle.Secondary),
+      );
+
+      await user.send({ embeds: [embedDM], components: [rowStars] });
     } catch (e) {
       console.log("Não foi possível enviar DM ao user:", e.message);
     }
