@@ -2,6 +2,16 @@ import { EmbedBuilder } from "discord.js";
 import { CONFIG } from "../config/index.js";
 import { db } from "../utils/db.js";
 
+function formatDatePT(dateStr) {
+  const date = new Date(dateStr);
+  const dias = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
+  const diaSemana = dias[date.getDay()];
+  const dia = String(date.getDate()).padStart(2, "0");
+  const mes = String(date.getMonth() + 1).padStart(2, "0");
+  const ano = date.getFullYear();
+  return `${diaSemana}, ${dia}/${mes}/${ano}`;
+}
+
 export async function sendLog(ticketId, type, client) {
   const ticket = db.tickets[ticketId];
   if (!ticket) return;
@@ -13,19 +23,22 @@ export async function sendLog(ticketId, type, client) {
   }
 
   if (type === "open") {
+    const openedTimestamp = Math.floor(new Date(ticket.openedAt).getTime() / 1000);
+    const openedDateText = formatDatePT(ticket.openedAt);
+
     const embed = new EmbedBuilder()
-      .setTitle(`Ticket Aberto - #${ticket.id}`)
+      .setTitle(`🎫 Ticket Aberto - #${ticket.id}`)
       .setDescription([
-        `Utilizador: <@${ticket.userId}> | ${ticket.username}`,
-        `Tipo: ${ticket.label}`,
-        `Abertura: <t:${Math.floor(new Date(ticket.openedAt).getTime() / 1000)}:F>`,
+        `👤 Utilizador: <@${ticket.userId}> | ${ticket.userName || ticket.username}`,
+        `📝 Tipo: ${ticket.label}`,
+        `⏰ Abertura: ${openedDateText}, <t:${openedTimestamp}:S>`,
       ].join("\n"))
       .setColor(CONFIG.COR_SUCESSO)
       .setTimestamp();
 
     if (ticket.truckyNome) {
       embed.addFields({
-        name: `Trucky`,
+        name: `🚛 Trucky`,
         value: ticket.truckyLink && ticket.truckyLink.startsWith("http")
           ? `[${ticket.truckyNome}](${ticket.truckyLink})`
           : ticket.truckyNome,
@@ -42,6 +55,9 @@ export async function sendLog(ticketId, type, client) {
       ? Math.floor(new Date(ticket.closedAt).getTime() / 1000)
       : Math.floor(Date.now() / 1000);
 
+    const openedDateText = formatDatePT(ticket.openedAt);
+    const closedDateText = ticket.closedAt ? formatDatePT(ticket.closedAt) : formatDatePT(new Date().toISOString());
+
     const claimedText = ticket.claimedBy
       ? `<@${ticket.claimedBy}> | ${ticket.claimedByName}`
       : "Não assumido";
@@ -51,28 +67,28 @@ export async function sendLog(ticketId, type, client) {
       : "Não informado";
 
     const recrutadoText = ticket.recrutado === true
-      ? "Sim"
+      ? "Sim 🎉"
       : ticket.recrutado === false
-        ? "Não"
+        ? "Não 😔"
         : "N/A";
 
     const embed = new EmbedBuilder()
-      .setTitle(`Ticket Fechado - #${ticket.id}`)
+      .setTitle(`🗑️ Ticket Fechado - #${ticket.id}`)
       .setDescription([
-        `Utilizador: <@${ticket.userId}> | ${ticket.username}`,
-        `Assumido por: ${claimedText}`,
-        `Fechado por: ${closedText}`,
+        `👤 Utilizador: <@${ticket.userId}> | ${ticket.userName || ticket.username}`,
+        `👮 Assumido por: ${claimedText}`,
+        `👮 Fechado por: ${closedText}`,
         "",
-        `Abertura: <t:${openedTimestamp}:F>`,
-        `Fechamento: <t:${closedTimestamp}:F>`,
-        `Tipo: ${ticket.label}`,
+        `⏰ Abertura: ${openedDateText}, <t:${openedTimestamp}:S>`,
+        `⏰ Fechamento: ${closedDateText}, <t:${closedTimestamp}:S>`,
+        `📝 Tipo: ${ticket.label}`,
       ].join("\n"))
       .setColor(CONFIG.COR_ERRO)
       .setTimestamp();
 
     if (ticket.truckyNome) {
       embed.addFields({
-        name: `Trucky`,
+        name: `🚛 Trucky`,
         value: ticket.truckyLink && ticket.truckyLink.startsWith("http")
           ? `[${ticket.truckyNome}](${ticket.truckyLink})`
           : ticket.truckyNome,
@@ -82,14 +98,14 @@ export async function sendLog(ticketId, type, client) {
 
     if (ticket.fotoNome) {
       embed.addFields({
-        name: `Foto Trucky`,
+        name: `📷 Foto Trucky`,
         value: ticket.fotoNome,
         inline: true
       });
     }
 
     embed.addFields({
-      name: `Recrutado`,
+      name: `🎉 Recrutado`,
       value: recrutadoText,
       inline: true
     });
