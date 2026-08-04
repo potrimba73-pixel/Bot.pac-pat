@@ -27,7 +27,7 @@ export async function sendLog(ticketId, type, client) {
       .setDescription([
         `👤 Utilizador: <@${ticket.userId}> | ${ticket.userName || ticket.username}`,
         `📝 Tipo: ${ticket.label}`,
-        `⏰ Abertura: ${diaSemana}, <t:${openedTimestamp}:S>`,
+        `⏰ Abertura: ${diaSemana}, `,
       ].join("\n"))
       .setColor(CONFIG.COR_SUCESSO)
       .setTimestamp();
@@ -65,8 +65,8 @@ export async function sendLog(ticketId, type, client) {
     const recrutadoText = ticket.recrutado === true
       ? "Sim 🎉"
       : ticket.recrutado === false
-      ? "Não 😔"
-      : "N/A";
+        ? "Não 😔"
+        : "N/A";
 
     const embed = new EmbedBuilder()
       .setTitle(`🗑️ Ticket Fechado - #${ticket.id}`)
@@ -75,8 +75,8 @@ export async function sendLog(ticketId, type, client) {
         `👮 Assumido por: ${claimedText}`,
         `👮 Fechado por: ${closedText}`,
         "",
-        `⏰ Abertura: ${openedDia}, <t:${openedTimestamp}:S>`,
-        `⏰ Fechamento: ${closedDia}, <t:${closedTimestamp}:S>`,
+        `⏰ Abertura: ${openedDia}, `,
+        `⏰ Fechamento: ${closedDia}, `,
         `📝 Tipo: ${ticket.label}`,
       ].join("\n"))
       .setColor(CONFIG.COR_ERRO)
