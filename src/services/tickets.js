@@ -280,7 +280,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
         `${CONFIG.EMOJI_INFO} Motivo: ${CONFIG.EMOJI_RECRUTAMENTO} Recrutamento PAT`,
         `${CONFIG.EMOJI_STAFF} Assumido: Aguardando staff...`,
         "",
-        `${CONFIG.EMOJI_USER} Olá ${user.username}, aguarda ser atendido.`,
+        `${CONFIG.EMOJI_USER} Olá <@${user.id}>, aguarde até ser atendido por alguém da staff.`,
         "",
         `${CONFIG.EMOJI_TRUCK} Trucky: ${truckyDisplay}`,
         "",
@@ -409,7 +409,7 @@ async function criarTicketNormal(interaction, type, label, client, guild, user) 
       `${CONFIG.EMOJI_INFO} Motivo: ${label}`,
       `${CONFIG.EMOJI_STAFF} Assumido: Aguardando staff...`,
       "",
-      `${CONFIG.EMOJI_USER} Olá ${user.username}, aguarda ser atendido.`,
+      `${CONFIG.EMOJI_USER} Olá <@${user.id}>, aguarde até ser atendido por alguém da staff.`,
       descricaoExtra,
       "",
       `${CONFIG.EMOJI_WARNING} Lembra-te: Qualquer incumprimento das regras levará ao encerramento do ticket sem aviso prévio!`
