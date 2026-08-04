@@ -143,8 +143,7 @@ export async function handleInteractionCreate(interaction, client) {
       if (cargoVerificado) await member.roles.add(cargoVerificado).catch(() => {});
 
       return interaction.reply({
-        content: `✅ Regras aceites com sucesso! Bem-vind@ à comunidade da __**\`Portugal Alfa Community\`**__ 🎉
-Aqui poderás ver os conteúdos do Diego, conversar/conviver com o pessoal e entre outros...`,
+        content: `✅ Regras aceites com sucesso! Bem-vind@ à comunidade da __**\`Portugal Alfa Community\`**__ 🎉\nAqui poderás ver os conteúdos do Diego, conversar/conviver com o pessoal e entre outros...`,
         flags: 64
       });
     }
@@ -183,7 +182,11 @@ Aqui poderás ver os conteúdos do Diego, conversar/conviver com o pessoal e ent
     // --- ASSUMIR TICKET ---
     if (customId.startsWith("assumir_")) {
       const ticketId = customId.replace("assumir_", "");
+      console.log(`[Assumir] TicketId: ${ticketId}, User: ${interaction.user.id}`);
+
       const ticket = db.tickets[ticketId];
+      console.log(`[Assumir] Ticket encontrado: ${!!ticket}, Fechado: ${ticket?.closed}`);
+
       if (!ticket || ticket.closed) {
         return interaction.reply({ content: `⚠️ Ticket não encontrado ou já fechado.`, flags: 64 });
       }
@@ -476,7 +479,7 @@ async function handleFotoTruckyModal(interaction, client) {
     }
   }
 
-  // Enviar mensagem de boas-vindas no canal geral (1200170007418642502)
+  // Enviar mensagem de boas-vindas no canal geral
   const canalGeral = await client.channels.fetch(CONFIG.CANAL_GERAL).catch(() => null);
   if (canalGeral) {
     await canalGeral.send([
@@ -505,7 +508,7 @@ async function handleFotoTruckyModal(interaction, client) {
 
     await channel.send({ embeds: [embedFechamento] });
 
-    // DM ao user com estrelas para avaliação
+    // DM ao user com estrelas para avaliação - COR #FF0000 e username
     try {
       const user = await client.users.fetch(ticket.userId);
       const embedDM = new EmbedBuilder()
@@ -524,7 +527,7 @@ async function handleFotoTruckyModal(interaction, client) {
           ``,
           `🎫 Caso necessário, não hesite em abrir ticket novamente!`
         ].join("\n"))
-        .setColor(CONFIG.COR_PRINCIPAL);
+        .setColor(0xFF0000);
 
       const rowStars = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`avaliar_${ticketId}_1`).setLabel("1 ⭐").setStyle(ButtonStyle.Secondary),
@@ -577,7 +580,7 @@ async function fecharTicket(interaction, ticketId, client, recrutado) {
 
     await channel.send({ embeds: [embedFechamento] });
 
-    // DM ao user com estrelas para avaliação
+    // DM ao user com estrelas para avaliação - COR #FF0000 e username
     try {
       const user = await client.users.fetch(ticket.userId);
       const embedDM = new EmbedBuilder()
@@ -596,7 +599,7 @@ async function fecharTicket(interaction, ticketId, client, recrutado) {
           ``,
           `🎫 Caso necessário, não hesite em abrir ticket novamente!`
         ].join("\n"))
-        .setColor(CONFIG.COR_PRINCIPAL);
+        .setColor(0xFF0000);
 
       const rowStars = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`avaliar_${ticketId}_1`).setLabel("1 ⭐").setStyle(ButtonStyle.Secondary),
