@@ -116,51 +116,60 @@ export async function handleInteractionCreate(interaction, client) {
     if (customId === "aceitar_regras") {
       const member = interaction.member;
 
-      // Evita timeout — responde imediatamente
-      await interaction.deferReply({ flags: 64 });
+      // Bloqueia cliques duplos
+      if (processingRegras.has(member.id)) {
+        return interaction.reply({ content: "⏳ Ja estou a processar o teu pedido, aguarda...", flags: 64 }).catch(() => {});
+      }
+      processingRegras.add(member.id);
 
-      const cargoMembro = interaction.guild.roles.cache.get(CONFIG.CARGO_MEMBRO);
-      const cargoVerificado = interaction.guild.roles.cache.get(CONFIG.CARGO_VERIFICADO);
-      const cargoNovo1 = interaction.guild.roles.cache.get("1534970663344017479");
-      const cargoNovo2 = interaction.guild.roles.cache.get("1146443166686396476");
+      try {
+        await interaction.deferReply({ flags: 64 });
 
-      // Verifica se ja tem todos os cargos
-      const temMembro = cargoMembro && member.roles.cache.has(cargoMembro.id);
-      const temVerificado = cargoVerificado && member.roles.cache.has(cargoVerificado.id);
-      const temNovo1 = cargoNovo1 && member.roles.cache.has(cargoNovo1.id);
-      const temNovo2 = cargoNovo2 && member.roles.cache.has(cargoNovo2.id);
+        const cargoMembro = interaction.guild.roles.cache.get(CONFIG.CARGO_MEMBRO);
+        const cargoVerificado = interaction.guild.roles.cache.get(CONFIG.CARGO_VERIFICADO);
+        const cargoNovo1 = interaction.guild.roles.cache.get("1534970663344017479");
+        const cargoNovo2 = interaction.guild.roles.cache.get("1146443166686396476");
 
-      if (temMembro && temVerificado && temNovo1 && temNovo2) {
-        const acceptedAt = db.acceptedRulesAt?.[member.id];
-        if (acceptedAt) {
-          const ts = Math.floor(new Date(acceptedAt).getTime() / 1000);
+        // Verifica se ja tem todos os cargos
+        const temMembro = cargoMembro && member.roles.cache.has(cargoMembro.id);
+        const temVerificado = cargoVerificado && member.roles.cache.has(cargoVerificado.id);
+        const temNovo1 = cargoNovo1 && member.roles.cache.has(cargoNovo1.id);
+        const temNovo2 = cargoNovo2 && member.roles.cache.has(cargoNovo2.id);
+
+        if (temMembro && temVerificado && temNovo1 && temNovo2) {
+          const acceptedAt = db.acceptedRulesAt?.[member.id];
+          if (acceptedAt) {
+            const ts = Math.floor(new Date(acceptedAt).getTime() / 1000);
+            return interaction.editReply({
+              content: `✅ As regras ja foram aceites! Aceitaste <t:${ts}:R>.`
+            });
+          }
           return interaction.editReply({
-            content: `✅ As regras ja foram aceites! Aceitaste <t:${ts}:R>.`
+            content: `✅ As regras ja foram aceites anteriormente!`
           });
         }
+
+        // Atribui os cargos
+        if (cargoMembro) await member.roles.add(cargoMembro).catch(() => {});
+        if (cargoVerificado) await member.roles.add(cargoVerificado).catch(() => {});
+        if (cargoNovo1) await member.roles.add(cargoNovo1).catch(() => {});
+        if (cargoNovo2) await member.roles.add(cargoNovo2).catch(() => {});
+
+        // Guarda no JSON
+        if (!db.acceptedRules) db.acceptedRules = [];
+        if (!db.acceptedRules.includes(member.id)) {
+          db.acceptedRules.push(member.id);
+        }
+        if (!db.acceptedRulesAt) db.acceptedRulesAt = {};
+        db.acceptedRulesAt[member.id] = new Date().toISOString();
+        await saveDB();
+
         return interaction.editReply({
-          content: `✅ As regras ja foram aceites anteriormente!`
+          content: `✅ Regras aceites com sucesso! Bem-vind@ a comunidade da __**\`Portugal Alfa Community\`**__ 🎉\nAqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre outros...`
         });
+      } finally {
+        processingRegras.delete(member.id);
       }
-
-      // Atribui os cargos (mesmo que ja tenha aceitado antes, se saiu e voltou)
-      if (cargoMembro) await member.roles.add(cargoMembro).catch(() => {});
-      if (cargoVerificado) await member.roles.add(cargoVerificado).catch(() => {});
-      if (cargoNovo1) await member.roles.add(cargoNovo1).catch(() => {});
-      if (cargoNovo2) await member.roles.add(cargoNovo2).catch(() => {});
-
-      // Guarda no JSON (se ainda nao estiver)
-      if (!db.acceptedRules) db.acceptedRules = [];
-      if (!db.acceptedRules.includes(member.id)) {
-        db.acceptedRules.push(member.id);
-      }
-      if (!db.acceptedRulesAt) db.acceptedRulesAt = {};
-      db.acceptedRulesAt[member.id] = new Date().toISOString();
-      await saveDB();
-
-      return interaction.editReply({
-        content: `✅ Regras aceites com sucesso! Bem-vind@ a comunidade da __**\`Portugal Alfa Community\`**__ 🎉\nAqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre outros...`
-      });
     }
 
     // --- ACEITAR REGRAS RECRUTAMENTO ---
