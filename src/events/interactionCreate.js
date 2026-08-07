@@ -139,8 +139,12 @@ export async function handleInteractionCreate(interaction, client) {
 
       const cargoMembro = interaction.guild.roles.cache.get(CONFIG.CARGO_MEMBRO);
       const cargoVerificado = interaction.guild.roles.cache.get(CONFIG.CARGO_VERIFICADO);
+      const cargoNovo1 = interaction.guild.roles.cache.get("1534970663344017479");
+      const cargoNovo2 = interaction.guild.roles.cache.get("1146443166686396476");
       if (cargoMembro) await member.roles.add(cargoMembro).catch(() => {});
       if (cargoVerificado) await member.roles.add(cargoVerificado).catch(() => {});
+      if (cargoNovo1) await member.roles.add(cargoNovo1).catch(() => {});
+      if (cargoNovo2) await member.roles.add(cargoNovo2).catch(() => {});
 
       return interaction.reply({
         content: `✅ Regras aceites com sucesso! Bem-vind@ à comunidade da __**\`Portugal Alfa Community\`**__ 🎉\nAqui poderás ver os conteúdos do Diego, conversar/conviver com o pessoal e entre outros...`,
