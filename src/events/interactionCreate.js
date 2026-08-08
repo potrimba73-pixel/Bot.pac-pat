@@ -8,7 +8,7 @@ import { db, saveDB } from "../utils/db.js";
 import { createTicket, criarTicketRecrutamento, handleTruckyVerification, updateTicketEmbed } from "../services/tickets.js";
 import { sendLog } from "../services/logs.js";
 
-const processingRegras = new Set();
+const processingRegras = new Map(); // userId -> timestamp do ultimo processamento
 
 export async function handleInteractionCreate(interaction, client) {
   
@@ -117,22 +117,18 @@ export async function handleInteractionCreate(interaction, client) {
     // --- ACEITAR REGRAS ---
     if (customId === "aceitar_regras") {
       const member = interaction.member;
+      const now = Date.now();
 
-      // Lock SINCRONO — executa imediatamente antes de qualquer await
-      if (processingRegras.has(member.id)) {
+      // Lock com cooldown de 15 segundos
+      const lastProcess = processingRegras.get(member.id);
+      if (lastProcess && (now - lastProcess) < 15000) {
         return interaction.reply({ content: "⏳ Ja estou a processar o teu pedido, aguarda...", flags: 64 }).catch(() => {});
       }
-      processingRegras.add(member.id);
+      processingRegras.set(member.id, now);
 
-      // deferReply depois do lock
       try {
         await interaction.deferReply({ flags: 64 });
-      } catch (e) {
-        processingRegras.delete(member.id);
-        return console.log("[aceitar_regras] deferReply falhou:", e.code);
-      }
 
-      try {
         const cargoMembro = interaction.guild.roles.cache.get(CONFIG.CARGO_MEMBRO);
         const cargoVerificado = interaction.guild.roles.cache.get(CONFIG.CARGO_VERIFICADO);
         const cargoNovo1 = interaction.guild.roles.cache.get("1534970663344017479");
@@ -178,9 +174,6 @@ export async function handleInteractionCreate(interaction, client) {
       } catch (err) {
         console.error("[aceitar_regras] Erro:", err);
         return interaction.editReply({ content: `❌ Erro ao processar. Tenta novamente.` }).catch(() => {});
-      } finally {
-        // Remove do Set so apos 5 segundos
-        setTimeout(() => processingRegras.delete(member.id), 5000);
       }
     }
 
