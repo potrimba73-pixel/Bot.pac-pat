@@ -134,11 +134,11 @@ export async function handleInteractionCreate(interaction, client) {
         const cargoNovo1 = interaction.guild.roles.cache.get("1534970663344017479");
         const cargoNovo2 = interaction.guild.roles.cache.get("1146443166686396476");
 
-        // Verifica se ja tem todos os cargos
-        const temMembro = cargoMembro && member.roles.cache.has(cargoMembro.id);
-        const temVerificado = cargoVerificado && member.roles.cache.has(cargoVerificado.id);
-        const temNovo1 = cargoNovo1 && member.roles.cache.has(cargoNovo1.id);
-        const temNovo2 = cargoNovo2 && member.roles.cache.has(cargoNovo2.id);
+        // Verifica se ja tem todos os cargos (ignora cargos que nao existem no servidor)
+        const temMembro = !cargoMembro || member.roles.cache.has(cargoMembro.id);
+        const temVerificado = !cargoVerificado || member.roles.cache.has(cargoVerificado.id);
+        const temNovo1 = !cargoNovo1 || member.roles.cache.has(cargoNovo1.id);
+        const temNovo2 = !cargoNovo2 || member.roles.cache.has(cargoNovo2.id);
 
         if (temMembro && temVerificado && temNovo1 && temNovo2) {
           const acceptedAt = db.acceptedRulesAt?.[member.id];
@@ -169,14 +169,14 @@ export async function handleInteractionCreate(interaction, client) {
         await saveDB();
 
         return interaction.editReply({
-          content: `✅ Regras aceites com sucesso! Bem-vind@ a comunidade da __**\`Portugal Alfa Community\`**__ 🎉\nAqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre outros...`
+          content: `✅ Regras aceites com sucesso! Bem-vind@ a comunidade da __**\`Portugal Alfa Community\`**__ 🎉
+Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre outros...`
         }).catch(() => {});
       } catch (err) {
         console.error("[aceitar_regras] Erro:", err);
         return interaction.editReply({ content: `❌ Erro ao processar. Tenta novamente.` }).catch(() => {});
       }
     }
-
     // --- ACEITAR REGRAS RECRUTAMENTO ---
     if (customId.startsWith("aceitar_regras_rec_")) {
       const parts = customId.split("_");
