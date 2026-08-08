@@ -8,8 +8,10 @@ import { db, saveDB } from "../utils/db.js";
 import { createTicket, criarTicketRecrutamento, handleTruckyVerification, updateTicketEmbed } from "../services/tickets.js";
 import { sendLog } from "../services/logs.js";
 
-export async function handleInteractionCreate(interaction, client) {
+const processingRegras = new Set();
 
+export async function handleInteractionCreate(interaction, client) {
+  
   // ============ COMANDOS SLASH ============
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === "transcript") {
