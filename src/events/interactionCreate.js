@@ -118,15 +118,21 @@ export async function handleInteractionCreate(interaction, client) {
     if (customId === "aceitar_regras") {
       const member = interaction.member;
 
-      // Bloqueia cliques duplos
+      // Lock SINCRONO — executa imediatamente antes de qualquer await
       if (processingRegras.has(member.id)) {
         return interaction.reply({ content: "⏳ Ja estou a processar o teu pedido, aguarda...", flags: 64 }).catch(() => {});
       }
       processingRegras.add(member.id);
 
+      // deferReply depois do lock
       try {
         await interaction.deferReply({ flags: 64 });
+      } catch (e) {
+        processingRegras.delete(member.id);
+        return console.log("[aceitar_regras] deferReply falhou:", e.code);
+      }
 
+      try {
         const cargoMembro = interaction.guild.roles.cache.get(CONFIG.CARGO_MEMBRO);
         const cargoVerificado = interaction.guild.roles.cache.get(CONFIG.CARGO_VERIFICADO);
         const cargoNovo1 = interaction.guild.roles.cache.get("1534970663344017479");
@@ -144,18 +150,18 @@ export async function handleInteractionCreate(interaction, client) {
             const ts = Math.floor(new Date(acceptedAt).getTime() / 1000);
             return interaction.editReply({
               content: `✅ As regras ja foram aceites! Aceitaste <t:${ts}:R>.`
-            });
+            }).catch(() => {});
           }
           return interaction.editReply({
             content: `✅ As regras ja foram aceites anteriormente!`
-          });
+          }).catch(() => {});
         }
 
-        // Atribui os cargos
-        if (cargoMembro) await member.roles.add(cargoMembro).catch(() => {});
-        if (cargoVerificado) await member.roles.add(cargoVerificado).catch(() => {});
-        if (cargoNovo1) await member.roles.add(cargoNovo1).catch(() => {});
-        if (cargoNovo2) await member.roles.add(cargoNovo2).catch(() => {});
+        // Atribui os cargos (so se ainda nao tiver)
+        if (cargoMembro && !member.roles.cache.has(cargoMembro.id)) await member.roles.add(cargoMembro).catch(() => {});
+        if (cargoVerificado && !member.roles.cache.has(cargoVerificado.id)) await member.roles.add(cargoVerificado).catch(() => {});
+        if (cargoNovo1 && !member.roles.cache.has(cargoNovo1.id)) await member.roles.add(cargoNovo1).catch(() => {});
+        if (cargoNovo2 && !member.roles.cache.has(cargoNovo2.id)) await member.roles.add(cargoNovo2).catch(() => {});
 
         // Guarda no JSON
         if (!db.acceptedRules) db.acceptedRules = [];
@@ -168,9 +174,13 @@ export async function handleInteractionCreate(interaction, client) {
 
         return interaction.editReply({
           content: `✅ Regras aceites com sucesso! Bem-vind@ a comunidade da __**\`Portugal Alfa Community\`**__ 🎉\nAqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre outros...`
-        });
+        }).catch(() => {});
+      } catch (err) {
+        console.error("[aceitar_regras] Erro:", err);
+        return interaction.editReply({ content: `❌ Erro ao processar. Tenta novamente.` }).catch(() => {});
       } finally {
-        processingRegras.delete(member.id);
+        // Remove do Set so apos 5 segundos
+        setTimeout(() => processingRegras.delete(member.id), 5000);
       }
     }
 
