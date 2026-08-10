@@ -9,14 +9,13 @@ import { createTicket, criarTicketRecrutamento, handleTruckyVerification, update
 import { sendLog } from "../services/logs.js";
 import { sendPainelChamada } from "../services/calls.js";
 
-const processingRegras = new Map(); // userId -> timestamp do ultimo processamento
+const processingRegras = new Map();
 
 export async function handleInteractionCreate(interaction, client) {
 
   // ============ COMANDOS SLASH ============
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === "transcript") {
-      // Verificar permissao staff
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages) && 
           !interaction.member.roles.cache.has(CONFIG.CARGO_STAFF)) {
         return interaction.reply({ 
@@ -133,7 +132,6 @@ export async function handleInteractionCreate(interaction, client) {
       const member = interaction.member;
       const now = Date.now();
 
-      // Lock com cooldown de 15 segundos
       const lastProcess = processingRegras.get(member.id);
       if (lastProcess && (now - lastProcess) < 15000) {
         return interaction.reply({ content: "⏳ Ja estou a processar o teu pedido, aguarda...", flags: 64 }).catch(() => {});
@@ -147,7 +145,6 @@ export async function handleInteractionCreate(interaction, client) {
         const cargoNovo1 = interaction.guild.roles.cache.get("1534970663344017479");
         const cargoNovo2 = interaction.guild.roles.cache.get("1146443166686396476");
 
-        // Verifica se ja tem todos os cargos (ignora cargos que nao existem no servidor)
         const temMembro = !cargoMembro || member.roles.cache.has(cargoMembro.id);
         const temNovo1 = !cargoNovo1 || member.roles.cache.has(cargoNovo1.id);
         const temNovo2 = !cargoNovo2 || member.roles.cache.has(cargoNovo2.id);
@@ -165,12 +162,10 @@ export async function handleInteractionCreate(interaction, client) {
           }).catch(() => {});
         }
 
-        // Atribui os cargos (so se ainda nao tiver)
         if (cargoMembro && !member.roles.cache.has(cargoMembro.id)) await member.roles.add(cargoMembro).catch(() => {});
         if (cargoNovo1 && !member.roles.cache.has(cargoNovo1.id)) await member.roles.add(cargoNovo1).catch(() => {});
         if (cargoNovo2 && !member.roles.cache.has(cargoNovo2.id)) await member.roles.add(cargoNovo2).catch(() => {});
 
-        // Guarda no JSON
         if (!db.acceptedRules) db.acceptedRules = [];
         if (!db.acceptedRules.includes(member.id)) {
           db.acceptedRules.push(member.id);
@@ -188,6 +183,7 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
         return interaction.editReply({ content: `❌ Erro ao processar. Tenta novamente.` }).catch(() => {});
       }
     }
+
     // --- ACEITAR REGRAS RECRUTAMENTO ---
     if (customId.startsWith("aceitar_regras_rec_")) {
       const parts = customId.split("_");
@@ -224,7 +220,6 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       const ticketId = customId.replace("assumir_", "");
       console.log(`[Assumir] TicketId: ${ticketId}, User: ${interaction.user.id}`);
 
-      // LOCK: verifica se ja esta em processo de assumir
       if (isClaiming(ticketId)) {
         return interaction.reply({ content: `⏳ Outro staff ja esta a assumir este ticket. Aguarda...`, flags: 64 });
       }
@@ -233,14 +228,13 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       console.log(`[Assumir] Ticket encontrado: ${!!ticket}, Fechado: ${ticket?.closed}`);
 
       if (!ticket || ticket.closed) {
-        return interaction.reply({ content: `⚠️ Ticket não encontrado ou já fechado.`, flags: 64 });
+        return interaction.reply({ content: `⚠️ Ticket nao encontrado ou ja fechado.`, flags: 64 });
       }
       if (ticket.claimedBy) {
-        return interaction.reply({ content: `⚠️ Este ticket já foi assumido por <@${ticket.claimedBy}>.`, flags: 64 });
+        return interaction.reply({ content: `⚠️ Este ticket ja foi assumido por <@${ticket.claimedBy}>.`, flags: 64 });
       }
 
-      // Ativa o lock
-      setClaiming(ticketId);
+      setClaiming(ticketId, interaction.user.id);
 
       try {
         ticket.claimedBy = interaction.user.id;
@@ -250,15 +244,13 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
         const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
         if (!channel) {
           clearClaiming(ticketId);
-          return interaction.reply({ content: `❌ Erro: Canal do ticket não encontrado.`, flags: 64 });
+          return interaction.reply({ content: `❌ Erro: Canal do ticket nao encontrado.`, flags: 64 });
         }
 
         await updateTicketEmbed(channel, ticketId);
 
-        // Mensagem no canal (TODOS veem) - parte publica
-        await channel.send(`🎉 Ticket assumido com sucesso!\n👮 <@${interaction.user.id}> assumiu o teu ticket. Se precisares de chamar a staff, usa a opção **Painel Membro**.`);
+        await channel.send(`🎉 Ticket assumido com sucesso!\n👮 <@${interaction.user.id}> assumiu o teu ticket. Se precisares de chamar a staff, usa a opcao **Painel Membro**.`);
 
-        // Mensagem SO para quem reivindicou (ephemeral) - parte privada
         return interaction.reply({
           content: `Olá <@${interaction.user.id}>, informo-te que podes usar o **/painelstaff** para teres mais acesso ao ticket se precisares.`,
           flags: 64
@@ -276,7 +268,7 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       const ticketId = customId.replace("painel_membro_", "");
       const ticket = db.tickets[ticketId];
       if (!ticket || ticket.closed) {
-        return interaction.reply({ content: `⚠️ Ticket não encontrado ou já fechado.`, flags: 64 });
+        return interaction.reply({ content: `⚠️ Ticket nao encontrado ou ja fechado.`, flags: 64 });
       }
 
       const guild = await client.guilds.fetch(ticket.guildId).catch(() => null);
@@ -286,7 +278,7 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
 
       const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
       if (!channel) {
-        return interaction.reply({ content: `❌ Canal não encontrado.`, flags: 64 });
+        return interaction.reply({ content: `❌ Canal nao encontrado.`, flags: 64 });
       }
 
       const members = await channel.members.fetch();
@@ -322,7 +314,7 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       const embed = new EmbedBuilder()
         .setTitle(`🛡️ Painel Membro`)
         .setDescription([
-          `📋 Lista de staff disponível neste ticket:`,
+          `📋 Lista de staff disponivel neste ticket:`,
           "",
           staffText
         ].join("\n"))
@@ -336,15 +328,15 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       const ticketId = customId.replace("sair_", "");
       const ticket = db.tickets[ticketId];
       if (!ticket || ticket.closed) {
-        return interaction.reply({ content: `⚠️ Ticket não encontrado ou já fechado.`, flags: 64 });
+        return interaction.reply({ content: `⚠️ Ticket nao encontrado ou ja fechado.`, flags: 64 });
       }
       if (ticket.userId !== interaction.user.id) {
-        return interaction.reply({ content: `⚠️ Só quem abriu o ticket pode sair.`, flags: 64 });
+        return interaction.reply({ content: `⚠️ So quem abriu o ticket pode sair.`, flags: 64 });
       }
 
       const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
       if (!channel) {
-        return interaction.reply({ content: `❌ Canal do ticket não encontrado.`, flags: 64 });
+        return interaction.reply({ content: `❌ Canal do ticket nao encontrado.`, flags: 64 });
       }
 
       await channel.permissionOverwrites.delete(interaction.user.id);
@@ -356,7 +348,7 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       const ticketId = customId.replace("deletar_", "");
       const ticket = db.tickets[ticketId];
       if (!ticket || ticket.closed) {
-        return interaction.reply({ content: `⚠️ Ticket não encontrado ou já fechado.`, flags: 64 });
+        return interaction.reply({ content: `⚠️ Ticket nao encontrado ou ja fechado.`, flags: 64 });
       }
 
       if (ticket.type === "recrutamento") {
@@ -380,7 +372,7 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       const ticketId = customId.replace("recrutado_sim_", "");
       const ticket = db.tickets[ticketId];
       if (!ticket) {
-        return interaction.reply({ content: `⚠️ Ticket não encontrado.`, flags: 64 });
+        return interaction.reply({ content: `⚠️ Ticket nao encontrado.`, flags: 64 });
       }
 
       const modal = new ModalBuilder()
@@ -417,7 +409,7 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       const ticketId = parts[1];
       const estrelas = parseInt(parts[2]);
       const ticket = db.tickets[ticketId];
-      if (!ticket) return interaction.reply({ content: `⚠️ Ticket não encontrado.`, flags: 64 });
+      if (!ticket) return interaction.reply({ content: `⚠️ Ticket nao encontrado.`, flags: 64 });
 
       ticket.rating = estrelas;
       await saveDB();
@@ -429,7 +421,6 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       });
     }
 
-    // Botao desconhecido
     return interaction.reply({ content: `⚠️ Ação desconhecida.`, flags: 64 }).catch(() => {});
   }
 }
@@ -511,7 +502,7 @@ function generateTranscriptHTML(messages, ticket, guild) {
 async function handleFotoTruckyModal(interaction, client) {
   const ticketId = interaction.customId.replace("modal_foto_trucky_", "");
   const ticket = db.tickets[ticketId];
-  if (!ticket) return interaction.reply({ content: `⚠️ Ticket não encontrado.`, flags: 64 });
+  if (!ticket) return interaction.reply({ content: `⚠️ Ticket nao encontrado.`, flags: 64 });
 
   let fotoNome = interaction.fields.getTextInputValue("foto_nome")?.trim() || "Não informado";
   fotoNome = fotoNome.replace(/\.[^/.]+$/, "");
@@ -535,7 +526,6 @@ async function handleFotoTruckyModal(interaction, client) {
     }
   }
 
-  // Enviar mensagem de boas-vindas no canal geral
   const canalGeral = await client.channels.fetch(CONFIG.CANAL_GERAL).catch(() => null);
   if (canalGeral) {
     await canalGeral.send([
@@ -564,7 +554,6 @@ async function handleFotoTruckyModal(interaction, client) {
 
     await channel.send({ embeds: [embedFechamento] });
 
-    // DM ao user com estrelas para avaliação - COR #FF0000 e username
     try {
       const user = await client.users.fetch(ticket.userId);
       const embedDM = new EmbedBuilder()
@@ -611,7 +600,7 @@ async function handleFotoTruckyModal(interaction, client) {
 
 async function fecharTicket(interaction, ticketId, client, recrutado) {
   const ticket = db.tickets[ticketId];
-  if (!ticket) return interaction.reply({ content: `⚠️ Ticket não encontrado.`, flags: 64 });
+  if (!ticket) return interaction.reply({ content: `⚠️ Ticket nao encontrado.`, flags: 64 });
 
   ticket.closed = true;
   ticket.recrutado = recrutado;
@@ -636,7 +625,6 @@ async function fecharTicket(interaction, ticketId, client, recrutado) {
 
     await channel.send({ embeds: [embedFechamento] });
 
-    // DM ao user com estrelas para avaliação - COR #FF0000 e username
     try {
       const user = await client.users.fetch(ticket.userId);
       const embedDM = new EmbedBuilder()
@@ -720,7 +708,7 @@ async function enviarPainelMembro(interaction) {
   const embed = new EmbedBuilder()
     .setTitle(`🛡️ Painel Membro`)
     .setDescription([
-      `📋 Lista de staff disponível neste ticket:`,
+      `📋 Lista de staff disponivel neste ticket:`,
       "",
       staffText
     ].join("\n"))
@@ -730,7 +718,6 @@ async function enviarPainelMembro(interaction) {
 }
 
 async function enviarPainelStaff(interaction, client) {
-  // Verificar permissao
   if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages) && 
       !interaction.member.roles.cache.has(CONFIG.CARGO_STAFF)) {
     return interaction.reply({ 
