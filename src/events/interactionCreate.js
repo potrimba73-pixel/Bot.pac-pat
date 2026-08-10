@@ -5,7 +5,7 @@ import {
 } from "discord.js";
 import { CONFIG } from "../config/index.js";
 import { db, saveDB } from "../utils/db.js";
-import { createTicket, criarTicketRecrutamento, handleTruckyVerification, updateTicketEmbed, isClaiming, setClaiming, clearClaiming } from "../services/tickets.js";
+import { createTicket, criarTicketRecrutamento, handleTruckyVerification, updateTicketEmbed, isClaiming, setClaiming, clearClaiming, findTicketByChannelId } from "../services/tickets.js";
 import { sendLog } from "../services/logs.js";
 import { sendPainelChamada } from "../services/calls.js";
 
@@ -70,7 +70,6 @@ export async function handleInteractionCreate(interaction, client) {
   // ============ MODAIS ============
   if (interaction.isModalSubmit()) {
     if (interaction.customId.startsWith("modal_trucky_")) {
-      // handleTruckyVerification already does deferReply internally
       return handleTruckyVerification(interaction, client);
     }
 
@@ -81,7 +80,7 @@ export async function handleInteractionCreate(interaction, client) {
     }
 
     if (interaction.customId.startsWith("modal_foto_trucky_")) {
-      await interaction.deferReply({ flags: 64 }).catch(() => {});
+      await interaction.deferReply({ flags: 64 });
       return handleFotoTruckyModal(interaction, client);
     }
 
@@ -194,8 +193,7 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       if (interaction.user.id !== userId) {
         return interaction.reply({ content: `⚠️ Este botão não está disponível para ti!`, flags: 64 });
       }
-      // DEFER FIRST!
-      await interaction.deferReply({ flags: 64 }).catch(() => {});
+      await interaction.deferReply({ flags: 64 });
       try {
         await criarTicketRecrutamento(interaction, client, nomeTrucky);
         return interaction.editReply({ content: `✅ Ticket de recrutamento criado com sucesso!` });
@@ -218,30 +216,36 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       });
     }
 
-    // --- ASSUMIR TICKET (COM LOCK + DEFER) ---
+    // --- ASSUMIR TICKET ---
     if (customId.startsWith("assumir_")) {
       const ticketId = customId.replace("assumir_", "");
+
+      // DEFER IMMEDIATELY - primeira coisa, antes de tudo!
+      await interaction.deferReply({ flags: 64 });
+
       console.log(`[Assumir] TicketId: ${ticketId}, User: ${interaction.user.id}`);
 
-      // DEFER IMMEDIATELY - before any async work!
-      await interaction.deferReply({ flags: 64 }).catch(e => {
-        console.log(`[Assumir] deferReply falhou:`, e.message);
-      });
-
-      // Check lock
       if (isClaiming(ticketId)) {
-        return interaction.editReply({ content: `⏳ Outro staff ja esta a assumir este ticket. Aguarda...` }).catch(() => {});
+        return interaction.editReply({ content: `⏳ Outro staff ja esta a assumir este ticket. Aguarda...` });
       }
 
-      const ticket = db.tickets[ticketId];
-      console.log(`[Assumir] Ticket na DB:`, ticket ? `ID=${ticket.id}, closed=${ticket.closed}` : "NAO ENCONTRADO");
-      console.log(`[Assumir] Todas as keys em db.tickets:`, Object.keys(db.tickets).slice(0, 10));
+      let ticket = db.tickets[ticketId];
+
+      // FALLBACK: procurar por channelId se nao encontrar por ID
+      if (!ticket && interaction.channelId) {
+        ticket = findTicketByChannelId(interaction.channelId);
+        if (ticket) {
+          console.log(`[Assumir] Ticket encontrado por channelId fallback: ${ticket.id}`);
+        }
+      }
+
+      console.log(`[Assumir] Ticket na DB:`, ticket ? `ID=${ticket.id}, closed=${ticket.closed}, claimed=${ticket.claimedBy}` : "NAO ENCONTRADO");
 
       if (!ticket || ticket.closed) {
-        return interaction.editReply({ content: `⚠️ Ticket nao encontrado ou ja fechado.` }).catch(() => {});
+        return interaction.editReply({ content: `⚠️ Ticket nao encontrado ou ja fechado.` });
       }
       if (ticket.claimedBy) {
-        return interaction.editReply({ content: `⚠️ Este ticket ja foi assumido por <@${ticket.claimedBy}>.` }).catch(() => {});
+        return interaction.editReply({ content: `⚠️ Este ticket ja foi assumido por <@${ticket.claimedBy}>.` });
       }
 
       setClaiming(ticketId, interaction.user.id);
@@ -254,7 +258,7 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
         const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
         if (!channel) {
           clearClaiming(ticketId);
-          return interaction.editReply({ content: `❌ Erro: Canal do ticket nao encontrado.` }).catch(() => {});
+          return interaction.editReply({ content: `❌ Erro: Canal do ticket nao encontrado.` });
         }
 
         await updateTicketEmbed(channel, ticketId);
@@ -263,10 +267,10 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
 
         return interaction.editReply({
           content: `Olá <@${interaction.user.id}>, informo-te que podes usar o **/painelstaff** para teres mais acesso ao ticket se precisares.`,
-        }).catch(() => {});
+        });
       } catch (err) {
         console.error("[Assumir] Erro:", err);
-        return interaction.editReply({ content: `❌ Erro ao assumir ticket. Tenta novamente.` }).catch(() => {});
+        return interaction.editReply({ content: `❌ Erro ao assumir ticket. Tenta novamente.` });
       } finally {
         clearClaiming(ticketId);
       }
@@ -275,7 +279,13 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
     // --- PAINEL MEMBRO ---
     if (customId.startsWith("painel_membro_")) {
       const ticketId = customId.replace("painel_membro_", "");
-      const ticket = db.tickets[ticketId];
+      let ticket = db.tickets[ticketId];
+
+      // Fallback por channelId
+      if (!ticket && interaction.channelId) {
+        ticket = findTicketByChannelId(interaction.channelId);
+      }
+
       if (!ticket || ticket.closed) {
         return interaction.reply({ content: `⚠️ Ticket nao encontrado ou ja fechado.`, flags: 64 });
       }
@@ -335,7 +345,12 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
     // --- SAIR DO TICKET ---
     if (customId.startsWith("sair_")) {
       const ticketId = customId.replace("sair_", "");
-      const ticket = db.tickets[ticketId];
+      let ticket = db.tickets[ticketId];
+
+      if (!ticket && interaction.channelId) {
+        ticket = findTicketByChannelId(interaction.channelId);
+      }
+
       if (!ticket || ticket.closed) {
         return interaction.reply({ content: `⚠️ Ticket nao encontrado ou ja fechado.`, flags: 64 });
       }
@@ -355,7 +370,12 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
     // --- FECHAR TICKET ---
     if (customId.startsWith("deletar_")) {
       const ticketId = customId.replace("deletar_", "");
-      const ticket = db.tickets[ticketId];
+      let ticket = db.tickets[ticketId];
+
+      if (!ticket && interaction.channelId) {
+        ticket = findTicketByChannelId(interaction.channelId);
+      }
+
       if (!ticket || ticket.closed) {
         return interaction.reply({ content: `⚠️ Ticket nao encontrado ou ja fechado.`, flags: 64 });
       }
@@ -379,7 +399,10 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
     // --- RECRUTADO SIM ---
     if (customId.startsWith("recrutado_sim_")) {
       const ticketId = customId.replace("recrutado_sim_", "");
-      const ticket = db.tickets[ticketId];
+      let ticket = db.tickets[ticketId];
+      if (!ticket && interaction.channelId) {
+        ticket = findTicketByChannelId(interaction.channelId);
+      }
       if (!ticket) {
         return interaction.reply({ content: `⚠️ Ticket nao encontrado.`, flags: 64 });
       }
@@ -510,7 +533,10 @@ function generateTranscriptHTML(messages, ticket, guild) {
 
 async function handleFotoTruckyModal(interaction, client) {
   const ticketId = interaction.customId.replace("modal_foto_trucky_", "");
-  const ticket = db.tickets[ticketId];
+  let ticket = db.tickets[ticketId];
+  if (!ticket && interaction.channelId) {
+    ticket = findTicketByChannelId(interaction.channelId);
+  }
   if (!ticket) return interaction.editReply({ content: `⚠️ Ticket nao encontrado.` }).catch(() => {});
 
   let fotoNome = interaction.fields.getTextInputValue("foto_nome")?.trim() || "Não informado";
@@ -607,7 +633,10 @@ async function handleFotoTruckyModal(interaction, client) {
 }
 
 async function fecharTicket(interaction, ticketId, client, recrutado) {
-  const ticket = db.tickets[ticketId];
+  let ticket = db.tickets[ticketId];
+  if (!ticket && interaction.channelId) {
+    ticket = findTicketByChannelId(interaction.channelId);
+  }
   if (!ticket) return interaction.reply({ content: `⚠️ Ticket nao encontrado.`, flags: 64 });
 
   ticket.closed = true;
