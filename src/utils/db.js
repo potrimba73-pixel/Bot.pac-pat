@@ -6,6 +6,7 @@ import path from "path";
 let client = null;
 let mongoDB = null;
 let useMongo = false;
+let reconnectTimer = null;
 
 // Cache em memória
 let cache = {
@@ -44,7 +45,7 @@ function saveJSON() {
   }
 }
 
-// ========== MONGODB ==========
+// ========== MONGODB COM RECONNECT ==========
 export async function connectDB() {
   // Se não há URI configurada, usar JSON
   if (!CONFIG.MONGODB_URI || CONFIG.MONGODB_URI === "") {
@@ -54,7 +55,23 @@ export async function connectDB() {
   }
 
   try {
-    client = new MongoClient(CONFIG.MONGODB_URI);
+    client = new MongoClient(CONFIG.MONGODB_URI, {
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+    });
+
+    client.on("error", (err) => {
+      console.error("[DB] MongoDB client error:", err.message);
+      scheduleReconnect();
+    });
+
+    client.on("close", () => {
+      console.warn("[DB] MongoDB connection closed.");
+      useMongo = false;
+      scheduleReconnect();
+    });
+
     await client.connect();
     mongoDB = client.db("pacpat_bot");
     useMongo = true;
@@ -67,7 +84,25 @@ export async function connectDB() {
     console.error("[DB] ❌ Erro ao conectar MongoDB:", error.message);
     console.log("[DB] ⚠️ A usar JSON como fallback.");
     loadJSON();
+    scheduleReconnect();
   }
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  console.log("[DB] 🔄 Agendando reconnect em 30 segundos...");
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = null;
+    console.log("[DB] 🔄 Tentando reconectar ao MongoDB...");
+    try {
+      if (client) {
+        await client.close().catch(() => {});
+      }
+      await connectDB();
+    } catch (e) {
+      console.error("[DB] Reconnect falhou:", e.message);
+    }
+  }, 30000);
 }
 
 async function loadMongoToCache() {
@@ -146,6 +181,9 @@ export async function saveDB() {
       console.log("[DB] 💾 MongoDB atualizado");
     } catch (e) {
       console.error("[DB] Erro ao guardar no MongoDB:", e.message);
+      // Se falhou, marca como desconectado e agenda reconnect
+      useMongo = false;
+      scheduleReconnect();
     }
   }
 }
