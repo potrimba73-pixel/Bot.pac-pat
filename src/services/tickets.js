@@ -319,9 +319,8 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
 
     // Embed com menção @Administração no título (ID: 1390770675567956018)
     const embed = new EmbedBuilder()
-      .setTitle(`<@&${CONFIG.CARGO_ADMINISTRACAO}>`)
+      .setTitle(`${CONFIG.EMOJI_TICKET} **Sistema de Ticket | Portugal Alfa Truckers**`)
       .setDescription([
-        `${CONFIG.EMOJI_TICKET} **Sistema de Ticket | Portugal Alfa Truckers**`,
         `${CONFIG.EMOJI_INFO} Motivo: ${CONFIG.EMOJI_RECRUTAMENTO} Recrutamento PAT`,
         `${CONFIG.EMOJI_STAFF} Assumido: Aguardando staff...`,
         "",
@@ -447,9 +446,8 @@ async function criarTicketNormal(interaction, type, label, client, guild, user) 
 
   // Embed com menção @Administração no título (ID: 1390770675567956018)
   const embed = new EmbedBuilder()
-    .setTitle(`<@&${CONFIG.CARGO_ADMINISTRACAO}>`)
-    .setDescription([
-      `${CONFIG.EMOJI_TICKET} **Sistema de Ticket | Portugal Alfa Community**`,
+    .setTitle(`${CONFIG.EMOJI_TICKET} **Sistema de Ticket | Portugal Alfa Community**`)
+      .setDescription([
       `${CONFIG.EMOJI_INFO} Motivo: ${label}`,
       `${CONFIG.EMOJI_STAFF} Assumido: Aguardando staff...`,
       "",
@@ -496,9 +494,8 @@ export async function updateTicketEmbed(channel, ticketId) {
       : `${CONFIG.EMOJI_TIME} Aguardando staff...`;
 
     const embed = new EmbedBuilder()
-      .setTitle(`<@&${CONFIG.CARGO_ADMINISTRACAO}>`)
+      .setTitle(`${CONFIG.EMOJI_TICKET} **Sistema de Ticket | Portugal Alfa Community**`)
       .setDescription([
-        `${CONFIG.EMOJI_TICKET} **Sistema de Ticket | Portugal Alfa Community**`,
         `${CONFIG.EMOJI_INFO} Motivo: ${ticket.label}`,
         `${CONFIG.EMOJI_STAFF} Assumido: ${claimedText}`,
         "",
