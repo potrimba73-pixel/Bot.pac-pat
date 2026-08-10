@@ -4,22 +4,17 @@ import { TRUCKY_CONFIG } from "../config/trucky.js";
 
 const mapaIntervals = new Map();
 
-// Cleanup em shutdown
-process.on("SIGINT", () => {
+// Cleanup no shutdown
+function cleanupMapaIntervals() {
   for (const [guildId, interval] of mapaIntervals) {
     clearInterval(interval);
     console.log(`[MapaCanal] Interval limpo para guild ${guildId}`);
   }
   mapaIntervals.clear();
-});
+}
 
-process.on("SIGTERM", () => {
-  for (const [guildId, interval] of mapaIntervals) {
-    clearInterval(interval);
-    console.log(`[MapaCanal] Interval limpo para guild ${guildId}`);
-  }
-  mapaIntervals.clear();
-});
+process.on('SIGINT', () => { cleanupMapaIntervals(); process.exit(0); });
+process.on('SIGTERM', () => { cleanupMapaIntervals(); process.exit(0); });
 
 export const mapaCanalSlashCommands = [
     new SlashCommandBuilder()
