@@ -570,11 +570,21 @@ function generateTranscriptHTML(messages, ticket, guild) {
 }
 
 async function handleFotoTruckyModal(interaction, client) {
+  // ✅ CORREÇÃO: VERIFICAR STAFF NO MODAL TAMBÉM
+  if (!isStaff(interaction.member)) {
+    return interaction.reply({ 
+      content: `❌ Apenas staff pode completar o recrutamento.`, 
+      flags: 64 
+    });
+  }
+
   const ticketId = interaction.customId.replace("modal_foto_trucky_", "");
   let ticket = db.tickets[ticketId];
+  
   if (!ticket && interaction.channelId) {
     ticket = findTicketByChannelId(interaction.channelId);
   }
+  
   if (!ticket) return interaction.editReply({ content: `⚠️ Ticket nao encontrado.` }).catch(() => {});
 
   let fotoNome = interaction.fields.getTextInputValue("foto_nome")?.trim() || "Não informado";
