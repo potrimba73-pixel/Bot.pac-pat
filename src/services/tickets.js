@@ -7,8 +7,58 @@ import { db, saveDB } from "../utils/db.js";
 import { safeEditReply } from "../utils/safeReply.js";
 import { sendLog } from "./logs.js";
 
-const cooldown = new Map(); // userId -> timestamp (com auto-limpeza)
-const claimingLock = new Map(); // ticketId -> { userId, timestamp } (lock para assumir)
+// ========== COOLDOWN COM AUTO-LIMPEZA ==========
+const cooldownMap = new Map();
+
+function isOnCooldown(userId) {
+  const last = cooldownMap.get(userId);
+  if (!last) return false;
+  if (Date.now() - last > 3000) {
+    cooldownMap.delete(userId);
+    return false;
+  }
+  return true;
+}
+
+function setCooldown(userId) {
+  cooldownMap.set(userId, Date.now());
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [userId, ts] of cooldownMap) {
+    if (now - ts > 3000) cooldownMap.delete(userId);
+  }
+}, 60000);
+
+// ========== LOCK PARA ASSUMIR TICKET ==========
+const claimingLock = new Map(); // ticketId -> { userId, timestamp }
+
+export function isClaiming(ticketId) {
+  const now = Date.now();
+  const existing = claimingLock.get(ticketId);
+  if (existing && now - existing.timestamp < 30000) {
+    return true;
+  }
+  return false;
+}
+
+export function setClaiming(ticketId, userId) {
+  const now = Date.now();
+  claimingLock.set(ticketId, { userId, timestamp: now });
+  for (const [tid, data] of claimingLock) {
+    if (now - data.timestamp > 30000) claimingLock.delete(tid);
+  }
+}
+
+export function clearClaiming(ticketId) {
+  claimingLock.delete(ticketId);
+}
+
+// ========== FALLBACK: ENCONTRAR TICKET POR CHANNEL ID ==========
+export function findTicketByChannelId(channelId) {
+  return Object.values(db.tickets).find(t => t.channelId === channelId && !t.closed);
+}
 
 const REGRAS_RECRUTAMENTO = [
   "Máx. 100 km/h sempre – simulação real acima de tudo.",
@@ -24,51 +74,6 @@ function getTruckersMPSearchLink(username) {
   return `https://truckersmp.com/user/search?search=${encodeURIComponent(username)}`;
 }
 
-// ========== AUTO-LIMPEZA DE COOLDOWNS ==========
-function isOnCooldown(userId) {
-  const now = Date.now();
-  const ts = cooldown.get(userId);
-  if (!ts) return false;
-  if (now - ts > 30000) {
-    cooldown.delete(userId);
-    return false;
-  }
-  return true;
-}
-
-function setCooldown(userId) {
-  cooldown.set(userId, Date.now());
-  // Limpeza automática de entradas antigas (evita memory leak)
-  const now = Date.now();
-  for (const [uid, ts] of cooldown) {
-    if (now - ts > 60000) cooldown.delete(uid);
-  }
-}
-
-// ========== LOCK PARA ASSUMIR TICKET ==========
-export function isClaiming(ticketId) {
-  const now = Date.now();
-  const existing = claimingLock.get(ticketId);
-  if (existing && now - existing.timestamp < 30000) {
-    return true;
-  }
-  return false;
-}
-
-export function setClaiming(ticketId, userId) {
-  const now = Date.now();
-  claimingLock.set(ticketId, { userId, timestamp: now });
-  // Auto-limpeza
-  for (const [tid, data] of claimingLock) {
-    if (now - data.timestamp > 30000) claimingLock.delete(tid);
-  }
-}
-
-export function clearClaiming(ticketId) {
-  claimingLock.delete(ticketId);
-}
-
-// ========== GERAR TICKET ID ÚNICO ==========
 function generateTicketId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
 }
@@ -109,7 +114,6 @@ async function iniciarFluxoRecrutamento(interaction, client) {
         flags: 64
       });
     }
-    // Canal não existe mais, marca como fechado
     existingTicket.closed = true;
     existingTicket.closedAt = new Date().toISOString();
     existingTicket.closedBy = "system";
@@ -155,11 +159,12 @@ async function iniciarFluxoRecrutamento(interaction, client) {
 }
 
 export async function handleTruckyVerification(interaction, client) {
+  // DEFER FIRST - antes de qualquer operacao
+  await interaction.deferReply({ flags: 64 });
+
   const temTrucky = interaction.fields.getTextInputValue("trucky_instalado").toLowerCase().trim();
   const nomeTrucky = interaction.fields.getTextInputValue("trucky_nome")?.trim() || "Não informado";
   const linkTrucky = interaction.fields.getTextInputValue("trucky_link")?.trim() || null;
-
-  await interaction.deferReply({ flags: 64 });
 
   if (temTrucky.includes("não") || temTrucky.includes("nao") || temTrucky.startsWith("n")) {
     const embed = new EmbedBuilder()
@@ -181,8 +186,7 @@ export async function handleTruckyVerification(interaction, client) {
       new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TRUCK} Trucky App`).setStyle(ButtonStyle.Link).setURL("https://hub.truckyapp.com/"),
     );
 
-    await interaction.editReply({ embeds: [embed], components: [row], flags: 64 });
-    return;
+    return interaction.editReply({ embeds: [embed], components: [row], flags: 64 });
   }
 
   await mostrarRegrasRecrutamento(interaction, client, nomeTrucky, linkTrucky);
@@ -284,7 +288,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
 
   try {
     const channel = await guild.channels.create(channelData);
-    const ticketId = generateTicketId(); // ID único, não colide
+    const ticketId = generateTicketId();
 
     let truckyDisplay;
     if (linkTrucky && (linkTrucky.startsWith("http://") || linkTrucky.startsWith("https://"))) {
@@ -321,7 +325,6 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
 
     await saveDB();
 
-    // Embed com menção @Administração no título (ID: 1390770675567956018)
     const embed = new EmbedBuilder()
       .setTitle(`${CONFIG.EMOJI_TICKET} **Sistema de Ticket | Portugal Alfa Truckers**`)
       .setDescription([
@@ -344,17 +347,17 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
     );
 
     const panelMsg = await channel.send({
-  content: `🧑‍💼 <@&${CONFIG.CARGO_ADMINISTRACAO}> | 👤 <@${user.id}>`,
-  embeds: [embed],
-  components: [row]
-});
-db.tickets[ticketId].panelMessageId = panelMsg.id;
-await saveDB();
-await sendLog(ticketId, "open", client);
+      content: `🧑‍💼 <@&${CONFIG.CARGO_ADMINISTRACAO}> | 👤 <@${user.id}>`,
+      embeds: [embed],
+      components: [row]
+    });
+    db.tickets[ticketId].panelMessageId = panelMsg.id;
+    await saveDB();
+    await sendLog(ticketId, "open", client);
 
-const rowIrTicket = new ActionRowBuilder().addComponents(
-  new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TICKET} Ir para o Ticket`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${targetGuildId}/${channel.id}`),
-);
+    const rowIrTicket = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TICKET} Ir para o Ticket`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${targetGuildId}/${channel.id}`),
+    );
 
     await interaction.editReply({
       content: `${CONFIG.EMOJI_SUCCESS} O seu ticket de recrutamento foi criado com sucesso!`,
@@ -416,7 +419,7 @@ async function criarTicketNormal(interaction, type, label, client, guild, user) 
   if (categoria) channelData.parent = categoria;
 
   const channel = await guild.channels.create(channelData);
-  const ticketId = generateTicketId(); // ID único, não colide
+  const ticketId = generateTicketId();
 
   let descricaoExtra = "";
   if (type === "ajuda" && interaction._ajudaEspecificacoes) {
@@ -448,10 +451,9 @@ async function criarTicketNormal(interaction, type, label, client, guild, user) 
 
   await saveDB();
 
-  // Embed com menção @Administração no título (ID: 1390770675567956018)
   const embed = new EmbedBuilder()
     .setTitle(`${CONFIG.EMOJI_TICKET} **Sistema de Ticket | Portugal Alfa Community**`)
-      .setDescription([
+    .setDescription([
       `${CONFIG.EMOJI_INFO} Motivo: ${label}`,
       `${CONFIG.EMOJI_STAFF} Assumido: Aguardando staff...`,
       "",
@@ -470,15 +472,15 @@ async function criarTicketNormal(interaction, type, label, client, guild, user) 
   );
 
   const panelMsg = await channel.send({
-  content: `🧑‍💼 <@&${CONFIG.CARGO_ADMINISTRACAO}> | 👤 <@${user.id}>`,
-  embeds: [embed],
-  components: [row]
-});
-db.tickets[ticketId].panelMessageId = panelMsg.id;
-await saveDB();
-await sendLog(ticketId, "open", client);
+    content: `🧑‍💼 <@&${CONFIG.CARGO_ADMINISTRACAO}> | 👤 <@${user.id}>`,
+    embeds: [embed],
+    components: [row]
+  });
+  db.tickets[ticketId].panelMessageId = panelMsg.id;
+  await saveDB();
+  await sendLog(ticketId, "open", client);
 
-const rowIrTicket = new ActionRowBuilder().addComponents(
+  const rowIrTicket = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TICKET} Ir para o Ticket`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${guild.id}/${channel.id}`),
   );
 
