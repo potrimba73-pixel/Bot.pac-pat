@@ -4,6 +4,23 @@ import { TRUCKY_CONFIG } from "../config/trucky.js";
 
 const mapaIntervals = new Map();
 
+// Cleanup em shutdown
+process.on("SIGINT", () => {
+  for (const [guildId, interval] of mapaIntervals) {
+    clearInterval(interval);
+    console.log(`[MapaCanal] Interval limpo para guild ${guildId}`);
+  }
+  mapaIntervals.clear();
+});
+
+process.on("SIGTERM", () => {
+  for (const [guildId, interval] of mapaIntervals) {
+    clearInterval(interval);
+    console.log(`[MapaCanal] Interval limpo para guild ${guildId}`);
+  }
+  mapaIntervals.clear();
+});
+
 export const mapaCanalSlashCommands = [
     new SlashCommandBuilder()
         .setName("mapa-canal")
