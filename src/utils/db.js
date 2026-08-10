@@ -65,7 +65,6 @@ function loadJSON() {
     if (fs.existsSync(DB_PATH)) {
       const data = JSON.parse(fs.readFileSync(DB_PATH, "utf-8"));
       
-      // ✅ Migração segura de dados
       cache.tickets = data.tickets || {};
       cache.avaliacoes = data.avaliacoes || {};
       cache.acceptedRules = data.acceptedRules || [];
@@ -83,7 +82,6 @@ function loadJSON() {
   } catch (e) {
     logDB(`Erro ao carregar JSON: ${e.message}`, "error");
     
-    // ✅ Tentar restaurar backup
     if (fs.existsSync(BACKUP_PATH)) {
       try {
         logDB("🔄 A tentar restaurar backup...", "warning");
@@ -106,11 +104,9 @@ function loadJSON() {
 
 function saveJSON() {
   try {
-    // ✅ Criar backup antes de sobrescrever
     if (fs.existsSync(DB_PATH)) {
       fs.copyFileSync(DB_PATH, BACKUP_PATH);
     }
-    
     fs.writeFileSync(DB_PATH, JSON.stringify(cache, null, 2));
   } catch (e) {
     logDB(`Erro ao guardar JSON: ${e.message}`, "error");
@@ -121,7 +117,6 @@ function saveJSON() {
 // MONGODB - CONEXÃO
 // ============================================================
 export async function connectDB() {
-  // Se não há URI configurada, usar JSON
   if (!CONFIG.MONGODB_URI || CONFIG.MONGODB_URI === "") {
     logDB("MONGODB_URI não configurada, a usar JSON.", "warning");
     loadJSON();
@@ -139,7 +134,6 @@ export async function connectDB() {
       retryReads: true,
     });
 
-    // ✅ Event listeners para reconnect
     client.on("error", (err) => {
       logDB(`MongoDB error: ${err.message}`, "error");
       useMongo = false;
@@ -161,14 +155,10 @@ export async function connectDB() {
     mongoDB = client.db("pacpat_bot");
     useMongo = true;
 
-    // ✅ Verificar conexão com ping
     await mongoDB.command({ ping: 1 });
     logDB("MongoDB conectado com sucesso!", "success");
 
-    // ✅ Carregar dados para cache
     await loadMongoToCache();
-
-    // ✅ Criar índices
     await createIndexes();
 
   } catch (error) {
@@ -180,26 +170,35 @@ export async function connectDB() {
 }
 
 // ============================================================
-// MONGODB - ÍNDICES
+// MONGODB - ÍNDICES (CORRIGIDO)
 // ============================================================
 async function createIndexes() {
   if (!mongoDB) return;
   
   try {
     const ticketsCol = mongoDB.collection("tickets");
-    await ticketsCol.createIndex({ id: 1 }, { unique: true });
+    
+    // ⚠️ IMPORTANTE: O campo _id já é único por padrão no MongoDB
+    // Não criar índices únicos no _id ou em campos que já são únicos
+    
+    // ✅ Índices para consultas comuns
     await ticketsCol.createIndex({ userId: 1 });
     await ticketsCol.createIndex({ channelId: 1 });
     await ticketsCol.createIndex({ closed: 1 });
     await ticketsCol.createIndex({ type: 1 });
     await ticketsCol.createIndex({ openedAt: -1 });
     
-    const rulesCol = mongoDB.collection("acceptedRules");
-    await rulesCol.createIndex({ _id: 1 }, { unique: true });
+    // ✅ Índices compostos para consultas mais rápidas
+    await ticketsCol.createIndex({ userId: 1, closed: 1 });
+    await ticketsCol.createIndex({ type: 1, closed: 1 });
+    await ticketsCol.createIndex({ closed: 1, openedAt: -1 });
     
-    logDB("Índices MongoDB criados/verificados", "debug");
+    logDB("✅ Índices MongoDB criados/verificados", "debug");
   } catch (e) {
-    logDB(`Erro ao criar índices: ${e.message}`, "warning");
+    // Ignorar erros de índices que já existem
+    if (e.code !== 86) { // 86 = IndexAlreadyExists
+      logDB(`⚠️ Erro ao criar índices: ${e.message}`, "warning");
+    }
   }
 }
 
@@ -224,21 +223,18 @@ async function loadMongoToCache() {
   if (!mongoDB) return;
 
   try {
-    // ✅ Tickets
     const ticketsCol = mongoDB.collection("tickets");
     const tickets = await ticketsCol.find({}).toArray();
     for (const t of tickets) {
       cache.tickets[t.id] = t;
     }
 
-    // ✅ Avaliações
     const avalCol = mongoDB.collection("avaliacoes");
     const avaliacoes = await avalCol.find({}).toArray();
     for (const a of avaliacoes) {
       cache.avaliacoes[a.ticketId] = a.avaliacoes;
     }
 
-    // ✅ Regras
     const rulesCol = mongoDB.collection("acceptedRules");
     const rules = await rulesCol.findOne({ _id: "rules" });
     if (rules) {
@@ -246,7 +242,6 @@ async function loadMongoToCache() {
       cache.acceptedRulesAt = rules.acceptedAt || {};
     }
 
-    // ✅ Mensagens/Painéis
     const msgCol = mongoDB.collection("messages");
     const messages = await msgCol.findOne({ _id: "panels" });
     if (messages) {
@@ -254,7 +249,6 @@ async function loadMongoToCache() {
       cache.painelsHash = messages.painelsHash || {};
     }
 
-    // ✅ Configuração do Mapa
     const mapCol = mongoDB.collection("mapaConfig");
     const mapa = await mapCol.findOne({ _id: "config" });
     if (mapa) {
@@ -273,7 +267,6 @@ async function loadMongoToCache() {
 // MONGODB - GUARDAR (OTIMIZADO COM BULK WRITE)
 // ============================================================
 export async function saveDB() {
-  // ✅ Evitar saves simultâneos
   if (isSaving) {
     return new Promise((resolve) => {
       saveQueue.push(resolve);
@@ -283,10 +276,8 @@ export async function saveDB() {
   isSaving = true;
 
   try {
-    // ✅ Guardar sempre no JSON (backup)
     saveJSON();
 
-    // ✅ Se MongoDB disponível, guardar lá também
     if (useMongo && mongoDB) {
       await saveToMongoDB();
     }
@@ -298,7 +289,6 @@ export async function saveDB() {
   } finally {
     isSaving = false;
     
-    // ✅ Processar fila
     if (saveQueue.length > 0) {
       const resolvers = [...saveQueue];
       saveQueue = [];
@@ -313,7 +303,6 @@ async function saveToMongoDB() {
   try {
     const operations = [];
 
-    // ✅ Tickets - Bulk Write
     const ticketsCol = mongoDB.collection("tickets");
     const ticketOps = Object.entries(cache.tickets).map(([id, ticket]) => ({
       updateOne: {
@@ -327,7 +316,6 @@ async function saveToMongoDB() {
       operations.push({ collection: "tickets", ops: ticketOps });
     }
 
-    // ✅ Avaliações - Bulk Write
     const avalCol = mongoDB.collection("avaliacoes");
     const avalOps = Object.entries(cache.avaliacoes).map(([ticketId, avaliacoes]) => ({
       updateOne: {
@@ -341,13 +329,11 @@ async function saveToMongoDB() {
       operations.push({ collection: "avaliacoes", ops: avalOps });
     }
 
-    // ✅ Executar operações em paralelo
     await Promise.all(operations.map(async ({ collection, ops }) => {
       const col = mongoDB.collection(collection);
       await col.bulkWrite(ops, { ordered: false });
     }));
 
-    // ✅ Regras (documento único)
     const rulesCol = mongoDB.collection("acceptedRules");
     await rulesCol.updateOne(
       { _id: "rules" },
@@ -361,7 +347,6 @@ async function saveToMongoDB() {
       { upsert: true }
     );
 
-    // ✅ Mensagens/Painéis (documento único)
     const msgCol = mongoDB.collection("messages");
     await msgCol.updateOne(
       { _id: "panels" },
@@ -375,7 +360,6 @@ async function saveToMongoDB() {
       { upsert: true }
     );
 
-    // ✅ Configuração do Mapa (documento único)
     const mapCol = mongoDB.collection("mapaConfig");
     await mapCol.updateOne(
       { _id: "config" },
@@ -401,7 +385,6 @@ async function saveToMongoDB() {
 // FUNÇÕES DE UTILIDADE
 // ============================================================
 
-// ✅ Limpar tickets fechados antigos (mais de 30 dias)
 export async function cleanOldTickets(daysOld = 30) {
   const cutoff = Date.now() - (daysOld * 24 * 60 * 60 * 1000);
   let cleaned = 0;
@@ -421,7 +404,6 @@ export async function cleanOldTickets(daysOld = 30) {
   return cleaned;
 }
 
-// ✅ Obter estatísticas da DB
 export function getDBStats() {
   const tickets = Object.values(cache.tickets);
   const openTickets = tickets.filter(t => !t.closed);
@@ -438,12 +420,10 @@ export function getDBStats() {
   };
 }
 
-// ✅ Exportar cache para JSON (útil para debug)
 export function exportCache() {
   return JSON.stringify(cache, null, 2);
 }
 
-// ✅ Importar dados (cuidado!)
 export function importCache(data) {
   try {
     const parsed = typeof data === 'string' ? JSON.parse(data) : data;
