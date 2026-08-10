@@ -1,10 +1,24 @@
 import { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } from "discord.js";
 import TruckyAPI from "../utils/truckyAPI.js";
 import { TRUCKY_CONFIG } from "../config/trucky.js";
+import { db, saveDB } from "../utils/db.js";
 
 const mapaIntervals = new Map();
+const updatingMapa = new Map(); // ✅ CORREÇÃO: LOCK
 
-// Cleanup no shutdown
+// ✅ CORREÇÃO: PERSISTIR CONFIGURAÇÃO
+function getMapaConfig(guildId) {
+  if (!db.mapaConfig) db.mapaConfig = {};
+  return db.mapaConfig[guildId] || null;
+}
+
+function setMapaConfig(guildId, config) {
+  if (!db.mapaConfig) db.mapaConfig = {};
+  db.mapaConfig[guildId] = config;
+  saveDB();
+}
+
+// Cleanup
 function cleanupMapaIntervals() {
   for (const [guildId, interval] of mapaIntervals) {
     clearInterval(interval);
@@ -40,27 +54,62 @@ export async function handleMapaCanalCommand(interaction, client) {
     const canal = interaction.options.getChannel("canal");
     const minutos = interaction.options.getInteger("atualizar") || 5;
 
+    const guildId = interaction.guildId;
+
     if (!canal) {
-        const guildId = interaction.guildId;
+        // Desativar
         if (mapaIntervals.has(guildId)) {
             clearInterval(mapaIntervals.get(guildId));
             mapaIntervals.delete(guildId);
+            // ✅ CORREÇÃO: REMOVER CONFIGURAÇÃO PERSISTIDA
+            setMapaConfig(guildId, null);
             return interaction.editReply({ content: "🗺️ Mapa do canal **DESATIVADO**." });
         }
         return interaction.editReply({ content: "❌ Nenhum mapa ativo para desativar." });
     }
 
-    const guildId = interaction.guildId;
+    // ✅ CORREÇÃO: VERIFICAR SE O BOT TEM PERMISSÃO NO CANAL
+    const botMember = await interaction.guild.members.fetch(client.user.id);
+    const perms = canal.permissionsFor(botMember);
+    if (!perms?.has(['ViewChannel', 'SendMessages', 'EmbedLinks'])) {
+        return interaction.editReply({ 
+            content: `❌ O bot não tem permissões no canal <#${canal.id}>. Preciso de: Ver Canal, Enviar Mensagens, Inserir Links.` 
+        });
+    }
+
+    // Parar intervalo existente
     if (mapaIntervals.has(guildId)) {
         clearInterval(mapaIntervals.get(guildId));
         mapaIntervals.delete(guildId);
     }
 
+    // Enviar mensagem inicial
     const msg = await enviarMapaEmbed(canal);
 
+    // ✅ CORREÇÃO: PERSISTIR CONFIGURAÇÃO
+    setMapaConfig(guildId, {
+        channelId: canal.id,
+        messageId: msg.id,
+        atualizarMinutos: minutos,
+        ativadoEm: new Date().toISOString()
+    });
+
+    // ✅ CORREÇÃO: INTERVAL COM LOCK
     const interval = setInterval(async () => {
-        try { await atualizarMapaEmbed(canal, msg.id); }
-        catch (err) { console.error("[MapaCanal] Erro ao atualizar:", err); }
+        // ✅ CORREÇÃO: LOCK PARA EVITAR SOBREPOSIÇÃO
+        if (updatingMapa.get(guildId)) {
+            console.log(`[MapaCanal] Atualização já em curso para guild ${guildId}, ignorando...`);
+            return;
+        }
+        
+        updatingMapa.set(guildId, true);
+        try {
+            await atualizarMapaEmbed(canal, msg.id);
+        } catch (err) {
+            console.error("[MapaCanal] Erro ao atualizar:", err);
+        } finally {
+            updatingMapa.delete(guildId);
+        }
     }, minutos * 60 * 1000);
 
     mapaIntervals.set(guildId, interval);
