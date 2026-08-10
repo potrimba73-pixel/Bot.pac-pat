@@ -7,14 +7,25 @@ import { CONFIG } from "../config/index.js";
 import { db, saveDB } from "../utils/db.js";
 import { createTicket, criarTicketRecrutamento, handleTruckyVerification, updateTicketEmbed } from "../services/tickets.js";
 import { sendLog } from "../services/logs.js";
+import { sendPainelChamada } from "../services/calls.js";
 
 const processingRegras = new Map(); // userId -> timestamp do ultimo processamento
+const claimingInProgress = new Set(); // ticketId em processo de assumir (evita race condition)
 
 export async function handleInteractionCreate(interaction, client) {
-  
+
   // ============ COMANDOS SLASH ============
   if (interaction.isChatInputCommand()) {
     if (interaction.commandName === "transcript") {
+      // Verificar permissão staff
+      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages) && 
+          !interaction.member.roles.cache.has(CONFIG.CARGO_STAFF)) {
+        return interaction.reply({ 
+          content: `${CONFIG.EMOJI_ERROR} Apenas staff pode usar este comando.`, 
+          flags: 64 
+        });
+      }
+
       const ticket = Object.values(db.tickets).find(t => t.channelId === interaction.channelId && !t.closed);
       if (!ticket) {
         return interaction.reply({ content: `⚠️ Nenhum ticket ativo encontrado neste canal.`, flags: 64 });
@@ -49,6 +60,11 @@ export async function handleInteractionCreate(interaction, client) {
 
     if (interaction.commandName === "painelmembro") {
       return enviarPainelMembro(interaction);
+    }
+
+    // ============ /PAINELSTAFF ============
+    if (interaction.commandName === "painelstaff") {
+      return handlePainelStaffCommand(interaction, client);
     }
 
     return;
@@ -130,17 +146,15 @@ export async function handleInteractionCreate(interaction, client) {
         await interaction.deferReply({ flags: 64 });
 
         const cargoMembro = interaction.guild.roles.cache.get(CONFIG.CARGO_MEMBRO);
-        const cargoVerificado = interaction.guild.roles.cache.get(CONFIG.CARGO_VERIFICADO);
         const cargoNovo1 = interaction.guild.roles.cache.get("1534970663344017479");
         const cargoNovo2 = interaction.guild.roles.cache.get("1146443166686396476");
 
         // Verifica se ja tem todos os cargos (ignora cargos que nao existem no servidor)
         const temMembro = !cargoMembro || member.roles.cache.has(cargoMembro.id);
-        const temVerificado = !cargoVerificado || member.roles.cache.has(cargoVerificado.id);
         const temNovo1 = !cargoNovo1 || member.roles.cache.has(cargoNovo1.id);
         const temNovo2 = !cargoNovo2 || member.roles.cache.has(cargoNovo2.id);
 
-        if (temMembro && temVerificado && temNovo1 && temNovo2) {
+        if (temMembro && temNovo1 && temNovo2) {
           const acceptedAt = db.acceptedRulesAt?.[member.id];
           if (acceptedAt) {
             const ts = Math.floor(new Date(acceptedAt).getTime() / 1000);
@@ -155,7 +169,6 @@ export async function handleInteractionCreate(interaction, client) {
 
         // Atribui os cargos (so se ainda nao tiver)
         if (cargoMembro && !member.roles.cache.has(cargoMembro.id)) await member.roles.add(cargoMembro).catch(() => {});
-        if (cargoVerificado && !member.roles.cache.has(cargoVerificado.id)) await member.roles.add(cargoVerificado).catch(() => {});
         if (cargoNovo1 && !member.roles.cache.has(cargoNovo1.id)) await member.roles.add(cargoNovo1).catch(() => {});
         if (cargoNovo2 && !member.roles.cache.has(cargoNovo2.id)) await member.roles.add(cargoNovo2).catch(() => {});
 
@@ -213,35 +226,45 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       const ticketId = customId.replace("assumir_", "");
       console.log(`[Assumir] TicketId: ${ticketId}, User: ${interaction.user.id}`);
 
-      const ticket = db.tickets[ticketId];
-      console.log(`[Assumir] Ticket encontrado: ${!!ticket}, Fechado: ${ticket?.closed}`);
-
-      if (!ticket || ticket.closed) {
-        return interaction.reply({ content: `⚠️ Ticket não encontrado ou já fechado.`, flags: 64 });
+      // LOCK: evita race condition — só um staff assume de cada vez
+      if (claimingInProgress.has(ticketId)) {
+        return interaction.reply({ content: `⏳ Outro staff já está a assumir este ticket. Aguarda...`, flags: 64 });
       }
-      if (ticket.claimedBy) {
-        return interaction.reply({ content: `⚠️ Este ticket já foi assumido por <@${ticket.claimedBy}>.`, flags: 64 });
+      claimingInProgress.add(ticketId);
+
+      try {
+        const ticket = db.tickets[ticketId];
+        console.log(`[Assumir] Ticket encontrado: ${!!ticket}, Fechado: ${ticket?.closed}`);
+
+        if (!ticket || ticket.closed) {
+          return interaction.reply({ content: `⚠️ Ticket não encontrado ou já fechado.`, flags: 64 });
+        }
+        if (ticket.claimedBy) {
+          return interaction.reply({ content: `⚠️ Este ticket já foi assumido por <@${ticket.claimedBy}>.`, flags: 64 });
+        }
+
+        ticket.claimedBy = interaction.user.id;
+        ticket.claimedByName = interaction.user.username;
+        await saveDB();
+
+        const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
+        if (!channel) {
+          return interaction.reply({ content: `❌ Erro: Canal do ticket não encontrado.`, flags: 64 });
+        }
+
+        await updateTicketEmbed(channel, ticketId);
+
+        // Mensagem no canal (TODOS veem) - parte pública
+        await channel.send(`🎉 Ticket assumido com sucesso!\n👮 <@${interaction.user.id}> assumiu o teu ticket. Se precisares de chamar a staff, usa a opção **Painel Membro**.`);
+
+        // Mensagem SÓ para quem reivindicou (ephemeral) - parte privada
+        return interaction.reply({
+          content: `Olá <@${interaction.user.id}>, informo-te que podes usar o **/painelstaff** para teres mais acesso ao ticket se precisares.`,
+          flags: 64
+        });
+      } finally {
+        claimingInProgress.delete(ticketId);
       }
-
-      ticket.claimedBy = interaction.user.id;
-      ticket.claimedByName = interaction.user.username;
-      await saveDB();
-
-      const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
-      if (!channel) {
-        return interaction.reply({ content: `❌ Erro: Canal do ticket não encontrado.`, flags: 64 });
-      }
-
-      await updateTicketEmbed(channel, ticketId);
-
-      // Mensagem no canal (TODOS veem) - parte pública
-      await channel.send(`🎉 Ticket assumido com sucesso!\n👮 <@${interaction.user.id}> assumiu o teu ticket. Se precisares de chamar a staff, usa a opção **Painel Membro**.`);
-
-      // Mensagem SÓ para quem reivindicou (ephemeral) - parte privada
-      return interaction.reply({
-        content: `Olá <@${interaction.user.id}>, informo-te que podes usar o **/painelstaff** para teres mais acesso ao ticket se precisares.`,
-        flags: 64
-      });
     }
 
     // --- PAINEL MEMBRO ---
@@ -405,6 +428,30 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
     // Botao desconhecido
     return interaction.reply({ content: `⚠️ Ação desconhecida.`, flags: 64 }).catch(() => {});
   }
+}
+
+// ============ HANDLER /PAINELSTAFF ============
+async function handlePainelStaffCommand(interaction, client) {
+  const ticket = Object.values(db.tickets).find(t => t.channelId === interaction.channelId && !t.closed);
+  if (!ticket) {
+    return interaction.reply({ content: `⚠️ Nenhum ticket ativo encontrado neste canal.`, flags: 64 });
+  }
+
+  // Verificar se quem chamou é o staff que assumiu o ticket
+  if (ticket.claimedBy && ticket.claimedBy !== interaction.user.id) {
+    // Permite se for admin
+    const isAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator) ||
+                    interaction.member.roles.cache.has(CONFIG.CARGO_ADMINISTRACAO);
+    if (!isAdmin) {
+      return interaction.reply({ 
+        content: `⚠️ Só o staff que assumiu este ticket ou um administrador pode usar o painel de staff.`, 
+        flags: 64 
+      });
+    }
+  }
+
+  await interaction.deferReply({ flags: 64 });
+  await sendPainelChamada(interaction.channel, ticket.id, interaction);
 }
 
 // ============ FUNCOES AUXILIARES ============
