@@ -11,6 +11,25 @@ import { sendPainelChamada } from "../services/calls.js";
 
 const processingRegras = new Map();
 
+// ✅ FUNÇÃO ISSTAFF - DEFINIDA ANTES DE SER USADA
+function isStaff(member) {
+  if (!member) return false;
+  if (member.permissions?.has(PermissionFlagsBits.ManageMessages)) return true;
+  if (member.roles?.cache?.has(CONFIG.CARGO_STAFF)) return true;
+  return false;
+}
+
+// ✅ FUNÇÃO ESCAPE HTML
+function escapeHTML(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export async function handleInteractionCreate(interaction, client) {
 
 // ============ COMANDOS SLASH ============
@@ -694,25 +713,6 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
 
 // ============ FUNCOES AUXILIARES ============
 
-// ✅ FUNÇÃO ESCAPE HTML
-function escapeHTML(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-// ✅ FUNÇÃO ISSTAFF
-function isStaff(member) {
-  if (!member) return false;
-  if (member.permissions?.has(PermissionFlagsBits.ManageMessages)) return true;
-  if (member.roles?.cache?.has(CONFIG.CARGO_STAFF)) return true;
-  return false;
-}
-
 function generateTranscriptHTML(messages, ticket, guild) {
   const msgs = messages.map(m => {
     const avatar = m.author.displayAvatarURL({ format: 'png', size: 64 });
@@ -1024,8 +1024,7 @@ async function enviarPainelMembro(interaction) {
 }
 
 async function enviarPainelStaff(interaction, client) {
-  if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages) && 
-      !interaction.member.roles.cache.has(CONFIG.CARGO_STAFF)) {
+  if (!isStaff(interaction.member)) {
     return interaction.reply({ 
       content: `${CONFIG.EMOJI_ERROR} Apenas staff pode usar este comando.`, 
       flags: 64 
