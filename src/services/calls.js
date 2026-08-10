@@ -74,14 +74,13 @@ export async function apagarCall(interaction, ticketId, client) {
     return safeEditReply(interaction, { content: `${CONFIG.EMOJI_ERROR} Erro: Não consegui aceder ao servidor principal.`, flags: 64 });
   }
 
-  const callChannel = await mainGuild.channels.fetch(ticket.callChannelId).catch(() => null);
-  if (callChannel) {
-    try {
-      await callChannel.delete();
-    } catch (err) {
-      console.error("[Calls] Erro ao apagar call:", err.message);
-    }
+  try {
+    const callChannel = await mainGuild.channels.fetch(ticket.callChannelId).catch(() => null);
+    if (callChannel) await callChannel.delete();
+  } catch (e) {
+    console.log("[Calls] Call ja foi apagada manualmente:", e.message);
   }
+
   ticket.callActive = false;
   ticket.callChannelId = null;
   await saveDB();
