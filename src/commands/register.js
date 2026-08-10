@@ -97,3 +97,5 @@ export async function registerCommands() {
     console.error("[Register] Erro ao registar comandos:", error);
   }
 }
+// ✅ CORREÇÃO: EXECUTAR O REGISTO
+registerCommands().catch(console.error);
