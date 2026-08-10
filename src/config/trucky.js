@@ -1,16 +1,8 @@
-import { CONFIG } from "./index.js";
-
-// ============================================================
-// CONFIGURACAO TRUCKY VTC - Portugal Alfa Truckers
-// ============================================================
-// Company ID: 46961
-// Pagina: https://hub.truckyapp.com/vtc/truckycompanyy
-// ============================================================
-
+// ✅ CORREÇÃO: ADICIONAR PATENTES E CONFIGURAÇÕES
 export const TRUCKY_CONFIG = {
   // --- API Trucky ---
   companyId: "46961",
-  accessToken: process.env.TRUCKY_ACCESS_TOKEN || "", // Token do Trucky (Company Settings -> API -> Claim Token)
+  accessToken: process.env.TRUCKY_ACCESS_TOKEN || "",
 
   baseURL: "https://api.truckyapp.com/v2",
 
@@ -28,15 +20,26 @@ export const TRUCKY_CONFIG = {
   ],
 
   // --- Cargos de Membro VTC ---
-  vtcMemberRole: null,
+  // ✅ CORREÇÃO: UNIFICAR NOMES
+  vtcMemberRole: "ID_DO_CARGO_MEMBRO_VTC",
 
   // --- Sistema de Patentes ---
-  patentes: [],
+  // ✅ CORREÇÃO: ADICIONAR PATENTES REAIS
+  patentes: [
+    { nome: "Motorista", kmMin: 0, kmMax: 10000, cargoDiscord: "ID_CARGO_MOTORISTA" },
+    { nome: "Motorista Sénior", kmMin: 10000, kmMax: 25000, cargoDiscord: "ID_CARGO_SENIOR" },
+    { nome: "Especialista", kmMin: 25000, kmMax: 50000, cargoDiscord: "ID_CARGO_ESPECIALISTA" },
+    { nome: "Mestre", kmMin: 50000, kmMax: 100000, cargoDiscord: "ID_CARGO_MESTRE" },
+    { nome: "Lenda", kmMin: 100000, kmMax: Infinity, cargoDiscord: "ID_CARGO_LENDA" },
+  ],
+  cargosBase: [
+    { nome: "Recruta", kmMax: 0, cargoDiscord: "ID_CARGO_RECRUTA" }
+  ],
 
   // --- Configuracoes de Inatividade ---
   inatividade: {
-    verificacaoAuto: false,
-    diaVerificacao: 0,
+    verificacaoAuto: true, // ✅ ATIVAR
+    diaVerificacao: 0, // Domingo
     horaVerificacao: "20:00",
     diasAviso: 15,
     diasLimite: 30,
@@ -62,6 +65,8 @@ export const TRUCKY_CONFIG = {
     perigo: 0xff0000,
     aviso: 0xffa500,
     info: 0x262af1,
+    pat: 0x262af1,
+    trucky: 0x3498db,
   },
 
   // --- Roles de Recrutamento ---
@@ -70,16 +75,11 @@ export const TRUCKY_CONFIG = {
   },
 };
 
-// Helper: verifica se um membro e staff
+// ✅ CORREÇÃO: HELPER PARA STAFF
 export function isStaff(member) {
-  return member.roles.cache.some(role =>
+  if (!member) return false;
+  if (member.permissions?.has(PermissionFlagsBits.ManageRoles)) return true;
+  return member.roles?.cache?.some(role =>
     TRUCKY_CONFIG.staffRoles.includes(role.id)
-  );
-}
-
-// Helper: verifica se um membro tem cargo de staff pat
-export function isStaffPat(member) {
-  return member.roles.cache.some(role =>
-    TRUCKY_CONFIG.staffRoles.includes(role.id)
-  );
+  ) || false;
 }
