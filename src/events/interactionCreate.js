@@ -217,64 +217,69 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
     }
 
     // --- ASSUMIR TICKET ---
-    if (customId.startsWith("assumir_")) {
-      const ticketId = customId.replace("assumir_", "");
+if (customId.startsWith("assumir_")) {
+  const ticketId = customId.replace("assumir_", "");
 
-      // DEFER IMMEDIATELY - primeira coisa, antes de tudo!
-      await interaction.deferReply({ flags: 64 });
+  // DEFER IMMEDIATELY
+  await interaction.deferReply({ flags: 64 });
 
-      console.log(`[Assumir] TicketId: ${ticketId}, User: ${interaction.user.id}`);
+  // ✅ CORREÇÃO: VERIFICAR STAFF
+  if (!isStaff(interaction.member)) {
+    return interaction.editReply({ 
+      content: `❌ Apenas staff pode assumir tickets.`, 
+      flags: 64 
+    });
+  }
 
-      if (isClaiming(ticketId)) {
-        return interaction.editReply({ content: `⏳ Outro staff ja esta a assumir este ticket. Aguarda...` });
-      }
+  console.log(`[Assumir] TicketId: ${ticketId}, User: ${interaction.user.id}`);
 
-      let ticket = db.tickets[ticketId];
+  if (isClaiming(ticketId)) {
+    return interaction.editReply({ content: `⏳ Outro staff ja esta a assumir este ticket. Aguarda...` });
+  }
 
-      // FALLBACK: procurar por channelId se nao encontrar por ID
-      if (!ticket && interaction.channelId) {
-        ticket = findTicketByChannelId(interaction.channelId);
-        if (ticket) {
-          console.log(`[Assumir] Ticket encontrado por channelId fallback: ${ticket.id}`);
-        }
-      }
+  let ticket = db.tickets[ticketId];
 
-      console.log(`[Assumir] Ticket na DB:`, ticket ? `ID=${ticket.id}, closed=${ticket.closed}, claimed=${ticket.claimedBy}` : "NAO ENCONTRADO");
-
-      if (!ticket || ticket.closed) {
-        return interaction.editReply({ content: `⚠️ Ticket nao encontrado ou ja fechado.` });
-      }
-      if (ticket.claimedBy) {
-        return interaction.editReply({ content: `⚠️ Este ticket ja foi assumido por <@${ticket.claimedBy}>.` });
-      }
-
-      setClaiming(ticketId, interaction.user.id);
-
-      try {
-        ticket.claimedBy = interaction.user.id;
-        ticket.claimedByName = interaction.user.username;
-        await saveDB();
-
-        const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
-        if (!channel) {
-          clearClaiming(ticketId);
-          return interaction.editReply({ content: `❌ Erro: Canal do ticket nao encontrado.` });
-        }
-
-        await updateTicketEmbed(channel, ticketId);
-
-        await channel.send(`🎉 Ticket assumido com sucesso!\n👮 <@${interaction.user.id}> assumiu o teu ticket. Se precisares de chamar a staff, usa a opcao **Painel Membro**.`);
-
-        return interaction.editReply({
-          content: `Olá <@${interaction.user.id}>, informo-te que podes usar o **/painelstaff** para teres mais acesso ao ticket se precisares.`,
-        });
-      } catch (err) {
-        console.error("[Assumir] Erro:", err);
-        return interaction.editReply({ content: `❌ Erro ao assumir ticket. Tenta novamente.` });
-      } finally {
-        clearClaiming(ticketId);
-      }
+  if (!ticket && interaction.channelId) {
+    ticket = findTicketByChannelId(interaction.channelId);
+    if (ticket) {
+      console.log(`[Assumir] Ticket encontrado por channelId fallback: ${ticket.id}`);
     }
+  }
+
+  if (!ticket || ticket.closed) {
+    return interaction.editReply({ content: `⚠️ Ticket nao encontrado ou ja fechado.` });
+  }
+  if (ticket.claimedBy) {
+    return interaction.editReply({ content: `⚠️ Este ticket ja foi assumido por <@${ticket.claimedBy}>.` });
+  }
+
+  setClaiming(ticketId, interaction.user.id);
+
+  try {
+    ticket.claimedBy = interaction.user.id;
+    ticket.claimedByName = interaction.user.username;
+    await saveDB();
+
+    const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
+    if (!channel) {
+      clearClaiming(ticketId);
+      return interaction.editReply({ content: `❌ Erro: Canal do ticket nao encontrado.` });
+    }
+
+    await updateTicketEmbed(channel, ticketId);
+
+    await channel.send(`🎉 Ticket assumido com sucesso!\n👮 <@${interaction.user.id}> assumiu o teu ticket. Se precisares de chamar a staff, usa a opcao **Painel Membro**.`);
+
+    return interaction.editReply({
+      content: `Olá <@${interaction.user.id}>, informo-te que podes usar o **/painelstaff** para teres mais acesso ao ticket se precisares.`,
+    });
+  } catch (err) {
+    console.error("[Assumir] Erro:", err);
+    return interaction.editReply({ content: `❌ Erro ao assumir ticket. Tenta novamente.` });
+  } finally {
+    clearClaiming(ticketId);
+  }
+}
 
     // --- PAINEL MEMBRO ---
     if (customId.startsWith("painel_membro_")) {
@@ -367,74 +372,107 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       return interaction.reply({ content: `✅ Saíste do ticket com sucesso.`, flags: 64 });
     }
 
-    // --- FECHAR TICKET ---
-    if (customId.startsWith("deletar_")) {
-      const ticketId = customId.replace("deletar_", "");
-      let ticket = db.tickets[ticketId];
+// --- FECHAR TICKET ---
+if (customId.startsWith("deletar_")) {
+  const ticketId = customId.replace("deletar_", "");
+  let ticket = db.tickets[ticketId];
 
-      if (!ticket && interaction.channelId) {
-        ticket = findTicketByChannelId(interaction.channelId);
-      }
+  if (!ticket && interaction.channelId) {
+    ticket = findTicketByChannelId(interaction.channelId);
+  }
 
-      if (!ticket || ticket.closed) {
-        return interaction.reply({ content: `⚠️ Ticket nao encontrado ou ja fechado.`, flags: 64 });
-      }
+  if (!ticket || ticket.closed) {
+    return interaction.reply({ content: `⚠️ Ticket nao encontrado ou ja fechado.`, flags: 64 });
+  }
 
-      if (ticket.type === "recrutamento") {
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`recrutado_sim_${ticketId}`).setLabel(`🎉 Sim - Recrutado`).setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId(`recrutado_nao_${ticketId}`).setLabel(`😔 Não - Não Recrutado`).setStyle(ButtonStyle.Danger),
-          new ButtonBuilder().setCustomId(`fechar_definitivo_${ticketId}`).setLabel(`🔒 Fechar Definitivo (Não Recrutamento)`).setStyle(ButtonStyle.Secondary),
-        );
+  // ✅ CORREÇÃO: VERIFICAR STAFF
+  if (!isStaff(interaction.member)) {
+    return interaction.reply({ 
+      content: `❌ Apenas staff pode fechar tickets.`, 
+      flags: 64 
+    });
+  }
 
-        return interaction.reply({
-          content: `❓ O candidato foi recrutado?`,
-          components: [row],
-        });
-      } else {
-        return fecharTicket(interaction, ticketId, client, false);
-      }
-    }
+  if (ticket.type === "recrutamento") {
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`recrutado_sim_${ticketId}`).setLabel(`🎉 Sim - Recrutado`).setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`recrutado_nao_${ticketId}`).setLabel(`😔 Não - Não Recrutado`).setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(`fechar_definitivo_${ticketId}`).setLabel(`🔒 Fechar Definitivo (Não Recrutamento)`).setStyle(ButtonStyle.Secondary),
+    );
+
+    return interaction.reply({
+      content: `❓ O candidato foi recrutado?`,
+      components: [row],
+    });
+  } else {
+    return fecharTicket(interaction, ticketId, client, false);
+  }
+}
 
     // --- RECRUTADO SIM ---
-    if (customId.startsWith("recrutado_sim_")) {
-      const ticketId = customId.replace("recrutado_sim_", "");
-      let ticket = db.tickets[ticketId];
-      if (!ticket && interaction.channelId) {
-        ticket = findTicketByChannelId(interaction.channelId);
-      }
-      if (!ticket) {
-        return interaction.reply({ content: `⚠️ Ticket nao encontrado.`, flags: 64 });
-      }
+if (customId.startsWith("recrutado_sim_")) {
+  const ticketId = customId.replace("recrutado_sim_", "");
+  let ticket = db.tickets[ticketId];
+  
+  if (!ticket && interaction.channelId) {
+    ticket = findTicketByChannelId(interaction.channelId);
+  }
+  
+  if (!ticket) {
+    return interaction.reply({ content: `⚠️ Ticket nao encontrado.`, flags: 64 });
+  }
 
-      const modal = new ModalBuilder()
-        .setCustomId(`modal_foto_trucky_${ticketId}`)
-        .setTitle(`🎉 Nome da Foto do Trucky`);
+  // ✅ CORREÇÃO: VERIFICAR STAFF
+  if (!isStaff(interaction.member)) {
+    return interaction.reply({ 
+      content: `❌ Apenas staff pode confirmar recrutamento.`, 
+      flags: 64 
+    });
+  }
 
-      const input = new TextInputBuilder()
-        .setCustomId("foto_nome")
-        .setLabel("Nome da tua foto de perfil do Trucky")
-        .setPlaceholder("Ex: Diego")
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
-        .setMaxLength(100);
+  const modal = new ModalBuilder()
+    .setCustomId(`modal_foto_trucky_${ticketId}`)
+    .setTitle(`🎉 Nome da Foto do Trucky`);
 
-      modal.addComponents(new ActionRowBuilder().addComponents(input));
-      return interaction.showModal(modal);
-    }
+  const input = new TextInputBuilder()
+    .setCustomId("foto_nome")
+    .setLabel("Nome da tua foto de perfil do Trucky")
+    .setPlaceholder("Ex: Diego")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMaxLength(100);
 
-    // --- RECRUTADO NAO ---
-    if (customId.startsWith("recrutado_nao_")) {
-      const ticketId = customId.replace("recrutado_nao_", "");
-      return fecharTicket(interaction, ticketId, client, false);
-    }
-
-    // --- FECHAR DEFINITIVO ---
-    if (customId.startsWith("fechar_definitivo_")) {
-      const ticketId = customId.replace("fechar_definitivo_", "");
-      return fecharTicket(interaction, ticketId, client, false);
-    }
-
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
+  return interaction.showModal(modal);
+}
+// --- RECRUTADO NAO ---
+if (customId.startsWith("recrutado_nao_")) {
+  const ticketId = customId.replace("recrutado_nao_", "");
+  
+  // ✅ CORREÇÃO: VERIFICAR STAFF
+  if (!isStaff(interaction.member)) {
+    return interaction.reply({ 
+      content: `❌ Apenas staff pode marcar como não recrutado.`, 
+      flags: 64 
+    });
+  }
+  
+  return fecharTicket(interaction, ticketId, client, false);
+}
+// --- FECHAR DEFINITIVO ---
+if (customId.startsWith("fechar_definitivo_")) {
+  const ticketId = customId.replace("fechar_definitivo_", "");
+  
+  // ✅ CORREÇÃO: VERIFICAR STAFF
+  if (!isStaff(interaction.member)) {
+    return interaction.reply({ 
+      content: `❌ Apenas staff pode fechar tickets definitivamente.`, 
+      flags: 64 
+    });
+  }
+  
+  return fecharTicket(interaction, ticketId, client, false);
+}
     // --- AVALIACAO ESTRELAS ---
     if (customId.startsWith("avaliar_")) {
       const parts = customId.split("_");
