@@ -75,7 +75,13 @@ export async function apagarCall(interaction, ticketId, client) {
   }
 
   const callChannel = await mainGuild.channels.fetch(ticket.callChannelId).catch(() => null);
-  if (callChannel) await callChannel.delete();
+  if (callChannel) {
+    try {
+      await callChannel.delete();
+    } catch (err) {
+      console.error("[Calls] Erro ao apagar call:", err.message);
+    }
+  }
   ticket.callActive = false;
   ticket.callChannelId = null;
   await saveDB();
