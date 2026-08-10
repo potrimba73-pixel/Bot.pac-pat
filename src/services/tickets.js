@@ -46,21 +46,25 @@ function setCooldown(userId) {
 }
 
 // ========== LOCK PARA ASSUMIR TICKET ==========
-function acquireClaimLock(ticketId, userId) {
+export function isClaiming(ticketId) {
   const now = Date.now();
   const existing = claimingLock.get(ticketId);
-  if (existing && now - existing.timestamp < 10000) {
-    return false; // Lock ativo (10 segundos)
+  if (existing && now - existing.timestamp < 30000) {
+    return true;
   }
+  return false;
+}
+
+export function setClaiming(ticketId, userId) {
+  const now = Date.now();
   claimingLock.set(ticketId, { userId, timestamp: now });
   // Auto-limpeza
   for (const [tid, data] of claimingLock) {
     if (now - data.timestamp > 30000) claimingLock.delete(tid);
   }
-  return true;
 }
 
-function releaseClaimLock(ticketId) {
+export function clearClaiming(ticketId) {
   claimingLock.delete(ticketId);
 }
 
@@ -475,8 +479,8 @@ await saveDB();
 await sendLog(ticketId, "open", client);
 
 const rowIrTicket = new ActionRowBuilder().addComponents(
-  new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TICKET} Ir para o Ticket`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${guild.id}/${channel.id}`),
-);
+    new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TICKET} Ir para o Ticket`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${guild.id}/${channel.id}`),
+  );
 
   await safeEditReply(interaction, { content: `${CONFIG.EMOJI_SUCCESS} O teu ticket foi criado com sucesso!`, components: [rowIrTicket], flags: 64 });
 }
