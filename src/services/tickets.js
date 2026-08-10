@@ -340,17 +340,17 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
     );
 
     const panelMsg = await channel.send({
-      content: `${CONFIG.EMOJI_USER} <@${user.id}> | ID: \`${user.id}\``,
-      embeds: [embed],
-      components: [row]
-    });
-    db.tickets[ticketId].panelMessageId = panelMsg.id;
-    await saveDB();
-    await sendLog(ticketId, "open", client);
+  content: `🧑‍💼 <@&${CONFIG.CARGO_ADMINISTRACAO}> | 👤 <@${user.id}>`,
+  embeds: [embed],
+  components: [row]
+});
+db.tickets[ticketId].panelMessageId = panelMsg.id;
+await saveDB();
+await sendLog(ticketId, "open", client);
 
-    const rowIrTicket = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TICKET} Ir para o Ticket`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${targetGuildId}/${channel.id}`),
-    );
+const rowIrTicket = new ActionRowBuilder().addComponents(
+  new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TICKET} Ir para o Ticket`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${targetGuildId}/${channel.id}`),
+);
 
     await interaction.editReply({
       content: `${CONFIG.EMOJI_SUCCESS} O seu ticket de recrutamento foi criado com sucesso!`,
@@ -466,20 +466,17 @@ async function criarTicketNormal(interaction, type, label, client, guild, user) 
   );
 
   const panelMsg = await channel.send({
-    content: `${CONFIG.EMOJI_USER} <@${user.id}> | ID: \`${user.id}\``,
-    embeds: [embed],
-    components: [row]
-  });
-  db.tickets[ticketId].panelMessageId = panelMsg.id;
-  await saveDB();
-  await sendLog(ticketId, "open", client);
+  content: `🧑‍💼 <@&${CONFIG.CARGO_ADMINISTRACAO}> | 👤 <@${user.id}>`,
+  embeds: [embed],
+  components: [row]
+});
+db.tickets[ticketId].panelMessageId = panelMsg.id;
+await saveDB();
+await sendLog(ticketId, "open", client);
 
-  const rowIrTicket = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TICKET} Ir para o Ticket`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${guild.id}/${channel.id}`),
-  );
-
-  await safeEditReply(interaction, { content: `${CONFIG.EMOJI_SUCCESS} O teu ticket foi criado com sucesso!`, components: [rowIrTicket], flags: 64 });
-}
+const rowIrTicket = new ActionRowBuilder().addComponents(
+  new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TICKET} Ir para o Ticket`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${targetGuildId}/${channel.id}`),
+);
 
 export async function updateTicketEmbed(channel, ticketId) {
   const ticket = db.tickets[ticketId];
