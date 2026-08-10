@@ -13,60 +13,245 @@ const processingRegras = new Map();
 
 export async function handleInteractionCreate(interaction, client) {
 
-  // ============ COMANDOS SLASH ============
-  if (interaction.isChatInputCommand()) {
-    if (interaction.commandName === "transcript") {
-      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages) && 
-          !interaction.member.roles.cache.has(CONFIG.CARGO_STAFF)) {
-        return interaction.reply({ 
-          content: `${CONFIG.EMOJI_ERROR} Apenas staff pode usar este comando.`, 
-          flags: 64 
-        });
-      }
+// ============ COMANDOS SLASH ============
+if (interaction.isChatInputCommand()) {
+  
+  // ===== COMANDO /ajuda =====
+  if (interaction.commandName === "ajuda") {
+    await interaction.deferReply({ flags: 64 });
+    return handleAjudaCommand(interaction, client);
+  }
 
-      const ticket = Object.values(db.tickets).find(t => t.channelId === interaction.channelId && !t.closed);
-      if (!ticket) {
-        return interaction.reply({ content: `⚠️ Nenhum ticket ativo encontrado neste canal.`, flags: 64 });
-      }
-
-      await interaction.deferReply({ flags: 64 });
-
-      try {
-        const messages = await interaction.channel.messages.fetch({ limit: 100 });
-        const sortedMessages = Array.from(messages.values()).sort((a, b) => a.createdTimestamp - b.createdTimestamp);
-
-        const htmlContent = generateTranscriptHTML(sortedMessages, ticket, interaction.guild);
-        const buffer = Buffer.from(htmlContent, 'utf-8');
-        const attachment = new AttachmentBuilder(buffer, { name: `transcript-ticket-${ticket.id}.html` });
-
-        let textSummary = `📋 **Transcript do Ticket #${ticket.id}**\n\n`;
-        sortedMessages.forEach(msg => {
-          const content = msg.content || "[sem texto]";
-          textSummary += `\`[${msg.createdAt.toLocaleString('pt-PT')}]\` **${msg.author.tag}**: ${content.substring(0, 100)}${content.length > 100 ? '...' : ''}\n`;
-        });
-
-        await interaction.editReply({
-          content: textSummary.substring(0, 1900),
-          files: [attachment],
-        });
-      } catch (err) {
-        console.error("[Transcript] Erro:", err);
-        await interaction.editReply({ content: `❌ Erro ao gerar transcript.` });
-      }
-      return;
+  // ===== COMANDO /transcript =====
+  if (interaction.commandName === "transcript") {
+    // ✅ Verificação de staff unificada
+    if (!isStaff(interaction.member)) {
+      return interaction.reply({ 
+        content: `${CONFIG.EMOJI_ERROR} Apenas staff pode usar este comando.`, 
+        flags: 64 
+      });
     }
 
-    if (interaction.commandName === "painelmembro") {
-      return enviarPainelMembro(interaction);
+    // ✅ Buscar ticket de forma mais robusta
+    const ticket = Object.values(db.tickets).find(t => 
+      t.channelId === interaction.channelId && !t.closed
+    );
+    
+    if (!ticket) {
+      return interaction.reply({ 
+        content: `⚠️ Nenhum ticket ativo encontrado neste canal.`, 
+        flags: 64 
+      });
     }
 
-    if (interaction.commandName === "painelstaff") {
-      return enviarPainelStaff(interaction, client);
-    }
+    await interaction.deferReply({ flags: 64 });
 
+    try {
+      // ✅ Buscar mais mensagens (até 200)
+      const messages = await interaction.channel.messages.fetch({ 
+        limit: 200 
+      });
+      
+      const sortedMessages = Array.from(messages.values())
+        .sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+
+      // ✅ Gerar HTML com escape
+      const htmlContent = generateTranscriptHTMLSafe(sortedMessages, ticket, interaction.guild);
+      const buffer = Buffer.from(htmlContent, 'utf-8');
+      const attachment = new AttachmentBuilder(buffer, { 
+        name: `transcript-ticket-${ticket.id}.html` 
+      });
+
+      // ✅ Gerar resumo seguro
+      let textSummary = `📋 **Transcript do Ticket #${ticket.id}**\n\n`;
+      let totalChars = 0;
+      const MAX_SUMMARY_CHARS = 1900;
+      
+      for (const msg of sortedMessages) {
+        const content = msg.content || "[sem texto]";
+        const line = `\`[${msg.createdAt.toLocaleString('pt-PT')}]\` **${escapeHTML(msg.author.tag)}**: ${escapeHTML(content.substring(0, 100))}${content.length > 100 ? '...' : ''}\n`;
+        
+        if (totalChars + line.length > MAX_SUMMARY_CHARS) {
+          textSummary += `\n... e mais ${sortedMessages.length - textSummary.split('\n').length + 1} mensagens.`;
+          break;
+        }
+        textSummary += line;
+        totalChars += line.length;
+      }
+
+      await interaction.editReply({
+        content: textSummary,
+        files: [attachment],
+      });
+
+      // ✅ Log no canal de logs
+      const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
+      if (logChannel) {
+        const logEmbed = new EmbedBuilder()
+          .setTitle(`${CONFIG.EMOJI_FILE} Transcript Gerado`)
+          .setDescription([
+            `${CONFIG.EMOJI_USER} Staff: ${interaction.user.tag}`,
+            `${CONFIG.EMOJI_INFO} Ticket: #${ticket.id} (${ticket.label})`,
+            `${CONFIG.EMOJI_TIME} Data: ${new Date().toLocaleString("pt-PT")}`,
+            `${CONFIG.EMOJI_FILE} Mensagens: ${sortedMessages.length}`
+          ].join("\n"))
+          .setColor(0x0099ff)
+          .setTimestamp();
+        await logChannel.send({ embeds: [logEmbed] });
+      }
+
+    } catch (err) {
+      console.error("[Transcript] Erro:", err);
+      await interaction.editReply({ 
+        content: `❌ Erro ao gerar transcript: ${err.message}`, 
+        flags: 64 
+      });
+    }
     return;
   }
 
+  // ===== COMANDO /painelmembro =====
+  if (interaction.commandName === "painelmembro") {
+    return enviarPainelMembro(interaction);
+  }
+
+  // ===== COMANDO /painelstaff =====
+  if (interaction.commandName === "painelstaff") {
+    // ✅ Verificação de staff
+    if (!isStaff(interaction.member)) {
+      return interaction.reply({ 
+        content: `${CONFIG.EMOJI_ERROR} Apenas staff pode usar este comando.`, 
+        flags: 64 
+      });
+    }
+    return enviarPainelStaff(interaction, client);
+  }
+
+  // ===== COMANDO /limpar =====
+  if (interaction.commandName === "limpar") {
+    if (!isStaff(interaction.member)) {
+      return interaction.reply({ 
+        content: `${CONFIG.EMOJI_ERROR} Apenas staff pode usar este comando.`, 
+        flags: 64 
+      });
+    }
+    // ✅ Importar e executar
+    const { execute } = await import("../commands/limpar.js");
+    return execute(interaction, client);
+  }
+
+  // ===== COMANDO /status =====
+  if (interaction.commandName === "status") {
+    const { execute } = await import("../commands/status.js");
+    return execute(interaction, client);
+  }
+
+  // ===== COMANDO /passar =====
+  if (interaction.commandName === "passar") {
+    if (!isStaff(interaction.member)) {
+      return interaction.reply({ 
+        content: `${CONFIG.EMOJI_ERROR} Apenas staff pode usar este comando.`, 
+        flags: 64 
+      });
+    }
+    const { execute } = await import("../commands/passar.js");
+    return execute(interaction, client);
+  }
+
+  // ===== COMANDO /pedirassumo =====
+  if (interaction.commandName === "pedirassumo") {
+    if (!isStaff(interaction.member)) {
+      return interaction.reply({ 
+        content: `${CONFIG.EMOJI_ERROR} Apenas staff pode usar este comando.`, 
+        flags: 64 
+      });
+    }
+    const { execute } = await import("../commands/pedirassumo.js");
+    return execute(interaction, client);
+  }
+
+  // ===== COMANDOS TRUCKY =====
+  if (interaction.commandName === "verificar-inatividade" ||
+      interaction.commandName === "minhas-cargas" ||
+      interaction.commandName === "estatisticas-vtc" ||
+      interaction.commandName === "atualizar-patentes" ||
+      interaction.commandName === "limpeza" ||
+      interaction.commandName === "mapa") {
+    
+    // ✅ Verificar permissões para comandos de staff
+    const staffCommands = ["verificar-inatividade", "atualizar-patentes", "limpeza"];
+    if (staffCommands.includes(interaction.commandName) && !isStaff(interaction.member)) {
+      return interaction.reply({ 
+        content: `${CONFIG.EMOJI_ERROR} Apenas staff pode usar este comando.`, 
+        flags: 64 
+      });
+    }
+
+    const { handleTruckyCommand } = await import("../commands/truckyCommands.js");
+    return handleTruckyCommand(interaction, client);
+  }
+
+  // ===== COMANDOS TRUCKY IMAGE =====
+  if (interaction.commandName === "gerar-foto" ||
+      interaction.commandName === "minha-foto" ||
+      interaction.commandName === "gerar-patente" ||
+      interaction.commandName === "verificar-templates") {
+    
+    // ✅ /gerar-patente é staff-only
+    if (interaction.commandName === "gerar-patente" && !isStaff(interaction.member)) {
+      return interaction.reply({ 
+        content: `${CONFIG.EMOJI_ERROR} Apenas staff pode usar este comando.`, 
+        flags: 64 
+      });
+    }
+
+    const { handleTruckyImageCommand } = await import("../commands/truckyImageCommands.js");
+    return handleTruckyImageCommand(interaction);
+  }
+
+  // ===== COMANDO /mapa-canal =====
+  if (interaction.commandName === "mapa-canal") {
+    if (!isStaff(interaction.member)) {
+      return interaction.reply({ 
+        content: `${CONFIG.EMOJI_ERROR} Apenas staff pode usar este comando.`, 
+        flags: 64 
+      });
+    }
+    const { handleMapaCanalCommand } = await import("../commands/truckyMapaCanal.js");
+    return handleMapaCanalCommand(interaction, client);
+  }
+
+  // ===== COMANDO /apagar =====
+  if (interaction.commandName === "apagar") {
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({ 
+        content: `${CONFIG.EMOJI_ERROR} Apenas administradores podem usar este comando.`, 
+        flags: 64 
+      });
+    }
+    const { execute } = await import("../commands/apagar.js");
+    return execute(interaction, client);
+  }
+
+  // ===== COMANDO /transcript (via commands/transcript.js) =====
+  if (interaction.commandName === "transcript-full") {
+    if (!isStaff(interaction.member)) {
+      return interaction.reply({ 
+        content: `${CONFIG.EMOJI_ERROR} Apenas staff pode usar este comando.`, 
+        flags: 64 
+      });
+    }
+    const { handleTranscriptCommand } = await import("../commands/transcript.js");
+    return handleTranscriptCommand(interaction, client);
+  }
+
+  // ✅ Fallback para comandos desconhecidos
+  console.log(`[Interaction] Comando desconhecido: ${interaction.commandName}`);
+  return interaction.reply({ 
+    content: `❌ Comando não reconhecido.`, 
+    flags: 64 
+  });
+}
   // ============ MODAIS ============
   if (interaction.isModalSubmit()) {
     if (interaction.customId.startsWith("modal_trucky_")) {
