@@ -55,17 +55,6 @@ if (interaction.isChatInputCommand()) {
       const sortedMessages = Array.from(messages.values())
         .sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 
-      // ✅ CORREÇÃO: FUNÇÃO ESCAPE HTML
-      function escapeHTML(str) {
-        if (!str) return '';
-        return String(str)
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#39;');
-      }
-
       // ✅ Gerar resumo seguro
       let textSummary = `📋 **Transcript do Ticket #${ticket.id}**\n\n`;
       let totalChars = 0;
@@ -434,6 +423,7 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
 
       let ticket = db.tickets[ticketId];
 
+      // ✅ CORREÇÃO: Usar channelId como fallback
       if (!ticket && interaction.channelId) {
         ticket = findTicketByChannelId(interaction.channelId);
         if (ticket) {
@@ -481,7 +471,7 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       const ticketId = customId.replace("painel_membro_", "");
       let ticket = db.tickets[ticketId];
 
-      // Fallback por channelId
+      // ✅ CORREÇÃO: Usar channelId como fallback
       if (!ticket && interaction.channelId) {
         ticket = findTicketByChannelId(interaction.channelId);
       }
@@ -547,6 +537,7 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       const ticketId = customId.replace("sair_", "");
       let ticket = db.tickets[ticketId];
 
+      // ✅ CORREÇÃO: Usar channelId como fallback
       if (!ticket && interaction.channelId) {
         ticket = findTicketByChannelId(interaction.channelId);
       }
@@ -572,6 +563,7 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       const ticketId = customId.replace("deletar_", "");
       let ticket = db.tickets[ticketId];
 
+      // ✅ CORREÇÃO: Usar channelId como fallback
       if (!ticket && interaction.channelId) {
         ticket = findTicketByChannelId(interaction.channelId);
       }
@@ -609,6 +601,7 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       const ticketId = customId.replace("recrutado_sim_", "");
       let ticket = db.tickets[ticketId];
       
+      // ✅ CORREÇÃO: Usar channelId como fallback
       if (!ticket && interaction.channelId) {
         ticket = findTicketByChannelId(interaction.channelId);
       }
@@ -640,6 +633,7 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       modal.addComponents(new ActionRowBuilder().addComponents(input));
       return interaction.showModal(modal);
     }
+
     // --- RECRUTADO NAO ---
     if (customId.startsWith("recrutado_nao_")) {
       const ticketId = customId.replace("recrutado_nao_", "");
@@ -654,6 +648,7 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       
       return fecharTicket(interaction, ticketId, client, false);
     }
+
     // --- FECHAR DEFINITIVO ---
     if (customId.startsWith("fechar_definitivo_")) {
       const ticketId = customId.replace("fechar_definitivo_", "");
@@ -668,12 +663,19 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       
       return fecharTicket(interaction, ticketId, client, false);
     }
+
     // --- AVALIACAO ESTRELAS ---
     if (customId.startsWith("avaliar_")) {
       const parts = customId.split("_");
       const ticketId = parts[1];
       const estrelas = parseInt(parts[2]);
-      const ticket = db.tickets[ticketId];
+      
+      // ✅ CORREÇÃO: Usar channelId como fallback
+      let ticket = db.tickets[ticketId];
+      if (!ticket && interaction.channelId) {
+        ticket = findTicketByChannelId(interaction.channelId);
+      }
+      
       if (!ticket) return interaction.reply({ content: `⚠️ Ticket nao encontrado.`, flags: 64 });
 
       ticket.rating = estrelas;
@@ -701,6 +703,14 @@ function escapeHTML(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// ✅ FUNÇÃO ISSTAFF
+function isStaff(member) {
+  if (!member) return false;
+  if (member.permissions?.has(PermissionFlagsBits.ManageMessages)) return true;
+  if (member.roles?.cache?.has(CONFIG.CARGO_STAFF)) return true;
+  return false;
 }
 
 function generateTranscriptHTML(messages, ticket, guild) {
@@ -787,6 +797,7 @@ async function handleFotoTruckyModal(interaction, client) {
   const ticketId = interaction.customId.replace("modal_foto_trucky_", "");
   let ticket = db.tickets[ticketId];
   
+  // ✅ CORREÇÃO: Usar channelId como fallback
   if (!ticket && interaction.channelId) {
     ticket = findTicketByChannelId(interaction.channelId);
   }
@@ -888,9 +899,12 @@ async function handleFotoTruckyModal(interaction, client) {
 
 async function fecharTicket(interaction, ticketId, client, recrutado) {
   let ticket = db.tickets[ticketId];
+  
+  // ✅ CORREÇÃO: Usar channelId como fallback
   if (!ticket && interaction.channelId) {
     ticket = findTicketByChannelId(interaction.channelId);
   }
+  
   if (!ticket) return interaction.reply({ content: `⚠️ Ticket nao encontrado.`, flags: 64 });
 
   ticket.closed = true;
@@ -958,6 +972,7 @@ async function fecharTicket(interaction, ticketId, client, recrutado) {
 }
 
 async function enviarPainelMembro(interaction) {
+  // ✅ CORREÇÃO: Usar channelId para encontrar o ticket
   const ticket = Object.values(db.tickets).find(t => t.channelId === interaction.channelId && !t.closed);
   if (!ticket) {
     return interaction.reply({ content: `⚠️ Nenhum ticket ativo encontrado neste canal.`, flags: 64 });
@@ -1017,6 +1032,7 @@ async function enviarPainelStaff(interaction, client) {
     });
   }
 
+  // ✅ CORREÇÃO: Usar channelId para encontrar o ticket
   const ticket = Object.values(db.tickets).find(t => t.channelId === interaction.channelId && !t.closed);
   if (!ticket) {
     return interaction.reply({ content: `⚠️ Nenhum ticket ativo encontrado neste canal.`, flags: 64 });
