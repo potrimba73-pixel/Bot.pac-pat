@@ -55,48 +55,16 @@ if (interaction.isChatInputCommand()) {
       const sortedMessages = Array.from(messages.values())
         .sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 
-      // ✅ Gerar HTML com escape
-// ✅ CORREÇÃO: FUNÇÃO ESCAPE HTML
-function escapeHTML(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function generateTranscriptHTML(messages, ticket, guild) {
-  const msgs = messages.map(m => {
-    const avatar = m.author.displayAvatarURL({ format: 'png', size: 64 });
-    const attachments = m.attachments.map(a => {
-      const isImage = a.contentType?.startsWith('image/');
-      if (isImage) {
-        return `<a href="${escapeHTML(a.url)}" target="_blank" class="attachment-image"><img src="${escapeHTML(a.url)}" alt="${escapeHTML(a.name)}" loading="lazy"></a>`;
+      // ✅ CORREÇÃO: FUNÇÃO ESCAPE HTML
+      function escapeHTML(str) {
+        if (!str) return '';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
       }
-      return `<a href="${escapeHTML(a.url)}" target="_blank" class="attachment-file">📎 ${escapeHTML(a.name)}</a>`;
-    }).join(' ');
-    const embeds = m.embeds.length > 0 ? `[${m.embeds.length} embed(s)]` : '';
-    const time = m.createdAt.toLocaleString('pt-PT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const date = m.createdAt.toLocaleDateString('pt-PT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-
-    return `
-      <div class="message">
-        <img src="${escapeHTML(avatar)}" class="avatar" alt="${escapeHTML(m.author.tag)}">
-        <div class="message-content">
-          <div class="message-header">
-            <span class="author">${escapeHTML(m.author.tag)}</span>
-            <span class="timestamp">${escapeHTML(date)} às ${escapeHTML(time)}</span>
-          </div>
-          <div class="message-body">${m.content ? escapeHTML(m.content).replace(/\n/g, '<br>') : '<em class="empty">[sem texto]</em>'}</div>
-          ${attachments ? `<div class="attachments">${attachments}</div>` : ''}
-          ${embeds ? `<div class="embeds-info">${escapeHTML(embeds)}</div>` : ''}
-        </div>
-      </div>
-    `;
-  }).join('');
-});
 
       // ✅ Gerar resumo seguro
       let textSummary = `📋 **Transcript do Ticket #${ticket.id}**\n\n`;
@@ -114,6 +82,12 @@ function generateTranscriptHTML(messages, ticket, guild) {
         textSummary += line;
         totalChars += line.length;
       }
+
+      // ✅ Gerar HTML completo
+      const html = generateTranscriptHTML(sortedMessages, ticket, interaction.guild);
+      const attachment = new AttachmentBuilder(Buffer.from(html, 'utf-8'), {
+        name: `transcript-ticket-${ticket.id}.html`
+      });
 
       await interaction.editReply({
         content: textSummary,
@@ -438,69 +412,69 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
     }
 
     // --- ASSUMIR TICKET ---
-if (customId.startsWith("assumir_")) {
-  const ticketId = customId.replace("assumir_", "");
+    if (customId.startsWith("assumir_")) {
+      const ticketId = customId.replace("assumir_", "");
 
-  // DEFER IMMEDIATELY
-  await interaction.deferReply({ flags: 64 });
+      // DEFER IMMEDIATELY
+      await interaction.deferReply({ flags: 64 });
 
-  // ✅ CORREÇÃO: VERIFICAR STAFF
-  if (!isStaff(interaction.member)) {
-    return interaction.editReply({ 
-      content: `❌ Apenas staff pode assumir tickets.`, 
-      flags: 64 
-    });
-  }
+      // ✅ CORREÇÃO: VERIFICAR STAFF
+      if (!isStaff(interaction.member)) {
+        return interaction.editReply({ 
+          content: `❌ Apenas staff pode assumir tickets.`, 
+          flags: 64 
+        });
+      }
 
-  console.log(`[Assumir] TicketId: ${ticketId}, User: ${interaction.user.id}`);
+      console.log(`[Assumir] TicketId: ${ticketId}, User: ${interaction.user.id}`);
 
-  if (isClaiming(ticketId)) {
-    return interaction.editReply({ content: `⏳ Outro staff ja esta a assumir este ticket. Aguarda...` });
-  }
+      if (isClaiming(ticketId)) {
+        return interaction.editReply({ content: `⏳ Outro staff ja esta a assumir este ticket. Aguarda...` });
+      }
 
-  let ticket = db.tickets[ticketId];
+      let ticket = db.tickets[ticketId];
 
-  if (!ticket && interaction.channelId) {
-    ticket = findTicketByChannelId(interaction.channelId);
-    if (ticket) {
-      console.log(`[Assumir] Ticket encontrado por channelId fallback: ${ticket.id}`);
+      if (!ticket && interaction.channelId) {
+        ticket = findTicketByChannelId(interaction.channelId);
+        if (ticket) {
+          console.log(`[Assumir] Ticket encontrado por channelId fallback: ${ticket.id}`);
+        }
+      }
+
+      if (!ticket || ticket.closed) {
+        return interaction.editReply({ content: `⚠️ Ticket nao encontrado ou ja fechado.` });
+      }
+      if (ticket.claimedBy) {
+        return interaction.editReply({ content: `⚠️ Este ticket ja foi assumido por <@${ticket.claimedBy}>.` });
+      }
+
+      setClaiming(ticketId, interaction.user.id);
+
+      try {
+        ticket.claimedBy = interaction.user.id;
+        ticket.claimedByName = interaction.user.username;
+        await saveDB();
+
+        const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
+        if (!channel) {
+          clearClaiming(ticketId);
+          return interaction.editReply({ content: `❌ Erro: Canal do ticket nao encontrado.` });
+        }
+
+        await updateTicketEmbed(channel, ticketId);
+
+        await channel.send(`🎉 Ticket assumido com sucesso!\n👮 <@${interaction.user.id}> assumiu o teu ticket. Se precisares de chamar a staff, usa a opcao **Painel Membro**.`);
+
+        return interaction.editReply({
+          content: `Olá <@${interaction.user.id}>, informo-te que podes usar o **/painelstaff** para teres mais acesso ao ticket se precisares.`,
+        });
+      } catch (err) {
+        console.error("[Assumir] Erro:", err);
+        return interaction.editReply({ content: `❌ Erro ao assumir ticket. Tenta novamente.` });
+      } finally {
+        clearClaiming(ticketId);
+      }
     }
-  }
-
-  if (!ticket || ticket.closed) {
-    return interaction.editReply({ content: `⚠️ Ticket nao encontrado ou ja fechado.` });
-  }
-  if (ticket.claimedBy) {
-    return interaction.editReply({ content: `⚠️ Este ticket ja foi assumido por <@${ticket.claimedBy}>.` });
-  }
-
-  setClaiming(ticketId, interaction.user.id);
-
-  try {
-    ticket.claimedBy = interaction.user.id;
-    ticket.claimedByName = interaction.user.username;
-    await saveDB();
-
-    const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
-    if (!channel) {
-      clearClaiming(ticketId);
-      return interaction.editReply({ content: `❌ Erro: Canal do ticket nao encontrado.` });
-    }
-
-    await updateTicketEmbed(channel, ticketId);
-
-    await channel.send(`🎉 Ticket assumido com sucesso!\n👮 <@${interaction.user.id}> assumiu o teu ticket. Se precisares de chamar a staff, usa a opcao **Painel Membro**.`);
-
-    return interaction.editReply({
-      content: `Olá <@${interaction.user.id}>, informo-te que podes usar o **/painelstaff** para teres mais acesso ao ticket se precisares.`,
-    });
-  } catch (err) {
-    console.error("[Assumir] Erro:", err);
-    return interaction.editReply({ content: `❌ Erro ao assumir ticket. Tenta novamente.` });
-  } finally {
-    clearClaiming(ticketId);
-  }
-}
 
     // --- PAINEL MEMBRO ---
     if (customId.startsWith("painel_membro_")) {
@@ -593,107 +567,107 @@ if (customId.startsWith("assumir_")) {
       return interaction.reply({ content: `✅ Saíste do ticket com sucesso.`, flags: 64 });
     }
 
-// --- FECHAR TICKET ---
-if (customId.startsWith("deletar_")) {
-  const ticketId = customId.replace("deletar_", "");
-  let ticket = db.tickets[ticketId];
+    // --- FECHAR TICKET ---
+    if (customId.startsWith("deletar_")) {
+      const ticketId = customId.replace("deletar_", "");
+      let ticket = db.tickets[ticketId];
 
-  if (!ticket && interaction.channelId) {
-    ticket = findTicketByChannelId(interaction.channelId);
-  }
+      if (!ticket && interaction.channelId) {
+        ticket = findTicketByChannelId(interaction.channelId);
+      }
 
-  if (!ticket || ticket.closed) {
-    return interaction.reply({ content: `⚠️ Ticket nao encontrado ou ja fechado.`, flags: 64 });
-  }
+      if (!ticket || ticket.closed) {
+        return interaction.reply({ content: `⚠️ Ticket nao encontrado ou ja fechado.`, flags: 64 });
+      }
 
-  // ✅ CORREÇÃO: VERIFICAR STAFF
-  if (!isStaff(interaction.member)) {
-    return interaction.reply({ 
-      content: `❌ Apenas staff pode fechar tickets.`, 
-      flags: 64 
-    });
-  }
+      // ✅ CORREÇÃO: VERIFICAR STAFF
+      if (!isStaff(interaction.member)) {
+        return interaction.reply({ 
+          content: `❌ Apenas staff pode fechar tickets.`, 
+          flags: 64 
+        });
+      }
 
-  if (ticket.type === "recrutamento") {
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`recrutado_sim_${ticketId}`).setLabel(`🎉 Sim - Recrutado`).setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId(`recrutado_nao_${ticketId}`).setLabel(`😔 Não - Não Recrutado`).setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId(`fechar_definitivo_${ticketId}`).setLabel(`🔒 Fechar Definitivo (Não Recrutamento)`).setStyle(ButtonStyle.Secondary),
-    );
+      if (ticket.type === "recrutamento") {
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`recrutado_sim_${ticketId}`).setLabel(`🎉 Sim - Recrutado`).setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`recrutado_nao_${ticketId}`).setLabel(`😔 Não - Não Recrutado`).setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId(`fechar_definitivo_${ticketId}`).setLabel(`🔒 Fechar Definitivo (Não Recrutamento)`).setStyle(ButtonStyle.Secondary),
+        );
 
-    return interaction.reply({
-      content: `❓ O candidato foi recrutado?`,
-      components: [row],
-    });
-  } else {
-    return fecharTicket(interaction, ticketId, client, false);
-  }
-}
+        return interaction.reply({
+          content: `❓ O candidato foi recrutado?`,
+          components: [row],
+        });
+      } else {
+        return fecharTicket(interaction, ticketId, client, false);
+      }
+    }
 
     // --- RECRUTADO SIM ---
-if (customId.startsWith("recrutado_sim_")) {
-  const ticketId = customId.replace("recrutado_sim_", "");
-  let ticket = db.tickets[ticketId];
-  
-  if (!ticket && interaction.channelId) {
-    ticket = findTicketByChannelId(interaction.channelId);
-  }
-  
-  if (!ticket) {
-    return interaction.reply({ content: `⚠️ Ticket nao encontrado.`, flags: 64 });
-  }
+    if (customId.startsWith("recrutado_sim_")) {
+      const ticketId = customId.replace("recrutado_sim_", "");
+      let ticket = db.tickets[ticketId];
+      
+      if (!ticket && interaction.channelId) {
+        ticket = findTicketByChannelId(interaction.channelId);
+      }
+      
+      if (!ticket) {
+        return interaction.reply({ content: `⚠️ Ticket nao encontrado.`, flags: 64 });
+      }
 
-  // ✅ CORREÇÃO: VERIFICAR STAFF
-  if (!isStaff(interaction.member)) {
-    return interaction.reply({ 
-      content: `❌ Apenas staff pode confirmar recrutamento.`, 
-      flags: 64 
-    });
-  }
+      // ✅ CORREÇÃO: VERIFICAR STAFF
+      if (!isStaff(interaction.member)) {
+        return interaction.reply({ 
+          content: `❌ Apenas staff pode confirmar recrutamento.`, 
+          flags: 64 
+        });
+      }
 
-  const modal = new ModalBuilder()
-    .setCustomId(`modal_foto_trucky_${ticketId}`)
-    .setTitle(`🎉 Nome da Foto do Trucky`);
+      const modal = new ModalBuilder()
+        .setCustomId(`modal_foto_trucky_${ticketId}`)
+        .setTitle(`🎉 Nome da Foto do Trucky`);
 
-  const input = new TextInputBuilder()
-    .setCustomId("foto_nome")
-    .setLabel("Nome da tua foto de perfil do Trucky")
-    .setPlaceholder("Ex: Diego")
-    .setStyle(TextInputStyle.Short)
-    .setRequired(true)
-    .setMaxLength(100);
+      const input = new TextInputBuilder()
+        .setCustomId("foto_nome")
+        .setLabel("Nome da tua foto de perfil do Trucky")
+        .setPlaceholder("Ex: Diego")
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setMaxLength(100);
 
-  modal.addComponents(new ActionRowBuilder().addComponents(input));
-  return interaction.showModal(modal);
-}
-// --- RECRUTADO NAO ---
-if (customId.startsWith("recrutado_nao_")) {
-  const ticketId = customId.replace("recrutado_nao_", "");
-  
-  // ✅ CORREÇÃO: VERIFICAR STAFF
-  if (!isStaff(interaction.member)) {
-    return interaction.reply({ 
-      content: `❌ Apenas staff pode marcar como não recrutado.`, 
-      flags: 64 
-    });
-  }
-  
-  return fecharTicket(interaction, ticketId, client, false);
-}
-// --- FECHAR DEFINITIVO ---
-if (customId.startsWith("fechar_definitivo_")) {
-  const ticketId = customId.replace("fechar_definitivo_", "");
-  
-  // ✅ CORREÇÃO: VERIFICAR STAFF
-  if (!isStaff(interaction.member)) {
-    return interaction.reply({ 
-      content: `❌ Apenas staff pode fechar tickets definitivamente.`, 
-      flags: 64 
-    });
-  }
-  
-  return fecharTicket(interaction, ticketId, client, false);
-}
+      modal.addComponents(new ActionRowBuilder().addComponents(input));
+      return interaction.showModal(modal);
+    }
+    // --- RECRUTADO NAO ---
+    if (customId.startsWith("recrutado_nao_")) {
+      const ticketId = customId.replace("recrutado_nao_", "");
+      
+      // ✅ CORREÇÃO: VERIFICAR STAFF
+      if (!isStaff(interaction.member)) {
+        return interaction.reply({ 
+          content: `❌ Apenas staff pode marcar como não recrutado.`, 
+          flags: 64 
+        });
+      }
+      
+      return fecharTicket(interaction, ticketId, client, false);
+    }
+    // --- FECHAR DEFINITIVO ---
+    if (customId.startsWith("fechar_definitivo_")) {
+      const ticketId = customId.replace("fechar_definitivo_", "");
+      
+      // ✅ CORREÇÃO: VERIFICAR STAFF
+      if (!isStaff(interaction.member)) {
+        return interaction.reply({ 
+          content: `❌ Apenas staff pode fechar tickets definitivamente.`, 
+          flags: 64 
+        });
+      }
+      
+      return fecharTicket(interaction, ticketId, client, false);
+    }
     // --- AVALIACAO ESTRELAS ---
     if (customId.startsWith("avaliar_")) {
       const parts = customId.split("_");
@@ -718,15 +692,26 @@ if (customId.startsWith("fechar_definitivo_")) {
 
 // ============ FUNCOES AUXILIARES ============
 
+// ✅ FUNÇÃO ESCAPE HTML
+function escapeHTML(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function generateTranscriptHTML(messages, ticket, guild) {
   const msgs = messages.map(m => {
     const avatar = m.author.displayAvatarURL({ format: 'png', size: 64 });
     const attachments = m.attachments.map(a => {
       const isImage = a.contentType?.startsWith('image/');
       if (isImage) {
-        return `<a href="${a.url}" target="_blank" class="attachment-image"><img src="${a.url}" alt="${a.name}" loading="lazy"></a>`;
+        return `<a href="${escapeHTML(a.url)}" target="_blank" class="attachment-image"><img src="${escapeHTML(a.url)}" alt="${escapeHTML(a.name)}" loading="lazy"></a>`;
       }
-      return `<a href="${a.url}" target="_blank" class="attachment-file">📎 ${a.name}</a>`;
+      return `<a href="${escapeHTML(a.url)}" target="_blank" class="attachment-file">📎 ${escapeHTML(a.name)}</a>`;
     }).join(' ');
     const embeds = m.embeds.length > 0 ? `[${m.embeds.length} embed(s)]` : '';
     const time = m.createdAt.toLocaleString('pt-PT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -734,15 +719,15 @@ function generateTranscriptHTML(messages, ticket, guild) {
 
     return `
       <div class="message">
-        <img src="${avatar}" class="avatar" alt="${m.author.tag}">
+        <img src="${escapeHTML(avatar)}" class="avatar" alt="${escapeHTML(m.author.tag)}">
         <div class="message-content">
           <div class="message-header">
-            <span class="author">${m.author.tag}</span>
-            <span class="timestamp">${date} às ${time}</span>
+            <span class="author">${escapeHTML(m.author.tag)}</span>
+            <span class="timestamp">${escapeHTML(date)} às ${escapeHTML(time)}</span>
           </div>
-          <div class="message-body">${m.content ? m.content.replace(/\n/g, '<br>') : '<em class="empty">[sem texto]</em>'}</div>
+          <div class="message-body">${m.content ? escapeHTML(m.content).replace(/\n/g, '<br>') : '<em class="empty">[sem texto]</em>'}</div>
           ${attachments ? `<div class="attachments">${attachments}</div>` : ''}
-          ${embeds ? `<div class="embeds-info">${embeds}</div>` : ''}
+          ${embeds ? `<div class="embeds-info">${escapeHTML(embeds)}</div>` : ''}
         </div>
       </div>
     `;
