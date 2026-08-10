@@ -7,7 +7,8 @@ import { db, saveDB } from "../utils/db.js";
 import { safeEditReply } from "../utils/safeReply.js";
 import { sendLog } from "./logs.js";
 
-const cooldown = new Set();
+const cooldown = new Map(); // userId -> timestamp (com auto-limpeza)
+const claimingLock = new Map(); // ticketId -> { userId, timestamp } (lock para assumir)
 
 const REGRAS_RECRUTAMENTO = [
   "Máx. 100 km/h sempre – simulação real acima de tudo.",
@@ -21,6 +22,51 @@ const REGRAS_RECRUTAMENTO = [
 
 function getTruckersMPSearchLink(username) {
   return `https://truckersmp.com/user/search?search=${encodeURIComponent(username)}`;
+}
+
+// ========== AUTO-LIMPEZA DE COOLDOWNS ==========
+function isOnCooldown(userId) {
+  const now = Date.now();
+  const ts = cooldown.get(userId);
+  if (!ts) return false;
+  if (now - ts > 30000) {
+    cooldown.delete(userId);
+    return false;
+  }
+  return true;
+}
+
+function setCooldown(userId) {
+  cooldown.set(userId, Date.now());
+  // Limpeza automática de entradas antigas (evita memory leak)
+  const now = Date.now();
+  for (const [uid, ts] of cooldown) {
+    if (now - ts > 60000) cooldown.delete(uid);
+  }
+}
+
+// ========== LOCK PARA ASSUMIR TICKET ==========
+function acquireClaimLock(ticketId, userId) {
+  const now = Date.now();
+  const existing = claimingLock.get(ticketId);
+  if (existing && now - existing.timestamp < 10000) {
+    return false; // Lock ativo (10 segundos)
+  }
+  claimingLock.set(ticketId, { userId, timestamp: now });
+  // Auto-limpeza
+  for (const [tid, data] of claimingLock) {
+    if (now - data.timestamp > 30000) claimingLock.delete(tid);
+  }
+  return true;
+}
+
+function releaseClaimLock(ticketId) {
+  claimingLock.delete(ticketId);
+}
+
+// ========== GERAR TICKET ID ÚNICO ==========
+function generateTicketId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
 }
 
 export async function createTicket(interaction, type, label, client) {
@@ -188,7 +234,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
     });
   }
 
-  if (cooldown.has(user.id)) {
+  if (isOnCooldown(user.id)) {
     return interaction.editReply({
       content: `${CONFIG.EMOJI_TIME} Espera um pouco antes de abrir outro ticket (3 segundos).`,
       components: [],
@@ -196,8 +242,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
     });
   }
 
-  cooldown.add(user.id);
-  setTimeout(() => cooldown.delete(user.id), 3000);
+  setCooldown(user.id);
 
   const tempData = client._tempRecrutamento?.[user.id] || {};
   const nomeFinal = tempData.nomeTrucky || nomeTrucky || "Não informado";
@@ -235,7 +280,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
 
   try {
     const channel = await guild.channels.create(channelData);
-    const ticketId = Date.now().toString();
+    const ticketId = generateTicketId(); // ID único, não colide
 
     let truckyDisplay;
     if (linkTrucky && (linkTrucky.startsWith("http://") || linkTrucky.startsWith("https://"))) {
@@ -272,7 +317,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
 
     await saveDB();
 
-    // Embed com menção @🎩➣Administração no título (ID: 1390770675567956018)
+    // Embed com menção @Administração no título (ID: 1390770675567956018)
     const embed = new EmbedBuilder()
       .setTitle(`<@&${CONFIG.CARGO_ADMINISTRACAO}>`)
       .setDescription([
@@ -325,7 +370,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky) {
 }
 
 async function criarTicketNormal(interaction, type, label, client, guild, user) {
-  if (cooldown.has(user.id)) {
+  if (isOnCooldown(user.id)) {
     return safeEditReply(interaction, { content: `${CONFIG.EMOJI_TIME} Espera um pouco antes de abrir outro ticket (3 segundos).`, flags: 64 });
   }
 
@@ -337,8 +382,7 @@ async function criarTicketNormal(interaction, type, label, client, guild, user) 
     }
   }
 
-  cooldown.add(user.id);
-  setTimeout(() => cooldown.delete(user.id), 3000);
+  setCooldown(user.id);
 
   const typePrefix = type === "bugs" ? "bug" : type === "denuncia" ? "den" : type === "suporte" ? "sup" : type === "criador" ? "cri" : type === "ajuda" ? "ajd" : "tk";
   const channelName = `${typePrefix}-${user.username}-${user.id.slice(0, 4)}`.toLowerCase().replace(/[^a-z0-9-]/g, "").substring(0, 25);
@@ -369,7 +413,7 @@ async function criarTicketNormal(interaction, type, label, client, guild, user) 
   if (categoria) channelData.parent = categoria;
 
   const channel = await guild.channels.create(channelData);
-  const ticketId = Date.now().toString();
+  const ticketId = generateTicketId(); // ID único, não colide
 
   let descricaoExtra = "";
   if (type === "ajuda" && interaction._ajudaEspecificacoes) {
@@ -401,7 +445,7 @@ async function criarTicketNormal(interaction, type, label, client, guild, user) 
 
   await saveDB();
 
-  // Embed com menção @🎩➣Administração no título (ID: 1390770675567956018)
+  // Embed com menção @Administração no título (ID: 1390770675567956018)
   const embed = new EmbedBuilder()
     .setTitle(`<@&${CONFIG.CARGO_ADMINISTRACAO}>`)
     .setDescription([
