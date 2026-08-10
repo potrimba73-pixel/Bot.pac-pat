@@ -475,8 +475,11 @@ await saveDB();
 await sendLog(ticketId, "open", client);
 
 const rowIrTicket = new ActionRowBuilder().addComponents(
-  new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TICKET} Ir para o Ticket`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${targetGuildId}/${channel.id}`),
+  new ButtonBuilder().setLabel(`${CONFIG.EMOJI_TICKET} Ir para o Ticket`).setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${guild.id}/${channel.id}`),
 );
+
+  await safeEditReply(interaction, { content: `${CONFIG.EMOJI_SUCCESS} O teu ticket foi criado com sucesso!`, components: [rowIrTicket], flags: 64 });
+}
 
 export async function updateTicketEmbed(channel, ticketId) {
   const ticket = db.tickets[ticketId];
