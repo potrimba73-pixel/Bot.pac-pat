@@ -56,11 +56,47 @@ if (interaction.isChatInputCommand()) {
         .sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 
       // ✅ Gerar HTML com escape
-      const htmlContent = generateTranscriptHTMLSafe(sortedMessages, ticket, interaction.guild);
-      const buffer = Buffer.from(htmlContent, 'utf-8');
-      const attachment = new AttachmentBuilder(buffer, { 
-        name: `transcript-ticket-${ticket.id}.html` 
-      });
+// ✅ CORREÇÃO: FUNÇÃO ESCAPE HTML
+function escapeHTML(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function generateTranscriptHTML(messages, ticket, guild) {
+  const msgs = messages.map(m => {
+    const avatar = m.author.displayAvatarURL({ format: 'png', size: 64 });
+    const attachments = m.attachments.map(a => {
+      const isImage = a.contentType?.startsWith('image/');
+      if (isImage) {
+        return `<a href="${escapeHTML(a.url)}" target="_blank" class="attachment-image"><img src="${escapeHTML(a.url)}" alt="${escapeHTML(a.name)}" loading="lazy"></a>`;
+      }
+      return `<a href="${escapeHTML(a.url)}" target="_blank" class="attachment-file">📎 ${escapeHTML(a.name)}</a>`;
+    }).join(' ');
+    const embeds = m.embeds.length > 0 ? `[${m.embeds.length} embed(s)]` : '';
+    const time = m.createdAt.toLocaleString('pt-PT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const date = m.createdAt.toLocaleDateString('pt-PT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+    return `
+      <div class="message">
+        <img src="${escapeHTML(avatar)}" class="avatar" alt="${escapeHTML(m.author.tag)}">
+        <div class="message-content">
+          <div class="message-header">
+            <span class="author">${escapeHTML(m.author.tag)}</span>
+            <span class="timestamp">${escapeHTML(date)} às ${escapeHTML(time)}</span>
+          </div>
+          <div class="message-body">${m.content ? escapeHTML(m.content).replace(/\n/g, '<br>') : '<em class="empty">[sem texto]</em>'}</div>
+          ${attachments ? `<div class="attachments">${attachments}</div>` : ''}
+          ${embeds ? `<div class="embeds-info">${escapeHTML(embeds)}</div>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+});
 
       // ✅ Gerar resumo seguro
       let textSummary = `📋 **Transcript do Ticket #${ticket.id}**\n\n`;
