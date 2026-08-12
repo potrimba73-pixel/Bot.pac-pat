@@ -28,7 +28,7 @@ export async function handleReady(client) {
     activities: [{ 
       name: '/ajuda | Portugal Alfa Community', 
       type: 0,
-      state: `📍 ${client.guilds.cache.size} servidores`
+      state: `Euro Truck Simulator 2`
     }],
     status: 'online',
   });
