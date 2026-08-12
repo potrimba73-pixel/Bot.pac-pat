@@ -30,10 +30,15 @@ function isStaff(member) {
 }
 
 function escapeHTML(str) {
-  if (!str) return ''; return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
-// Helper para responder sem crashar
 async function safeReply(interaction, content, ephemeral = true) {
   try {
     if (interaction.deferred) return await interaction.editReply({ content, flags: ephemeral ? 64 : 0 });
@@ -65,25 +70,20 @@ export async function handleInteractionCreate(interaction, client) {
       if (!isStaff(interaction.member)) {
         return safeReply(interaction, `${CONFIG.EMOJI_ERROR} Apenas staff pode usar este comando.`);
       }
-      const ticket = Object.values(db.tickets).find(t => t.channelId === interaction.channelId && !t.closed);
+      const ticket = Object.values(db.tickets || {}).find(t => t.channelId === interaction.channelId && !t.closed);
       if (!ticket) { return safeReply(interaction, `Nenhum ticket ativo encontrado neste canal.`); }
       await interaction.deferReply({ flags: 64 });
       try {
         const messages = await interaction.channel.messages.fetch({ limit: 200 });
         const sortedMessages = Array.from(messages.values()).sort((a, b) => a.createdTimestamp - b.createdTimestamp);
-        let textSummary = `Transcript do Ticket #${ticket.id}
-
-`;
+        let textSummary = `Transcript do Ticket #${ticket.id}\n\n`;
         let totalChars = 0;
         const MAX_SUMMARY_CHARS = 1900;
         for (const msg of sortedMessages) {
           const content = msg.content || "[sem texto]";
-          const line = `[${msg.createdAt.toLocaleString('pt-PT')}] **${escapeHTML(msg.author.tag)}**: ${escapeHTML(content.substring(0, 100))}${content.length > 100 ? '...' : ''}
-`;
+          const line = `[${msg.createdAt.toLocaleString('pt-PT')}] **${escapeHTML(msg.author.tag)}**: ${escapeHTML(content.substring(0, 100))}${content.length > 100 ? '...' : ''}\n`;
           if (totalChars + line.length > MAX_SUMMARY_CHARS) {
-            textSummary += `
-... e mais ${sortedMessages.length - textSummary.split('
-').length + 1} mensagens.`;
+            textSummary += `\n... e mais ${sortedMessages.length - textSummary.split('\n').length + 1} mensagens.`;
             break;
           }
           textSummary += line; totalChars += line.length;
@@ -95,8 +95,12 @@ export async function handleInteractionCreate(interaction, client) {
         if (logChannel) {
           const logEmbed = new EmbedBuilder()
             .setTitle(`${CONFIG.EMOJI_FILE} Transcript Gerado`)
-            .setDescription([`${CONFIG.EMOJI_USER} Staff: ${interaction.user.tag}`,`${CONFIG.EMOJI_INFO} Ticket: #${ticket.id} (${ticket.label})`,`${CONFIG.EMOJI_TIME} Data: ${new Date().toLocaleString("pt-PT")}`,`${CONFIG.EMOJI_FILE} Mensagens: ${sortedMessages.length}`].join("
-"))
+            .setDescription([
+              `${CONFIG.EMOJI_USER} Staff: ${interaction.user.tag}`,
+              `${CONFIG.EMOJI_INFO} Ticket: #${ticket.id} (${ticket.label})`,
+              `${CONFIG.EMOJI_TIME} Data: ${new Date().toLocaleString("pt-PT")}`,
+              `${CONFIG.EMOJI_FILE} Mensagens: ${sortedMessages.length}`
+            ].join("\n"))
             .setColor(0x0099ff).setTimestamp();
           await logChannel.send({ embeds: [logEmbed] });
         }
@@ -226,8 +230,7 @@ export async function handleInteractionCreate(interaction, client) {
         if (!db.acceptedRulesAt) db.acceptedRulesAt = {};
         db.acceptedRulesAt[member.id] = new Date().toISOString();
         await saveDB();
-        return interaction.editReply({ content: `Regras aceites com sucesso! Bem-vind@ a comunidade da **Portugal Alfa Community** 🎉
-Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre outros...` }).catch(() => {});
+        return interaction.editReply({ content: `Regras aceites com sucesso! Bem-vind@ a comunidade da **Portugal Alfa Community** 🎉\nAqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre outros...` }).catch(() => {});
       } catch (err) {
         console.error("[aceitar_regras] Erro:", err);
         return interaction.editReply({ content: `Erro ao processar. Tenta novamente.` }).catch(() => {});
@@ -277,8 +280,7 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
         const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
         if (!channel) { clearClaiming(ticketId); return interaction.editReply({ content: `Erro: Canal do ticket nao encontrado.` }).catch(() => {}); }
         await updateTicketEmbed(channel, ticketId);
-        await channel.send(`Ticket assumido com sucesso!
-<@${interaction.user.id}> assumiu o teu ticket. Se precisares de chamar a staff, usa a opcao **Painel Membro**.`);
+        await channel.send(`Ticket assumido com sucesso!\n<@${interaction.user.id}> assumiu o teu ticket. Se precisares de chamar a staff, usa a opcao **Painel Membro**.`);
         return interaction.editReply({ content: `Ola <@${interaction.user.id}>, informo-te que podes usar o **/painelstaff** para teres mais acesso ao ticket se precisares.` }).catch(() => {});
       } catch (err) {
         console.error("[Assumir] Erro:", err);
@@ -310,10 +312,8 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       }
       staffList.sort((a, b) => { if (b.rolePosition !== a.rolePosition) return b.rolePosition - a.rolePosition; return a.displayName.localeCompare(b.displayName); });
       if (staffList.length === 0) { return interaction.editReply({ content: `Nenhum membro da staff encontrado neste ticket.` }).catch(() => {}); }
-      const staffText = staffList.map(s => `**${s.roleName}** | ${s.displayName} | <@${s.member.id}>`).join("
-");
-      const embed = new EmbedBuilder().setTitle(`Painel Membro`).setDescription([`Lista de staff disponivel neste ticket:`, "", staffText].join("
-")).setColor(CONFIG.COR_PRINCIPAL);
+      const staffText = staffList.map(s => `**${s.roleName}** | ${s.displayName} | <@${s.member.id}>`).join("\n");
+      const embed = new EmbedBuilder().setTitle(`Painel Membro`).setDescription([`Lista de staff disponivel neste ticket:`, "", staffText].join("\n")).setColor(CONFIG.COR_PRINCIPAL);
       return interaction.editReply({ embeds: [embed] }).catch(() => {});
     }
 
@@ -386,8 +386,7 @@ Aqui podera ver os conteudos do Diego, conversar/conviver com o pessoal e entre 
       ticket.rating = estrelas;
       await saveDB();
       const stars = "⭐".repeat(estrelas);
-      const embed = new EmbedBuilder().setTitle(`Obrigado pela tua avaliacao!`).setDescription([`Avaliacao: ${stars} (${estrelas}/5)`, "", `O teu feedback e muito importante para melhorarmos o atendimento.`].join("
-")).setColor(CONFIG.COR_SUCESSO || 0x00ff00).setTimestamp();
+      const embed = new EmbedBuilder().setTitle(`Obrigado pela tua avaliacao!`).setDescription([`Avaliacao: ${stars} (${estrelas}/5)`, "", `O teu feedback e muito importante para melhorarmos o atendimento.`].join("\n")).setColor(CONFIG.COR_SUCESSO || 0x00ff00).setTimestamp();
       try { await interaction.update({ embeds: [embed], components: [] }); }
       catch (e) { return safeReply(interaction, `Avaliacao registada: ${stars} (${estrelas}/5)`); }
       return;
@@ -418,8 +417,7 @@ function generateTranscriptHTML(messages, ticket, guild) {
         m.embeds.map(e => {
           let html = '';
           if (e.title) html += `<div style="font-weight:bold;color:#fff;">${escapeHTML(e.title)}</div>`;
-          if (e.description) html += `<div style="color:#dcddde;margin-top:4px;">${escapeHTML(e.description).replace(/
-/g, '<br>')}</div>`;
+          if (e.description) html += `<div style="color:#dcddde;margin-top:4px;">${escapeHTML(e.description).replace(/\n/g, '<br>')}</div>`;
           return html;
         }).join('') + '</div>';
     }
@@ -453,8 +451,7 @@ async function handleFotoTruckyModal(interaction, client) {
     try {
       const geral = await client.channels.fetch(CONFIG.CANAL_GERAL).catch(() => null);
       if (geral) {
-        const welcomeEmbed = new EmbedBuilder().setTitle(`Bem-vindo a Portugal Alfa Truckers!`).setDescription([`Parabens <@${ticket.userId}>!`,`Foste recrutado com sucesso para a Portugal Alfa Truckers.`,``,`Nome Trucky: **${escapeHTML(fotoNome)}**`].join("
-")).setColor(CONFIG.COR_SUCESSO || 0x00ff00).setTimestamp();
+        const welcomeEmbed = new EmbedBuilder().setTitle(`Bem-vindo a Portugal Alfa Truckers!`).setDescription([`Parabens <@${ticket.userId}>!`,`Foste recrutado com sucesso para a Portugal Alfa Truckers.`,``,`Nome Trucky: **${escapeHTML(fotoNome)}**`].join("\n")).setColor(CONFIG.COR_SUCESSO || 0x00ff00).setTimestamp();
         await geral.send({ embeds: [welcomeEmbed] });
       }
     } catch (e) { console.error("[handleFotoTruckyModal] Erro boas-vindas:", e); }
@@ -486,15 +483,26 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
     await sendLog(ticketId, "close", client);
     const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
     if (channel) {
-      const closeEmbed = new EmbedBuilder().setTitle(`Ticket Fechado - #${ticketId}`).setDescription([`Ticket fechado por <@${interaction.user.id}> | ${interaction.user.username}`,`Tipo: ${ticket.label}`,`Fechado: <t:${Math.floor(Date.now() / 1000)}:F>`,].join("
-")).setColor(0xFF0000).setTimestamp();
+      const closeEmbed = new EmbedBuilder().setTitle(`Ticket Fechado - #${ticketId}`).setDescription([
+        `Ticket fechado por <@${interaction.user.id}> | ${interaction.user.username}`,
+        `Tipo: ${ticket.label}`,
+        `Fechado: <t:${Math.floor(Date.now() / 1000)}:F>`,
+      ].join("\n")).setColor(0xFF0000).setTimestamp();
       await channel.send({ embeds: [closeEmbed] }).catch(() => {});
     }
     try {
       const user = await client.users.fetch(ticket.userId);
       if (user) {
-        const dmEmbed = new EmbedBuilder().setTitle(`Ticket Fechado`).setDescription([`Ola <@${ticket.userId}>!`,``,`O teu ticket **#${ticketId}** foi fechado.`,`Tipo: ${ticket.label}`,`Fechado por: ${ticket.closedByName}`,`Data: <t:${Math.floor(Date.now() / 1000)}:F>`,``,`Queres avaliar o atendimento? Clica numa das estrelas abaixo:`].join("
-")).setColor(0xFF0000).setTimestamp();
+        const dmEmbed = new EmbedBuilder().setTitle(`Ticket Fechado`).setDescription([
+          `Ola <@${ticket.userId}>!`,
+          ``,
+          `O teu ticket **#${ticketId}** foi fechado.`,
+          `Tipo: ${ticket.label}`,
+          `Fechado por: ${ticket.closedByName}`,
+          `Data: <t:${Math.floor(Date.now() / 1000)}:F>`,
+          ``,
+          `Queres avaliar o atendimento? Clica numa das estrelas abaixo:`
+        ].join("\n")).setColor(0xFF0000).setTimestamp();
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId(`avaliar_${ticketId}_1`).setLabel("1").setStyle(ButtonStyle.Secondary),
           new ButtonBuilder().setCustomId(`avaliar_${ticketId}_2`).setLabel("2").setStyle(ButtonStyle.Secondary),
@@ -516,7 +524,7 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
 
 async function enviarPainelMembro(interaction) {
   try { await interaction.deferReply({ flags: 64 }); } catch (e) { return; }
-  let ticket = Object.values(db.tickets).find(t => t.channelId === interaction.channelId && !t.closed);
+  let ticket = Object.values(db.tickets || {}).find(t => t.channelId === interaction.channelId && !t.closed);
   if (!ticket) { return interaction.editReply({ content: `Nenhum ticket ativo encontrado neste canal.`, flags: 64 }).catch(() => {}); }
   const channel = interaction.channel;
   const members = await channel.members.fetch();
@@ -532,16 +540,14 @@ async function enviarPainelMembro(interaction) {
   }
   staffList.sort((a, b) => { if (b.rolePosition !== a.rolePosition) return b.rolePosition - a.rolePosition; return a.displayName.localeCompare(b.displayName); });
   if (staffList.length === 0) { return interaction.editReply({ content: `Nenhum membro da staff encontrado neste ticket.`, flags: 64 }).catch(() => {}); }
-  const staffText = staffList.map(s => `**${s.roleName}** | ${s.displayName} | <@${s.member.id}>`).join("
-");
-  const embed = new EmbedBuilder().setTitle(`Painel Membro`).setDescription([`Lista de staff disponivel neste ticket:`, "", staffText].join("
-")).setColor(CONFIG.COR_PRINCIPAL);
+  const staffText = staffList.map(s => `**${s.roleName}** | ${s.displayName} | <@${s.member.id}>`).join("\n");
+  const embed = new EmbedBuilder().setTitle(`Painel Membro`).setDescription([`Lista de staff disponivel neste ticket:`, "", staffText].join("\n")).setColor(CONFIG.COR_PRINCIPAL);
   return interaction.editReply({ embeds: [embed], flags: 64 }).catch(() => {});
 }
 
 async function enviarPainelStaff(interaction, client) {
   try { await interaction.deferReply({ flags: 64 }); } catch (e) { return; }
-  let ticket = Object.values(db.tickets).find(t => t.channelId === interaction.channelId && !t.closed);
+  let ticket = Object.values(db.tickets || {}).find(t => t.channelId === interaction.channelId && !t.closed);
   if (!ticket) { return interaction.editReply({ content: `Nenhum ticket ativo encontrado neste canal.`, flags: 64 }).catch(() => {}); }
   await sendPainelChamada(interaction.channel, ticket.id, interaction);
   return interaction.editReply({ content: `Painel de chamada enviado.`, flags: 64 }).catch(() => {});
