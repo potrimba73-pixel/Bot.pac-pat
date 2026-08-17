@@ -38,7 +38,7 @@ import { sendPainelChamada } from "../services/calls.js";
 // ============================================================
 // IMPORTAR FUNÇÕES DE DATA
 // ============================================================
-import { formatDateFull, formatDateShort } from "../utils/dateUtils.js";
+import { formatDateFull, formatDateShort, formatDateSimple, getClockEmoji } from "../utils/dateUtils.js";
 
 // ============================================================
 // PROTEÇÕES
@@ -796,12 +796,12 @@ export async function handleInteractionCreate(
         }
 
         try {
-const cargos = [
-  CONFIG.CARGO_MEMBRO,
-  CONFIG.CARGO_REGRAS_EXTRA_1,
-  CONFIG.CARGO_REGRAS_EXTRA_2,
-  "1534970663344017479",   // ← cargo adicional
-].filter(Boolean);
+          const cargos = [
+            CONFIG.CARGO_MEMBRO,
+            CONFIG.CARGO_REGRAS_EXTRA_1,
+            CONFIG.CARGO_REGRAS_EXTRA_2,
+            "1534970663344017479",
+          ].filter(Boolean);
 
           for (const roleId of cargos) {
             const role =
@@ -1818,6 +1818,8 @@ async function fecharTicket(
       // ------------------------------------------------------
       const isRecruitment = ticket.type === 'recrutamento';
       const recrutadoText = ticket.recrutado === true ? '✅ Sim' : ticket.recrutado === false ? '❌ Não' : 'N/A';
+      const clockEmojiAbertura = getClockEmoji(new Date(ticket.openedAt));
+      const clockEmojiFecho = getClockEmoji(new Date());
 
       let desc = `👤 **Aberto por:** <@${ticket.userId}> | \`${ticket.username}\``;
       if (isRecruitment && ticket.truckyNome) {
@@ -1827,7 +1829,7 @@ async function fecharTicket(
       desc += `\n\n⚒️ **Assumido por:** ${ticket.claimedBy ? `<@${ticket.claimedBy}>` : 'Não assumido'}`;
       desc += `\n⚒️ **Fechado por:** ${interaction.user ? `<@${interaction.user.id}>` : 'Sistema'}`;
       desc += `\n\n↕ **Informações Adicionais:**`;
-      desc += `\n🕑 **Horários:**`;
+      desc += `\n${clockEmojiAbertura} **Horários:**`;
       desc += `\n• **Abertura:** ${formatDateFull(ticket.openedAt)}`;
       desc += `\n• **Fechamento:** ${formatDateFull(new Date())}`;
 
@@ -1862,6 +1864,8 @@ async function fecharTicket(
             ticket.userId
           );
 
+        const clockEmojiDM = getClockEmoji(new Date());
+
         const embedDM =
           new EmbedBuilder()
             .setTitle('🎫 Ticket Fechado')
@@ -1870,7 +1874,7 @@ async function fecharTicket(
               `\n\n🎫 **Ticket:** #${ticket.id}` +
               `\n📝 **Tipo:** ${ticket.label}` +
               `\n\n⚒️ **Fechado por:** ${interaction.user.username}` +
-              `\n🕑 **Fechado em:** ${formatDateShort(new Date())}` +
+              `\n${clockEmojiDM} **Fechado em:** ${formatDateShort(new Date())}` +
               `\n\n🎫 Caso seja necessário, não hesite em abrir um novo ticket!`
             )
             .setColor(0xFF0000)
@@ -2363,100 +2367,51 @@ async function enviarPainelStaff(
 }
 
 // ============================================================
-// STAFF LIST
+// STAFF LIST (CORRIGIDA)
 // ============================================================
 
 async function buildStaffList(
   channel,
   ticket
 ) {
-  const members =
-    await channel.members
-      .fetch()
-      .catch(() => null);
+  // Carregar todos os membros do servidor primeiro
+  await channel.guild.members.fetch().catch(() => null);
 
-  if (!members) return [];
+  // channel.members é uma Collection de membros que podem ver o canal
+  const members = channel.members;
+  if (!members || members.size === 0) return [];
 
   const staffList = [];
+  const botId = CONFIG.BOT_ID_EXCLUIR || channel.client.user.id;
 
-  const botId =
-    CONFIG.BOT_ID_EXCLUIR ||
-    channel.client.user.id;
+  for (const [memberId, member] of members) {
+    if (memberId === botId) continue;
+    if (memberId === ticket.userId) continue;
 
-  for (
-    const [
-      memberId,
-      member,
-    ] of members
-  ) {
-    if (
-      memberId === botId
-    ) {
+    const permissions = channel.permissionsFor(member);
+    if (!permissions?.has(PermissionFlagsBits.ViewChannel) ||
+        !permissions?.has(PermissionFlagsBits.SendMessages)) {
       continue;
     }
 
-    if (
-      memberId === ticket.userId
-    ) {
-      continue;
-    }
-
-    const permissions =
-      channel.permissionsFor(
-        member
-      );
-
-    if (
-      !permissions?.has(
-        PermissionFlagsBits.ViewChannel
-      ) ||
-      !permissions?.has(
-        PermissionFlagsBits.SendMessages
-      )
-    ) {
-      continue;
-    }
-
-    const highestRole =
-      member.roles.cache
-        .sort(
-          (a, b) =>
-            b.position -
-            a.position
-        )
-        .first();
+    const highestRole = member.roles.cache
+      .sort((a, b) => b.position - a.position)
+      .first();
 
     staffList.push({
       member,
-      rolePosition:
-        highestRole?.position ||
-        0,
-      roleName:
-        highestRole?.name ||
-        "Sem cargo",
-      displayName:
-        member.displayName ||
-        member.user.username,
+      rolePosition: highestRole?.position || 0,
+      roleName: highestRole?.name || "Sem cargo",
+      displayName: member.displayName || member.user.username,
     });
   }
 
-  staffList.sort(
-    (a, b) => {
-      if (
-        b.rolePosition !==
-        a.rolePosition
-      ) {
-        return (
-          b.rolePosition -
-          a.rolePosition
-        );
-      }
-
-      return a.displayName.localeCompare(
-        b.displayName
-      );
+  staffList.sort((a, b) => {
+    if (b.rolePosition !== a.rolePosition) {
+      return b.rolePosition - a.rolePosition;
     }
-  );
+    return a.displayName.localeCompare(b.displayName);
+  });
 
   return staffList;
 }
