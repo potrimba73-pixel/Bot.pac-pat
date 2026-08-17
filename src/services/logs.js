@@ -1,7 +1,7 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import { CONFIG } from "../config/index.js";
 import { db } from "../utils/db.js";
-import { formatDateFull } from "../utils/dateUtils.js";
+import { formatDateFull, getClockEmoji } from "../utils/dateUtils.js";
 
 export async function sendLog(ticketId, type, client) {
   const ticket = db.tickets[ticketId];
@@ -16,13 +16,14 @@ export async function sendLog(ticketId, type, client) {
   // ============ ABERTURA ============
   if (type === "open") {
     const isRecruitment = ticket.type === "recrutamento";
+    const clockEmoji = getClockEmoji(new Date(ticket.openedAt));
 
     let description = `👤 **Aberto por:** <@${ticket.userId}> | \`${ticket.userName || ticket.username}\``;
     if (isRecruitment && ticket.truckyNome) {
       description += `\n🚛 **Trucky:** \`${ticket.truckyNome}\``;
     }
     description += `\n📝 **Tipo:** ${ticket.label}`;
-    description += `\n\n🕑 **Abertura:** ${formatDateFull(ticket.openedAt)}`;
+    description += `\n\n${clockEmoji} **Abertura:** ${formatDateFull(ticket.openedAt)}`;
     description += `\n\n🎫 **Aceda ao ticket ao pressionar o botão abaixo**`;
 
     const embed = new EmbedBuilder()
@@ -45,6 +46,8 @@ export async function sendLog(ticketId, type, client) {
   if (type === "close") {
     const isRecruitment = ticket.type === "recrutamento";
     const recrutadoText = ticket.recrutado === true ? '✅ Sim' : ticket.recrutado === false ? '❌ Não' : 'N/A';
+    const clockEmojiAbertura = getClockEmoji(new Date(ticket.openedAt));
+    const clockEmojiFecho = getClockEmoji(ticket.closedAt ? new Date(ticket.closedAt) : new Date());
 
     let description = `👤 **Aberto por:** <@${ticket.userId}> | \`${ticket.userName || ticket.username}\``;
     
@@ -57,7 +60,7 @@ export async function sendLog(ticketId, type, client) {
     description += `\n⚒️ **Fechado por:** ${ticket.closedBy ? `<@${ticket.closedBy}>` : 'Não informado'}`;
     
     description += `\n\n↕ **Informações Adicionais:**`;
-    description += `\n🕑 **Horários:**`;
+    description += `\n${clockEmojiAbertura} **Horários:**`;
     description += `\n• **Abertura:** ${formatDateFull(ticket.openedAt)}`;
     description += `\n• **Fechamento:** ${ticket.closedAt ? formatDateFull(ticket.closedAt) : 'N/A'}`;
     
