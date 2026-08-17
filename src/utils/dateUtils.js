@@ -27,12 +27,6 @@ export function formatDateSimple(date) {
   });
 }
 
-/**
- * Retorna o emoji de relógio mais apropriado para a hora
- * @param {Date} date - Data a usar
- * @param {string} mode - 'hour' (hora cheia), 'half' (meia hora), 'nearest' (mais próxima)
- * @returns {string} Emoji de relógio
- */
 export function getClockEmoji(date = new Date(), mode = 'half') {
   const formatter = new Intl.DateTimeFormat('pt-PT', {
     hour: '2-digit',
@@ -50,10 +44,7 @@ export function getClockEmoji(date = new Date(), mode = 'half') {
 
   let index = hora % 12;
 
-  if (mode === 'hour') {
-    return hourEmojis[index];
-  }
-
+  if (mode === 'hour') return hourEmojis[index];
   if (mode === 'nearest') {
     if (minuto < 15) return hourEmojis[index];
     if (minuto < 45) return halfEmojis[index];
