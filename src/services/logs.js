@@ -1,12 +1,7 @@
-import { EmbedBuilder } from "discord.js";
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import { CONFIG } from "../config/index.js";
 import { db } from "../utils/db.js";
-
-function getDiaSemana(dateStr) {
-  const date = new Date(dateStr);
-  const dias = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
-  return dias[date.getDay()];
-}
+import { formatDateFull } from "../utils/dateUtils.js";
 
 export async function sendLog(ticketId, type, client) {
   const ticket = db.tickets[ticketId];
@@ -18,93 +13,70 @@ export async function sendLog(ticketId, type, client) {
     return;
   }
 
+  // ============ ABERTURA ============
   if (type === "open") {
-    const openedTimestamp = Math.floor(new Date(ticket.openedAt).getTime() / 1000);
-    const diaSemana = getDiaSemana(ticket.openedAt);
+    const isRecruitment = ticket.type === "recrutamento";
+
+    let description = `👤 **Aberto por:** <@${ticket.userId}> | \`${ticket.userName || ticket.username}\``;
+    if (isRecruitment && ticket.truckyNome) {
+      description += `\n🚛 **Trucky:** \`${ticket.truckyNome}\``;
+    }
+    description += `\n📝 **Tipo:** ${ticket.label}`;
+    description += `\n\n🕑 **Abertura:** ${formatDateFull(ticket.openedAt)}`;
+    description += `\n\n🎫 **Aceda ao ticket ao pressionar o botão abaixo**`;
 
     const embed = new EmbedBuilder()
       .setTitle(`🎫 Ticket Aberto - #${ticket.id}`)
-      .setDescription([
-        `👤 Utilizador: <@${ticket.userId}> | ${ticket.userName || ticket.username}`,
-        `📝 Tipo: ${ticket.label}`,
-        `⏰ Abertura: ${diaSemana}, `,
-      ].join("\n"))
-      .setColor(CONFIG.COR_SUCESSO)
-      .setTimestamp();
+      .setDescription(description)
+      .setColor(0x2629F1)
+      .setTimestamp(new Date(ticket.openedAt));
 
-    if (ticket.truckyNome) {
-      embed.addFields({
-        name: `🚛 Trucky`,
-        value: ticket.truckyLink && ticket.truckyLink.startsWith("http")
-          ? `[${ticket.truckyNome}](${ticket.truckyLink})`
-          : ticket.truckyNome,
-        inline: true
-      });
-    }
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel('🎫 Ir para o Ticket')
+        .setStyle(ButtonStyle.Link)
+        .setURL(`https://discord.com/channels/${ticket.guildId}/${ticket.channelId}`)
+    );
 
-    await logChannel.send({ embeds: [embed] });
+    await logChannel.send({ embeds: [embed], components: [row] });
   }
 
+  // ============ FECHO ============
   if (type === "close") {
-    const openedTimestamp = Math.floor(new Date(ticket.openedAt).getTime() / 1000);
-    const closedTimestamp = ticket.closedAt
-      ? Math.floor(new Date(ticket.closedAt).getTime() / 1000)
-      : Math.floor(Date.now() / 1000);
+    const isRecruitment = ticket.type === "recrutamento";
+    const recrutadoText = ticket.recrutado === true ? '✅ Sim' : ticket.recrutado === false ? '❌ Não' : 'N/A';
 
-    const openedDia = getDiaSemana(ticket.openedAt);
-    const closedDia = ticket.closedAt ? getDiaSemana(ticket.closedAt) : getDiaSemana(new Date().toISOString());
-
-    const claimedText = ticket.claimedBy
-      ? `<@${ticket.claimedBy}> | ${ticket.claimedByName}`
-      : "Não assumido";
-
-    const closedText = ticket.closedBy
-      ? ticket.closedByName || "Staff"
-      : "Não informado";
-
-    const recrutadoText = ticket.recrutado === true
-      ? "Sim 🎉"
-      : ticket.recrutado === false
-        ? "Não 😔"
-        : "N/A";
+    let description = `👤 **Aberto por:** <@${ticket.userId}> | \`${ticket.userName || ticket.username}\``;
+    
+    if (isRecruitment && ticket.truckyNome) {
+      description += `\n🚛 **Trucky:** \`${ticket.truckyNome}\``;
+    }
+    description += `\n📝 **Tipo:** ${ticket.label}`;
+    
+    description += `\n\n⚒️ **Assumido por:** ${ticket.claimedBy ? `<@${ticket.claimedBy}>` : 'Não assumido'}`;
+    description += `\n⚒️ **Fechado por:** ${ticket.closedBy ? `<@${ticket.closedBy}>` : 'Não informado'}`;
+    
+    description += `\n\n↕ **Informações Adicionais:**`;
+    description += `\n🕑 **Horários:**`;
+    description += `\n• **Abertura:** ${formatDateFull(ticket.openedAt)}`;
+    description += `\n• **Fechamento:** ${ticket.closedAt ? formatDateFull(ticket.closedAt) : 'N/A'}`;
+    
+    if (isRecruitment) {
+      description += `\n🚛 **Nome no Trucky:**`;
+      description += `\n• \`${ticket.truckyNome || 'Não informado'}\``;
+      description += `\n💼 **Recrutado:**`;
+      description += `\n• ${recrutadoText}`;
+      if (ticket.fotoNome) {
+        description += `\n📷 **Nome para Foto:**`;
+        description += `\n• \`${ticket.fotoNome}\``;
+      }
+    }
 
     const embed = new EmbedBuilder()
       .setTitle(`🗑️ Ticket Fechado - #${ticket.id}`)
-      .setDescription([
-        `👤 Utilizador: <@${ticket.userId}> | ${ticket.userName || ticket.username}`,
-        `👮 Assumido por: ${claimedText}`,
-        `👮 Fechado por: ${closedText}`,
-        "",
-        `⏰ Abertura: ${openedDia}, `,
-        `⏰ Fechamento: ${closedDia}, `,
-        `📝 Tipo: ${ticket.label}`,
-      ].join("\n"))
-      .setColor(CONFIG.COR_ERRO)
-      .setTimestamp();
-
-    if (ticket.truckyNome) {
-      embed.addFields({
-        name: `🚛 Trucky`,
-        value: ticket.truckyLink && ticket.truckyLink.startsWith("http")
-          ? `[${ticket.truckyNome}](${ticket.truckyLink})`
-          : ticket.truckyNome,
-        inline: true
-      });
-    }
-
-    if (ticket.fotoNome) {
-      embed.addFields({
-        name: `📷 Foto Trucky`,
-        value: ticket.fotoNome,
-        inline: true
-      });
-    }
-
-    embed.addFields({
-      name: `🎉 Recrutado`,
-      value: recrutadoText,
-      inline: true
-    });
+      .setDescription(description)
+      .setColor(0x2629F1)
+      .setTimestamp(ticket.closedAt ? new Date(ticket.closedAt) : new Date());
 
     await logChannel.send({ embeds: [embed] });
   }
