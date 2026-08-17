@@ -1,4 +1,6 @@
 // ✅ CORREÇÃO: ADICIONAR PATENTES E CONFIGURAÇÕES
+import { PermissionFlagsBits } from "discord.js";
+
 export const TRUCKY_CONFIG = {
   // --- API Trucky ---
   companyId: "46961",
@@ -20,11 +22,9 @@ export const TRUCKY_CONFIG = {
   ],
 
   // --- Cargos de Membro VTC ---
-  // ✅ CORREÇÃO: UNIFICAR NOMES
   vtcMemberRole: "ID_DO_CARGO_MEMBRO_VTC",
 
   // --- Sistema de Patentes ---
-  // ✅ CORREÇÃO: ADICIONAR PATENTES REAIS
   patentes: [
     { nome: "Motorista", kmMin: 0, kmMax: 10000, cargoDiscord: "ID_CARGO_MOTORISTA" },
     { nome: "Motorista Sénior", kmMin: 10000, kmMax: 25000, cargoDiscord: "ID_CARGO_SENIOR" },
@@ -38,7 +38,7 @@ export const TRUCKY_CONFIG = {
 
   // --- Configuracoes de Inatividade ---
   inatividade: {
-    verificacaoAuto: true, // ✅ ATIVAR
+    verificacaoAuto: true,
     diaVerificacao: 0, // Domingo
     horaVerificacao: "20:00",
     diasAviso: 15,
@@ -75,7 +75,7 @@ export const TRUCKY_CONFIG = {
   },
 };
 
-// ✅ CORREÇÃO: HELPER PARA STAFF
+// ✅ CORREÇÃO: HELPER PARA STAFF (agora com importação correta)
 export function isStaff(member) {
   if (!member) return false;
   if (member.permissions?.has(PermissionFlagsBits.ManageRoles)) return true;
