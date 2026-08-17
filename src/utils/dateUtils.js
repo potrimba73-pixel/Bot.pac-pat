@@ -58,3 +58,28 @@ export function getClockEmoji(date = new Date(), mode = 'half') {
   index = (hora + 1) % 12;
   return hourEmojis[index];
 }
+
+/**
+ * Calcula a duração entre duas datas e formata como string
+ * Exemplo: 2h 15m 30s
+ * @param {Date|string} startDate - Data de início
+ * @param {Date|string} endDate - Data de fim
+ * @returns {string} Duração formatada
+ */
+export function formatDuration(startDate, endDate) {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const diffMs = Math.abs(end - start);
+  
+  const diffSec = Math.floor(diffMs / 1000);
+  const hours = Math.floor(diffSec / 3600);
+  const minutes = Math.floor((diffSec % 3600) / 60);
+  const seconds = diffSec % 60;
+  
+  let result = '';
+  if (hours > 0) result += `${hours}h `;
+  if (minutes > 0 || hours > 0) result += `${minutes}m `;
+  result += `${seconds}s`;
+  
+  return result;
+}
