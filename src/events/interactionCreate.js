@@ -1857,7 +1857,7 @@ try {
 }
 
 // ------------------------------------------------------
-// DM DE AVALIAÇÃO (NOVO FORMATO)
+// DM DE AVALIAÇÃO (NOVO FORMATO) - CORRIGIDO
 // ------------------------------------------------------
 try {
   const user =
@@ -1867,6 +1867,15 @@ try {
 
         const clockEmojiDM = getClockEmoji(new Date());
 
+        // ✅ OBTÉM O DISPLAY NAME DO STAFF QUE FECHOU
+        let staffDisplayName = interaction.user.username;
+        try {
+          const guildMember = await interaction.guild.members.fetch(interaction.user.id);
+          staffDisplayName = guildMember.displayName || interaction.user.username;
+        } catch (e) {
+          // fallback
+        }
+
         const embedDM =
           new EmbedBuilder()
             .setTitle('🎫 Ticket Fechado')
@@ -1874,7 +1883,7 @@ try {
               `ℹ️ O seu ticket foi fechado com sucesso! Avalie o nosso atendimento clicando nas estrelas abaixo.` +
               `\n\n🎫 **Ticket:** #${ticket.id}` +
               `\n📝 **Tipo:** ${ticket.label}` +
-              `\n\n⚒️ **Fechado por:** ${interaction.user.username}` +
+              `\n\n⚒️ **Fechado por:** ${staffDisplayName}` +
               `\n${clockEmojiDM} **Fechado em:** ${formatDateShort(new Date())}` +
               `\n\n🎫 Caso seja necessário, não hesite em abrir um novo ticket!`
             )
