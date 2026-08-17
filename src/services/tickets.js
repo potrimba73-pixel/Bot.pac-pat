@@ -14,6 +14,7 @@ import { CONFIG } from "../config/index.js";
 import { db, saveDB } from "../utils/db.js";
 import { safeEditReply } from "../utils/safeReply.js";
 import { sendLog } from "./logs.js";
+import { formatDateSimple, getClockEmoji } from "../utils/dateUtils.js";
 
 // ============================================================
 // PROTEÇÕES
@@ -136,23 +137,6 @@ function generateTicketId() {
   return Date.now().toString();
 }
 
-function discordTimestamp(dateOrMs = Date.now()) {
-  const ms =
-    dateOrMs instanceof Date
-      ? dateOrMs.getTime()
-      : Number(dateOrMs);
-
-  return Math.floor(ms / 1000);
-}
-
-function formatDiscordShortTimestamp(dateOrMs) {
-  return `<t:${discordTimestamp(dateOrMs)}:S>`;
-}
-
-function formatDiscordFullTimestamp(dateOrMs) {
-  return `<t:${discordTimestamp(dateOrMs)}:F>`;
-}
-
 function getTicketPrefix(type) {
   const prefixes = {
     bugs: "bug",
@@ -235,40 +219,40 @@ function buildTicketButtons(ticketId) {
   );
 }
 
+// ============================================================
+// BUILD TICKET EMBED (NOVO FORMATO)
+// ============================================================
+
 function buildTicketEmbed(ticket, user) {
+  const openedAt = ticket.openedAt ? new Date(ticket.openedAt) : new Date();
+  const clockEmoji = getClockEmoji(openedAt);
+
   const claimedText = ticket.claimedBy
-    ? `<@${ticket.claimedBy}> | ${ticket.claimedByName || "Staff"}`
-    : `${CONFIG.EMOJI_TIME || "⏰"} Aguardando staff...`;
+    ? `<@${ticket.claimedBy}>`
+    : `${clockEmoji} Aguardando staff...`;
 
-  const openedAt = ticket.openedAt
-    ? new Date(ticket.openedAt)
-    : new Date();
+  const isRecruitment = ticket.type === "recrutamento";
 
-  const description = [
-    `${CONFIG.EMOJI_TICKET || "🎫"} **Sistema de Ticket | Portugal Alfa Community**`,
-    `${CONFIG.EMOJI_INFO || "ℹ️"} Motivo: ${ticket.label}`,
-    `${CONFIG.EMOJI_STAFF || "👮"} Assumido: ${claimedText}`,
-    "",
-    `${CONFIG.EMOJI_USER || "👤"} Utilizador: <@${user.id}> | ${user.username}`,
-    `${CONFIG.EMOJI_TIME || "⏰"} Abertura: ${formatDiscordShortTimestamp(openedAt)}`,
-    "",
-    `${CONFIG.EMOJI_USER || "👤"} Olá <@${user.id}>, aguarde até ser atendido por alguém da staff.`,
-    "",
-    `${CONFIG.EMOJI_WARNING || "⚠️"} Lembra-te: Qualquer incumprimento das regras levará ao encerramento do ticket sem aviso prévio!`,
-  ];
+  let description = `ℹ️ **Motivo:** ${ticket.label}`;
+  
+  if (isRecruitment && ticket.truckyNome) {
+    description += `\n🚛 **Trucky:** \`${ticket.truckyNome}\``;
+  }
+  
+  description += `\n\n👮 **Responsável:** ${claimedText}`;
+  description += `\n👤 **Utilizador:** <@${user.id}> | \`${user.username}\``;
+  description += `\n\n${clockEmoji} **Abertura:** ${formatDateSimple(openedAt)}`;
+  description += `\n\n👤 Olá <@${user.id}>, aguarde até ser atendido por alguém da staff.`;
+  description += `\n\n⚠️ Lembra-te: qualquer incumprimento das regras levará ao encerramento do ticket sem aviso prévio!`;
 
   if (ticket.especificacoes) {
-    description.splice(
-      description.length - 2,
-      0,
-      `${CONFIG.EMOJI_INFO || "ℹ️"} Especificações: ${ticket.especificacoes}`
-    );
+    description += `\n\nℹ️ **Especificações:** ${ticket.especificacoes}`;
   }
 
   return new EmbedBuilder()
     .setTitle(`<@&${CONFIG.CARGO_ADMINISTRACAO}>`)
-    .setDescription(description.join("\n"))
-    .setColor(ticket.claimedBy ? 0x00ff00 : 0x262af1)
+    .setDescription(description)
+    .setColor(ticket.claimedBy ? 0x00ff00 : 0x2629F1)
     .setTimestamp(openedAt);
 }
 
@@ -465,15 +449,28 @@ export async function createTicket(
           .catch(() => null);
 
         if (existingChannel) {
+          const clockEmoji = getClockEmoji(new Date(existingTicket.openedAt));
+          
+          const rowIrTicket = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setLabel(`${CONFIG.EMOJI_TICKET || "🎫"} Ir para o Ticket`)
+              .setStyle(ButtonStyle.Link)
+              .setURL(
+                `https://discord.com/channels/${guild.id}/${existingTicket.channelId}`
+              )
+          );
+
           await safeEditReply(interaction, {
             content: [
-              "⚠️ **Já tens um ticket aberto!**",
-              "",
+              `⚠️ **Já tens um ticket aberto!**`,
+              ``,
               `🎫 Ticket: <#${existingTicket.channelId}>`,
               `🆔 ID: \`${existingTicket.id}\``,
-              "",
-              "Fecha o ticket atual antes de abrir outro.",
+              `${clockEmoji} **Abertura:** ${formatDateSimple(existingTicket.openedAt)}`,
+              ``,
+              `Fecha o ticket atual antes de abrir outro.`,
             ].join("\n"),
+            components: [rowIrTicket],
             flags: 64,
           });
 
@@ -687,14 +684,14 @@ export async function createTicket(
     });
 
     // --------------------------------------------------------
-    // RESPOSTA AO UTILIZADOR
+    // RESPOSTA AO UTILIZADOR (NOVO FORMATO)
     // --------------------------------------------------------
+
+    const clockEmoji = getClockEmoji(openedAt);
 
     const rowIrTicket = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setLabel(
-          `${CONFIG.EMOJI_TICKET || "🎫"} Ir para o Ticket`
-        )
+        .setLabel(`${CONFIG.EMOJI_TICKET || "🎫"} Ir para o Ticket`)
         .setStyle(ButtonStyle.Link)
         .setURL(
           `https://discord.com/channels/${guild.id}/${channel.id}`
@@ -703,11 +700,11 @@ export async function createTicket(
 
     await safeEditReply(interaction, {
       content: [
-        `${CONFIG.EMOJI_SUCCESS || "✅"} **Ticket criado com sucesso!**`,
-        "",
+        `🎉 **Ticket criado com sucesso!**`,
+        ``,
         `🎫 <#${channel.id}>`,
         `🆔 ID: \`${ticketId}\``,
-        `⏰ Abertura: ${formatDiscordShortTimestamp(openedAt)}`,
+        `${clockEmoji} **Abertura:** ${formatDateSimple(openedAt)}`,
       ].join("\n"),
       components: [rowIrTicket],
       flags: 64,
@@ -1232,25 +1229,24 @@ export async function criarTicketRecrutamento(
 
     await saveDB();
 
+    // ============================================================
+    // EMBED DO TICKET DE RECRUTAMENTO (NOVO FORMATO)
+    // ============================================================
+
+    const clockEmoji = getClockEmoji(openedAt);
+
     const embed = new EmbedBuilder()
-      .setTitle(
-        `<@&${CONFIG.CARGO_ADMINISTRACAO}>`
-      )
+      .setTitle(`<@&${CONFIG.CARGO_ADMINISTRACAO}>`)
       .setDescription(
-        [
-          `${CONFIG.EMOJI_TICKET || "🎫"} **Sistema de Ticket | Portugal Alfa Truckers**`,
-          `${CONFIG.EMOJI_INFO || "ℹ️"} Motivo: ${CONFIG.EMOJI_RECRUTAMENTO || "📝"} Recrutamento PAT`,
-          `${CONFIG.EMOJI_STAFF || "👮"} Assumido: Aguardando staff...`,
-          "",
-          `${CONFIG.EMOJI_USER || "👤"} Olá <@${user.id}>, aguarde até ser atendido por alguém da staff.`,
-          "",
-          `${CONFIG.EMOJI_TRUCK || "🚛"} Trucky: ${truckyDisplay}`,
-          "",
-          `${CONFIG.EMOJI_CHECK || "✅"} Regras aceites: Sim`,
-          `${CONFIG.EMOJI_TIME || "⏰"} Abertura: ${formatDiscordShortTimestamp(openedAt)}`,
-        ].join("\n")
+        `ℹ️ **Motivo:** 📝 Recrutamento PAT` +
+        `\n🚛 **Trucky:** \`${nomeFinal}\`` +
+        `\n\n👮 **Responsável:** ${clockEmoji} Aguardando staff...` +
+        `\n👤 **Utilizador:** <@${user.id}> | \`${user.username}\`` +
+        `\n\n${clockEmoji} **Abertura:** ${formatDateSimple(openedAt)}` +
+        `\n\n👤 Olá <@${user.id}>, aguarde até ser atendido por alguém da staff.` +
+        `\n\n⚠️ Lembra-te: qualquer incumprimento das regras levará ao encerramento do ticket sem aviso prévio!`
       )
-      .setColor(0x262af1)
+      .setColor(0x2629F1)
       .setTimestamp(openedAt);
 
     const row =
@@ -1274,23 +1270,28 @@ export async function criarTicketRecrutamento(
       client
     ).catch(() => {});
 
-    const rowIrTicket =
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setLabel(
-            `${CONFIG.EMOJI_TICKET || "🎫"} Ir para o Ticket`
-          )
-          .setStyle(ButtonStyle.Link)
-          .setURL(
-            `https://discord.com/channels/${guild.id}/${channel.id}`
-          )
-      );
+    // ============================================================
+    // RESPOSTA DO RECRUTAMENTO (NOVO FORMATO)
+    // ============================================================
+
+    const rowIrTicket = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel(`${CONFIG.EMOJI_TICKET || "🎫"} Ir para o Ticket`)
+        .setStyle(ButtonStyle.Link)
+        .setURL(
+          `https://discord.com/channels/${guild.id}/${channel.id}`
+        )
+    );
 
     await safeEditReply(interaction, {
-      content:
-        "✅ O teu ticket de recrutamento foi criado com sucesso!",
+      content: [
+        `🎉 **Ticket de recrutamento criado com sucesso!**`,
+        ``,
+        `🎫 <#${channel.id}>`,
+        `🆔 ID: \`${ticketId}\``,
+        `${clockEmoji} **Abertura:** ${formatDateSimple(openedAt)}`,
+      ].join("\n"),
       components: [rowIrTicket],
-      embeds: [],
       flags: 64,
     });
 
