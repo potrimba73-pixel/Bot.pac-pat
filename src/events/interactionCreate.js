@@ -1326,7 +1326,7 @@ export async function handleInteractionCreate(
         }
       }
 
-      // ======================================================
+            // ======================================================
       // FECHAR
       // ======================================================
 
@@ -1438,7 +1438,7 @@ export async function handleInteractionCreate(
           false
         );
       }
-
+      
       // ======================================================
       // RECRUTADO SIM
       // ======================================================
@@ -1837,14 +1837,33 @@ await channel.send({
   embeds: [embed],
 }).catch(() => {});
 
-      // ------------------------------------------------------
-      // DM DE AVALIAÇÃO (NOVO FORMATO)
-      // ------------------------------------------------------
-      try {
-        const user =
-          await client.users.fetch(
-            ticket.userId
-          );
+// ------------------------------------------------------
+// TRANSCRIPT AUTOMÁTICO
+// ------------------------------------------------------
+try {
+  const { gerarTranscript } = await import("../utils/transcript.js");
+  const transcript = await gerarTranscript(channel, ticket.id);
+  if (transcript) {
+    const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
+    if (logChannel) {
+      await logChannel.send({
+        content: `📋 **Transcript do Ticket #${ticket.id}**`,
+        files: [transcript.attachment]
+      });
+    }
+  }
+} catch (e) {
+  console.error("[Transcript Auto] Erro:", e.message);
+}
+
+// ------------------------------------------------------
+// DM DE AVALIAÇÃO (NOVO FORMATO)
+// ------------------------------------------------------
+try {
+  const user =
+    await client.users.fetch(
+      ticket.userId
+    );
 
         const clockEmojiDM = getClockEmoji(new Date());
 
@@ -2144,9 +2163,7 @@ async function handleFotoTruckyModal(
             "",
             `Parabéns <@${ticket.userId}>! Foste recrutado com sucesso.`,
             "",
-            `📸 Foto do Trucky: **${fotoNome}**`,
-            "",
-            "🚛 Diverte-te e bons quilómetros!",
+            "🚛 Segue as regras em <#1200170228093550712> e diverte-te com bons quilómetros!",
           ].join("\n")
         ).catch(() => {});
       }
