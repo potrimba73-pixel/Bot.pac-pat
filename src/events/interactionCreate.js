@@ -168,13 +168,25 @@ async function persistDB() {
   }
 }
 
-function getTicketForInteraction(
-  ticketId,
-  channelId
-) {
+function getTicketForInteraction(ticketId, channelId) {
+  console.log(
+    `[DEBUG] getTicketForInteraction: ticketId=${ticketId}, channelId=${channelId}`
+  );
+
+  console.log(
+    `[DEBUG] db.tickets keys:`,
+    Object.keys(db.tickets || {})
+  );
+
   if (ticketId) {
-    const ticket =
-      db.tickets?.[String(ticketId)];
+    const ticket = db.tickets?.[String(ticketId)];
+
+    console.log(
+      `[DEBUG] Busca por ID:`,
+      ticket
+        ? `encontrado (closed=${ticket.closed})`
+        : "não encontrado"
+    );
 
     if (ticket && !ticket.closed) {
       return ticket;
@@ -182,12 +194,21 @@ function getTicketForInteraction(
   }
 
   if (channelId) {
-    return (
-      findTicketByChannelId(
-        channelId
-      ) || null
+    const found = findTicketByChannelId(channelId);
+
+    console.log(
+      `[DEBUG] Busca por channelId:`,
+      found
+        ? `encontrado (id=${found.id})`
+        : "não encontrado"
     );
+
+    if (found) {
+      return found;
+    }
   }
+
+  console.log(`[DEBUG] Ticket não encontrado`);
 
   return null;
 }
