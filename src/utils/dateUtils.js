@@ -7,10 +7,8 @@ export function formatTimestamp(date) {
 export function formatDateFull(date) {
   const d = new Date(date);
   const weekday = d.toLocaleDateString('pt-PT', { weekday: 'long' });
-  const dateStr = d.toLocaleString('pt-PT', { 
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', second: '2-digit'
-  });
+  return `${weekday}, <t:${formatTimestamp(d)}:S>`;
+}
   return `${weekday}, <t:${formatTimestamp(d)}:S> (${dateStr})`;
 }
 
