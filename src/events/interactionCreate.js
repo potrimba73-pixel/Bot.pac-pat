@@ -36,6 +36,11 @@ import { sendLog } from "../services/logs.js";
 import { sendPainelChamada } from "../services/calls.js";
 
 // ============================================================
+// IMPORTAR FUNÇÕES DE DATA
+// ============================================================
+import { formatDateFull, formatDateShort } from "../utils/dateUtils.js";
+
+// ============================================================
 // PROTEÇÕES
 // ============================================================
 
@@ -923,8 +928,6 @@ export async function handleInteractionCreate(
             "assumir_".length
           );
 
-        // PRIMEIRO: tentar responder.
-        // Nunca executar DB/channel antes disto.
         if (
           !(await safeDefer(
             interaction
@@ -1199,10 +1202,7 @@ export async function handleInteractionCreate(
                 staffText,
               ].join("\n")
             )
-            .setColor(
-              CONFIG.COR_PRINCIPAL ||
-                0x262af1
-            );
+            .setColor(0x2629F1);
 
         return safeEdit(
           interaction,
@@ -1703,7 +1703,7 @@ export async function handleInteractionCreate(
 }
 
 // ============================================================
-// FECHAR TICKET
+// FECHAR TICKET (com novo formato)
 // ============================================================
 
 async function fecharTicket(
@@ -1791,41 +1791,49 @@ async function fecharTicket(
         .catch(() => null);
 
     if (channel) {
-      const closedAt =
-        new Date();
+      // ------------------------------------------------------
+      // EMBED DE FECHO NO CANAL (NOVO FORMATO)
+      // ------------------------------------------------------
+      const isRecruitment = ticket.type === 'recrutamento';
+      const recrutadoText = ticket.recrutado === true ? '✅ Sim' : ticket.recrutado === false ? '❌ Não' : 'N/A';
+
+      let desc = `👤 **Aberto por:** <@${ticket.userId}> | \`${ticket.username}\``;
+      if (isRecruitment && ticket.truckyNome) {
+        desc += `\n🚛 **Trucky:** \`${ticket.truckyNome}\``;
+      }
+      desc += `\n📝 **Tipo:** ${ticket.label}`;
+      desc += `\n\n⚒️ **Assumido por:** ${ticket.claimedBy ? `<@${ticket.claimedBy}>` : 'Não assumido'}`;
+      desc += `\n⚒️ **Fechado por:** ${interaction.user ? `<@${interaction.user.id}>` : 'Sistema'}`;
+      desc += `\n\n↕ **Informações Adicionais:**`;
+      desc += `\n🕑 **Horários:**`;
+      desc += `\n• **Abertura:** ${formatDateFull(ticket.openedAt)}`;
+      desc += `\n• **Fechamento:** ${formatDateFull(new Date())}`;
+
+      if (isRecruitment) {
+        desc += `\n🚛 **Nome no Trucky:**`;
+        desc += `\n• \`${ticket.truckyNome || 'Não informado'}\``;
+        desc += `\n💼 **Recrutado:**`;
+        desc += `\n• ${recrutadoText}`;
+        if (ticket.fotoNome) {
+          desc += `\n📷 **Nome para Foto:**`;
+          desc += `\n• \`${ticket.fotoNome}\``;
+        }
+      }
 
       const embed =
         new EmbedBuilder()
-          .setTitle(
-            "🗑️ Ticket Fechado"
-          )
-          .setDescription(
-            [
-              "ℹ️ O teu ticket foi fechado com sucesso.",
-              "",
-              `👮 Fechado por: ${interaction.user.username}`,
-              `⏰ Fechado em: <t:${Math.floor(
-                closedAt.getTime() /
-                  1000
-              )}:F>`,
-            ].join("\n")
-          )
-          .setColor(
-            CONFIG.COR_ERRO ||
-              0xff0000
-          )
-          .setTimestamp(
-            closedAt
-          );
+          .setTitle(`🗑️ Ticket Fechado - #${ticket.id}`)
+          .setDescription(desc)
+          .setColor(0x2629F1)
+          .setTimestamp();
 
       await channel.send({
         embeds: [embed],
       }).catch(() => {});
 
       // ------------------------------------------------------
-      // DM AVALIAÇÃO
+      // DM DE AVALIAÇÃO (NOVO FORMATO)
       // ------------------------------------------------------
-
       try {
         const user =
           await client.users.fetch(
@@ -1834,30 +1842,17 @@ async function fecharTicket(
 
         const embedDM =
           new EmbedBuilder()
-            .setTitle(
-              "⭐ Ticket Fechado"
-            )
+            .setTitle('🎫 Ticket Fechado')
             .setDescription(
-              [
-                "ℹ️ O teu ticket foi fechado com sucesso.",
-                "",
-                `🎫 Ticket: #${ticket.id}`,
-                `📝 Tipo: ${ticket.label}`,
-                "",
-                `👮 Fechado por: ${interaction.user.username}`,
-                `⏰ Fechado em: <t:${Math.floor(
-                  new Date(
-                    ticket.closedAt
-                  ).getTime() /
-                    1000
-                )}:F>`,
-                "",
-                "⭐ Avalia o atendimento nas estrelas abaixo.",
-              ].join("\n")
+              `ℹ️ O seu ticket foi fechado com sucesso! Avalie o nosso atendimento clicando nas estrelas abaixo.` +
+              `\n\n🎫 **Ticket:** #${ticket.id}` +
+              `\n📝 **Tipo:** ${ticket.label}` +
+              `\n\n⚒️ **Fechado por:** ${interaction.user.username}` +
+              `\n🕑 **Fechado em:** ${formatDateShort(new Date())}` +
+              `\n\n🎫 Caso seja necessário, não hesite em abrir um novo ticket!`
             )
-            .setColor(
-              0xff0000
-            );
+            .setColor(0xFF0000)
+            .setTimestamp();
 
         const row =
           new ActionRowBuilder().addComponents(
@@ -1931,7 +1926,6 @@ async function fecharTicket(
       // ------------------------------------------------------
       // APAGAR CANAL
       // ------------------------------------------------------
-
       setTimeout(async () => {
         await channel
           .delete()
@@ -2282,10 +2276,7 @@ async function enviarPainelMembro(
           text,
         ].join("\n")
       )
-      .setColor(
-        CONFIG.COR_PRINCIPAL ||
-          0x262af1
-      );
+      .setColor(0x2629F1);
 
   return safeEdit(
     interaction,
