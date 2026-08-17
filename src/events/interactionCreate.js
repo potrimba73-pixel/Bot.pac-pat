@@ -775,11 +775,12 @@ export async function handleInteractionCreate(
         }
 
         try {
-          const cargos = [
-            CONFIG.CARGO_MEMBRO,
-            CONFIG.CARGO_REGRAS_EXTRA_1,
-            CONFIG.CARGO_REGRAS_EXTRA_2,
-          ].filter(Boolean);
+const cargos = [
+  CONFIG.CARGO_MEMBRO,
+  CONFIG.CARGO_REGRAS_EXTRA_1,
+  CONFIG.CARGO_REGRAS_EXTRA_2,
+  "1534970663344017479",   // ← cargo adicional
+].filter(Boolean);
 
           for (const roleId of cargos) {
             const role =
