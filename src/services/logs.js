@@ -1,7 +1,7 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import { CONFIG } from "../config/index.js";
 import { db } from "../utils/db.js";
-import { formatDateFull, getClockEmoji } from "../utils/dateUtils.js";
+import { formatDateFull, formatDateSimple, getClockEmoji, formatDuration, getDurationEmoji } from "../utils/dateUtils.js";
 
 export async function sendLog(ticketId, type, client) {
   const ticket = db.tickets[ticketId];
