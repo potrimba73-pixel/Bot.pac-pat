@@ -2165,20 +2165,34 @@ async function handleFotoTruckyModal(
           )
           .catch(() => null);
 
-      if (canalGeral) {
-        await canalGeral.send(
-          [
-            "🎉 **Bem-vindo a Portugal Alfa Truckers!**",
-            "",
-            `Parabéns <@${ticket.userId}>! Foste recrutado com sucesso.`,
-            "",
-            "🚛 Segue as regras em <#1200170228093550712> e diverte-te com bons quilómetros!",
-          ].join("\n")
-        ).catch(() => {});
-      }
-    }
+// --------------------------------------------------------
+// MENSAGEM GERAL
+// --------------------------------------------------------
 
-    await sendLog(
+if (CONFIG.CANAL_GERAL) {
+  const canalGeral =
+    await client.channels
+      .fetch(
+        CONFIG.CANAL_GERAL
+      )
+      .catch(() => null);
+
+  if (canalGeral) {
+    await canalGeral.send(
+      [
+        "🎉 **Boas-Vindas à Portugal Alfa Truckers!**",
+        "",
+        `Parabéns <@${ticket.userId}>! Foste recrutado com sucesso.`,
+        "🚛 Segue as <#1200170228093550712> e diverte-te!",
+        "A tua foto de perfil para o Trucky ficará disponível em <#1204160547092697088>.",
+        "Caso precises de ajuda, abre um ticket ou coloca a tua dúvida num chat aberto.",
+        "Bons quilómetros!"
+      ].join("\n")
+    ).catch(() => {});
+  }
+}
+      
+      await sendLog(
       ticket.id,
       "close",
       client
