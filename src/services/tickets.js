@@ -370,20 +370,16 @@ export async function createTicket(
   const user = interaction.user;
 
   // ----------------------------------------------------------
-  // PRIMEIRA PROTEÇÃO:
-  // A MESMA interaction Discord não pode ser processada 2x.
+  // PRIMEIRA PROTEÇÃO: INTERACTION DUPLICADA
   // ----------------------------------------------------------
 
   if (hasProcessedInteraction(interaction)) {
-    console.warn(
-      `[Tickets] Interaction duplicada ignorada: ${interaction.id}`
-    );
-
+    console.warn(`[Tickets] Interaction duplicada ignorada: ${interaction.id}`);
     return null;
   }
 
   // ----------------------------------------------------------
-  // RESPONDER IMEDIATAMENTE
+  // RESPONDER IMEDIATAMENTE (ANTES DE QUALQUER OPERAÇÃO)
   // ----------------------------------------------------------
 
   try {
@@ -391,26 +387,19 @@ export async function createTicket(
       await interaction.deferReply({ flags: 64 });
     }
   } catch (error) {
-    console.error(
-      "[Tickets] Não foi possível responder à interaction:",
-      error
-    );
-
+    console.error("[Tickets] Não foi possível deferir:", error);
     return null;
   }
 
   // ----------------------------------------------------------
-  // SEGUNDA PROTEÇÃO:
-  // LOCK ANTES DE QUALQUER AWAIT.
+  // SEGUNDA PROTEÇÃO: LOCK
   // ----------------------------------------------------------
 
   if (isTicketCreating(user.id)) {
     await safeEditReply(interaction, {
-      content:
-        "⏳ Já estou a processar o teu pedido. Aguarda alguns segundos.",
+      content: "⏳ Já estou a processar o teu pedido. Aguarda alguns segundos.",
       flags: 64,
     });
-
     return null;
   }
 
