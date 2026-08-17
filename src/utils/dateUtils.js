@@ -7,23 +7,36 @@ export function formatTimestamp(date) {
 
 export function formatDateFull(date) {
   const d = new Date(date);
-  const weekday = d.toLocaleDateString('pt-PT', { weekday: 'long' });
+  const weekday = d.toLocaleDateString('pt-PT', { 
+    weekday: 'long',
+    timeZone: 'Europe/Lisbon'
+  });
   return `${weekday}, <t:${formatTimestamp(d)}:S>`;
 }
 
 export function formatDateShort(date) {
   const d = new Date(date);
   return d.toLocaleString('pt-PT', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', second: '2-digit'
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZone: 'Europe/Lisbon'
   });
 }
 
 export function formatDateSimple(date) {
   const d = new Date(date);
   return d.toLocaleString('pt-PT', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', second: '2-digit'
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZone: 'Europe/Lisbon'
   });
 }
 
