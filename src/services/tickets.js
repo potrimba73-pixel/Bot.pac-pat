@@ -360,7 +360,6 @@ export async function updateTicketEmbed(channel, ticketId) {
 // ============================================================
 // CREATE NORMAL TICKET
 // ============================================================
-
 export async function createTicket(
   interaction,
   type,
