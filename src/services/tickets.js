@@ -184,7 +184,7 @@ function buildTicketButtons(ticketId) {
 }
 
 // ============================================================
-// BUILD TICKET EMBED
+// BUILD TICKET EMBED (com link Trucky e "Regras aceites")
 // ============================================================
 
 function buildTicketEmbed(ticket, user) {
@@ -196,14 +196,26 @@ function buildTicketEmbed(ticket, user) {
   const isRecruitment = ticket.type === "recrutamento";
 
   let description = `ℹ️ **Motivo:** ${ticket.label}`;
-  if (isRecruitment && ticket.truckyNome) {
-    description += `\n🚛 **Trucky:** \`${ticket.truckyNome}\``;
+  
+  if (isRecruitment) {
+    // Trucky como link (se disponível)
+    if (ticket.truckyNome) {
+      if (ticket.truckyLink && /^https?:\/\//i.test(ticket.truckyLink)) {
+        description += `\n🚛 **Trucky:** [${ticket.truckyNome}](${ticket.truckyLink})`;
+      } else {
+        description += `\n🚛 **Trucky:** \`${ticket.truckyNome}\``;
+      }
+    }
+    // Regras aceites (sempre presente, mesmo antes de assumir)
+    description += `\n📋 **Regras aceites:** ${ticket.regrasAceites ? 'Sim' : 'Não'}`;
   }
+  
   description += `\n\n👮 **Responsável:** ${claimedText}`;
   description += `\n👤 **Utilizador:** <@${user.id}> | \`${user.username}\``;
   description += `\n\n${clockEmoji} **Abertura:** ${formatDateSimple(openedAt)}`;
   description += `\n\n👤 Olá <@${user.id}>, aguarde até ser atendido por alguém da staff.`;
   description += `\n\n⚠️ Lembra-te: qualquer incumprimento das regras levará ao encerramento do ticket sem aviso prévio!`;
+  
   if (ticket.especificacoes) {
     description += `\n\nℹ️ **Especificações:** ${ticket.especificacoes}`;
   }
@@ -285,7 +297,7 @@ export async function updateTicketEmbed(channel, ticketId) {
 }
 
 // ============================================================
-// CREATE TICKET (CORRIGIDO)
+// CREATE TICKET (para tickets normais)
 // ============================================================
 export async function createTicket(interaction, type, label, client) {
   const user = interaction.user;
@@ -295,7 +307,6 @@ export async function createTicket(interaction, type, label, client) {
     return null;
   }
 
-  // ===== LOCK =====
   if (isTicketCreating(user.id)) {
     await interaction.reply({
       content: "⏳ Já estou a processar o teu pedido. Aguarda alguns segundos.",
@@ -317,23 +328,19 @@ export async function createTicket(interaction, type, label, client) {
       return null;
     }
 
-    // ===== VERIFICAR SE É RECRUTAMENTO ANTES DE DEFERIR =====
     if (type === "recrutamento") {
       return await iniciarFluxoRecrutamento(interaction, client, guild);
     }
 
-    // ===== PARA OS OUTROS TIPOS: DEFERIR =====
     try {
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferReply({ flags: 64 });
-        console.log(`[Tickets] DeferReply OK para ${interaction.id}`);
       }
     } catch (error) {
       console.error("[Tickets] Erro ao deferir:", error);
       return null;
     }
 
-    // ===== VERIFICAR TICKETS ATIVOS =====
     const activeTickets = getActiveTicketsByUser(user.id);
     if (activeTickets.length > 0) {
       for (const existingTicket of activeTickets) {
@@ -363,7 +370,6 @@ export async function createTicket(interaction, type, label, client) {
           });
           return existingTicket;
         }
-        // Canal já não existe
         existingTicket.closed = true;
         existingTicket.closedAt = new Date().toISOString();
         existingTicket.closedBy = "system";
@@ -372,7 +378,6 @@ export async function createTicket(interaction, type, label, client) {
       await saveDB();
     }
 
-    // ===== CATEGORIA =====
     let categoriaId = CONFIG.CATEGORIA_TICKETS_GERAL;
     if (type === "ajuda") {
       categoriaId =
@@ -380,14 +385,11 @@ export async function createTicket(interaction, type, label, client) {
         CONFIG.CATEGORIA_TICKETS_GERAL;
     }
     const categoria = await getCategory(guild, categoriaId);
-
-    // ===== STAFF ROLE =====
     const staffRoleId = await getStaffRoleId(guild);
     if (!staffRoleId) {
       console.warn("[Tickets] CONFIG.CARGO_STAFF não configurado.");
     }
 
-    // ===== CRIAR CANAL =====
     const channelData = {
       name: makeChannelName(type, user),
       type: ChannelType.GuildText,
@@ -436,11 +438,9 @@ export async function createTicket(interaction, type, label, client) {
       return null;
     }
 
-    // ===== ID =====
     const ticketId = generateTicketId();
     const openedAt = new Date();
 
-    // ===== TICKET DB =====
     const ticket = {
       id: ticketId,
       channelId: channel.id,
@@ -470,7 +470,6 @@ export async function createTicket(interaction, type, label, client) {
     db.tickets[ticketId] = ticket;
     await saveDB();
 
-    // ===== EMBED =====
     const embed = buildTicketEmbed(ticket, user);
     const row = buildTicketButtons(ticketId);
 
@@ -482,12 +481,10 @@ export async function createTicket(interaction, type, label, client) {
     ticket.panelMessageId = panelMessage.id;
     await saveDB();
 
-    // ===== LOG =====
     await sendLog(ticketId, "open", client).catch((error) => {
       console.error("[Tickets] Erro no log de abertura:", error);
     });
 
-    // ===== RESPOSTA =====
     const clockEmoji = getClockEmoji(openedAt);
     const rowIrTicket = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -523,7 +520,7 @@ export async function createTicket(interaction, type, label, client) {
 }
 
 // ============================================================
-// RECRUTAMENTO
+// RECRUTAMENTO - Modal
 // ============================================================
 
 async function iniciarFluxoRecrutamento(interaction, client, guild) {
@@ -725,7 +722,7 @@ async function mostrarRegrasRecrutamento(interaction, client, nomeTrucky, linkTr
 }
 
 // ============================================================
-// CRIAR TICKET DE RECRUTAMENTO
+// CRIAR TICKET DE RECRUTAMENTO (com link Trucky e Regras aceites)
 // ============================================================
 
 export async function criarTicketRecrutamento(interaction, client, nomeTrucky = null) {
@@ -837,9 +834,12 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky = 
     const ticketId = generateTicketId();
     const openedAt = new Date();
 
-    let truckyDisplay = nomeFinal;
+    // ===== CONSTRUIR O TRUCKY COMO LINK (se disponível) =====
+    let truckyLine = '';
     if (linkTrucky && /^https?:\/\//i.test(linkTrucky)) {
-      truckyDisplay = `[${nomeFinal}](${linkTrucky})`;
+      truckyLine = `\n🚛 **Trucky:** [${nomeFinal}](${linkTrucky})`;
+    } else {
+      truckyLine = `\n🚛 **Trucky:** \`${nomeFinal}\``;
     }
 
     const ticket = {
@@ -873,11 +873,14 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky = 
     await saveDB();
 
     const clockEmoji = getClockEmoji(openedAt);
+
+    // ===== EMBED INICIAL COM "Regras aceites: Sim" e Trucky em link =====
     const embed = new EmbedBuilder()
       .setTitle(`<@&${CONFIG.CARGO_ADMINISTRACAO}>`)
       .setDescription(
         `ℹ️ **Motivo:** 📝 Recrutamento PAT` +
-        `\n🚛 **Trucky:** \`${nomeFinal}\`` +
+        truckyLine +
+        `\n📋 **Regras aceites:** Sim` +
         `\n\n👮 **Responsável:** ${clockEmoji} Aguardando staff...` +
         `\n👤 **Utilizador:** <@${user.id}> | \`${user.username}\`` +
         `\n\n${clockEmoji} **Abertura:** ${formatDateSimple(openedAt)}` +
