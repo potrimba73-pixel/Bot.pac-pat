@@ -370,7 +370,7 @@ export async function createTicket(
   const user = interaction.user;
 
   // ----------------------------------------------------------
-  // PRIMEIRA PROTEÇÃO: INTERACTION DUPLICADA
+  // INTERACTION DUPLICADA
   // ----------------------------------------------------------
 
   if (hasProcessedInteraction(interaction)) {
@@ -379,26 +379,26 @@ export async function createTicket(
   }
 
   // ----------------------------------------------------------
-  // RESPONDER IMEDIATAMENTE (ANTES DE QUALQUER OPERAÇÃO)
+  // DEFER REPLY IMEDIATAMENTE (ANTES DE QUALQUER AWAIT)
   // ----------------------------------------------------------
 
   try {
     if (!interaction.deferred && !interaction.replied) {
       await interaction.deferReply({ flags: 64 });
+      console.log(`[Tickets] DeferReply OK para ${interaction.id}`);
     }
   } catch (error) {
-    console.error("[Tickets] Não foi possível deferir:", error);
+    console.error("[Tickets] Erro ao deferir:", error);
     return null;
   }
 
   // ----------------------------------------------------------
-  // SEGUNDA PROTEÇÃO: LOCK
+  // LOCK
   // ----------------------------------------------------------
 
   if (isTicketCreating(user.id)) {
-    await safeEditReply(interaction, {
+    await interaction.editReply({
       content: "⏳ Já estou a processar o teu pedido. Aguarda alguns segundos.",
-      flags: 64,
     });
     return null;
   }
