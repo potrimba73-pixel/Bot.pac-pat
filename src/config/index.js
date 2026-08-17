@@ -225,6 +225,9 @@ export const CONFIG = {
   HISTORY_LIMIT: 200,
   COOLDOWN: 10,
   SERPER_API_KEY: process.env.SERPER_API_KEY,
+
+  // === VERSÃO DOS PAINÉIS (para controlo de atualizações) ===
+  PANEL_VERSION: "2.4.0",
 };
 
 export const ASSISTANT_CONFIG = {
