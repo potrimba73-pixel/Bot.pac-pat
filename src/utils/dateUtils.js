@@ -9,8 +9,6 @@ export function formatDateFull(date) {
   const weekday = d.toLocaleDateString('pt-PT', { weekday: 'long' });
   return `${weekday}, <t:${formatTimestamp(d)}:S>`;
 }
-  return `${weekday}, <t:${formatTimestamp(d)}:S> (${dateStr})`;
-}
 
 export function formatDateShort(date) {
   const d = new Date(date);
