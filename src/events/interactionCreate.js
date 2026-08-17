@@ -1813,47 +1813,29 @@ async function fecharTicket(
         .catch(() => null);
 
     if (channel) {
-      // ------------------------------------------------------
-      // EMBED DE FECHO NO CANAL (NOVO FORMATO)
-      // ------------------------------------------------------
-      const isRecruitment = ticket.type === 'recrutamento';
-      const recrutadoText = ticket.recrutado === true ? '✅ Sim' : ticket.recrutado === false ? '❌ Não' : 'N/A';
-      const clockEmojiAbertura = getClockEmoji(new Date(ticket.openedAt));
-      const clockEmojiFecho = getClockEmoji(new Date());
+// ------------------------------------------------------
+// EMBED DE FECHO NO CANAL (NOVO FORMATO)
+// ------------------------------------------------------
+const isRecruitment = ticket.type === 'recrutamento';
+const duracao = formatDuration(ticket.openedAt, new Date());
+const duracaoEmoji = getDurationEmoji(ticket.openedAt, new Date());
 
-      let desc = `👤 **Aberto por:** <@${ticket.userId}> | \`${ticket.username}\``;
-      if (isRecruitment && ticket.truckyNome) {
-        desc += `\n🚛 **Trucky:** \`${ticket.truckyNome}\``;
-      }
-      desc += `\n📝 **Tipo:** ${ticket.label}`;
-      desc += `\n\n⚒️ **Assumido por:** ${ticket.claimedBy ? `<@${ticket.claimedBy}>` : 'Não assumido'}`;
-      desc += `\n⚒️ **Fechado por:** ${interaction.user ? `<@${interaction.user.id}>` : 'Sistema'}`;
-      desc += `\n\n↕ **Informações Adicionais:**`;
-      desc += `\n${clockEmojiAbertura} **Horários:**`;
-      desc += `\n• **Abertura:** ${formatDateFull(ticket.openedAt)}`;
-      desc += `\n• **Fechamento:** ${formatDateFull(new Date())}`;
+let desc = `🔴 **Ticket Fechado**\n\n`;
+desc += `Este ticket foi encerrado por <@${interaction.user.id}>.\n\n`;
+desc += `📁 **Informações:**\n`;
+desc += `• **Aberto por:** <@${ticket.userId}>\n`;
+desc += `• **Motivo:** ${ticket.label}\n`;
+desc += `\n${duracaoEmoji} **Duração:** ${duracao}`;
+desc += `\n\n⏳ Este canal será eliminado automaticamente em **5 segundos**...`;
 
-      if (isRecruitment) {
-        desc += `\n🚛 **Nome no Trucky:**`;
-        desc += `\n• \`${ticket.truckyNome || 'Não informado'}\``;
-        desc += `\n💼 **Recrutado:**`;
-        desc += `\n• ${recrutadoText}`;
-        if (ticket.fotoNome) {
-          desc += `\n📷 **Nome para Foto:**`;
-          desc += `\n• \`${ticket.fotoNome}\``;
-        }
-      }
+const embed = new EmbedBuilder()
+  .setDescription(desc)
+  .setColor(0xFF0000)
+  .setTimestamp();
 
-      const embed =
-        new EmbedBuilder()
-          .setTitle(`🗑️ Ticket Fechado - #${ticket.id}`)
-          .setDescription(desc)
-          .setColor(0x2629F1)
-          .setTimestamp();
-
-      await channel.send({
-        embeds: [embed],
-      }).catch(() => {});
+await channel.send({
+  embeds: [embed],
+}).catch(() => {});
 
       // ------------------------------------------------------
       // DM DE AVALIAÇÃO (NOVO FORMATO)
