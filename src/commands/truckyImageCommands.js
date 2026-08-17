@@ -9,7 +9,7 @@ export const truckyImageSlashCommands = [
         .setDescription("Gera foto de membro PAT com template (como nas fotos do canal)")
         .addStringOption(option =>
             option.setName("nome")
-                .setDescription("Nome do motorista (ex: BALEIA07, Mar)")
+                .setDescription("Nome do motorista (ex: Diego, Miguel)")
                 .setRequired(true))
         .addStringOption(option =>
             option.setName("cor")
@@ -36,7 +36,6 @@ export const truckyImageSlashCommands = [
     new SlashCommandBuilder()
         .setName("gerar-patente")
         .setDescription("Gera imagem de patente com progresso de KM (Staff Only)")
-        // ✅ CORREÇÃO: TORNAR STAFF ONLY
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
         .addStringOption(option =>
             option.setName("nome")
@@ -55,7 +54,6 @@ export const truckyImageSlashCommands = [
                 .setDescription("KM para proxima patente (0 = maxima)")
                 .setRequired(false))
         .toJSON(),
-];
 
     new SlashCommandBuilder()
         .setName("verificar-templates")
