@@ -38,7 +38,7 @@ import { sendPainelChamada } from "../services/calls.js";
 // ============================================================
 // IMPORTAR FUNÇÕES DE DATA
 // ============================================================
-import { formatDateFull, formatDateShort, formatDateSimple, getClockEmoji, formatDuration } from "../utils/dateUtils.js";
+import { formatDateFull, formatDateShort, formatDateSimple, getClockEmoji, formatDuration, getDurationEmoji } from "../utils/dateUtils.js";
 
 // ============================================================
 // PROTEÇÕES
