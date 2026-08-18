@@ -19,10 +19,10 @@ const PRESET_IDS = {
 };
 const DEFAULT_TARGET_ID = '412347553141751808';
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID || '';
-const TIMEZONE = 'Europe/Lisbon'; // ou 'UTC'
+const TIMEZONE = 'Europe/Lisbon';
 
 // ============================================================
-// UTIL: ESCAPAR HTML
+// UTIL: ESCAPAR HTML E SANITIZAR
 // ============================================================
 function escapeHtml(text) {
   if (!text) return '';
@@ -34,8 +34,12 @@ function escapeHtml(text) {
     .replace(/'/g, '&#039;');
 }
 
+function sanitizeFileName(name) {
+  return name.replace(/[^a-zA-Z0-9\-_]/g, '_');
+}
+
 // ============================================================
-// FORMATAR DATA COM TIMEZONE FIXO
+// FORMATADOR DE DATA (fixo)
 // ============================================================
 const dateFormatter = new Intl.DateTimeFormat('pt-PT', {
   day: '2-digit',
@@ -55,89 +59,104 @@ const dateFormatterShort = new Intl.DateTimeFormat('pt-PT', {
 });
 
 // ============================================================
-// SANITIZAR NOME DO CANAL PARA FICHEIROS
-// ============================================================
-function sanitizeFileName(name) {
-  return name.replace(/[^a-zA-Z0-9\-_]/g, '_');
-}
-
-// ============================================================
-// FORMATAR EMBED DE MÚSICA (SPOTIFY)
-// ============================================================
-function formatMusicEmbed(embed) {
-  // Se for um embed do Spotify, tentar extrair título e artista
-  if (embed.url?.includes('spotify.com')) {
-    let title = embed.title || '';
-    let artist = '';
-    // A descrição costuma ser "by Artista" ou "Artista • Música"
-    if (embed.description) {
-      const match = embed.description.match(/by\s+(.+)/i);
-      if (match) artist = match[1].trim();
-      else {
-        // Tenta separar por " • " ou " - "
-        const parts = embed.description.split(/[•\-]/).map(s => s.trim());
-        if (parts.length >= 2) {
-          artist = parts[1];
-        } else {
-          artist = embed.description;
-        }
-      }
-    }
-    // Se não conseguir extrair da descrição, usa o author
-    if (!artist && embed.author?.name) {
-      artist = embed.author.name;
-    }
-    let result = `🎵 ${title}`;
-    if (artist) result += ` por ${artist}`;
-    if (embed.url) result += ` (${embed.url})`;
-    return result;
-  }
-  // Fallback: usar o texto normal do embed
-  let text = '';
-  if (embed.title) text += embed.title;
-  if (embed.description) text += (text ? ' ' : '') + embed.description;
-  if (embed.url) text += (text ? ' ' : '') + embed.url;
-  return text || '(embed)';
-}
-
-// ============================================================
-// EXTRAIR TEXTO DA MENSAGEM (com formatação especial para música)
+// EXTRAIR TEXTO DA MENSAGEM (com formatação especial)
 // ============================================================
 function getMessageText(msg) {
   let text = msg.content || '';
 
-  // Embeds
+  // --- Embeds ---
   if (msg.embeds?.length) {
     for (const embed of msg.embeds) {
-      // Se for embed de música (Spotify), usar formatação especial
-      if (embed.url?.includes('spotify.com') || embed.provider?.name === 'Spotify') {
-        text += (text ? '\n' : '') + formatMusicEmbed(embed);
-      } else {
-        // Fallback para outros embeds
-        if (embed.title) text += (text ? '\n' : '') + embed.title;
-        if (embed.description) text += (text ? '\n' : '') + embed.description;
-        if (embed.fields) {
-          for (const field of embed.fields) {
-            text += (text ? '\n' : '') + `${field.name}: ${field.value}`;
+      // 1) Playlist (Added Playlist) – detectamos por campos específicos
+      if (
+        embed.title?.toLowerCase().includes('playlist') ||
+        embed.fields?.some(f => f.name?.toLowerCase().includes('playlist'))
+      ) {
+        const title = embed.title || 'Playlist';
+        let playlistName = '';
+        let tracks = '';
+        let length = '';
+
+        for (const field of embed.fields || []) {
+          const fname = field.name.toLowerCase();
+          if (fname.includes('playlist')) playlistName = field.value;
+          else if (fname.includes('tracks')) tracks = field.value;
+          else if (fname.includes('length') || fname.includes('duração')) length = field.value;
+        }
+
+        // Se não encontrou nos fields, tenta description
+        if (!playlistName && embed.description) {
+          const lines = embed.description.split('\n');
+          for (const line of lines) {
+            if (line.includes('Playlist') && !line.includes('Length')) {
+              playlistName = line.replace('Playlist', '').trim();
+            }
+            if (line.includes('Tracks')) tracks = line.replace(/.*Tracks\s*/, '').trim();
+            if (line.includes('Length')) length = line.replace(/.*Length\s*/, '').trim();
           }
         }
-        if (embed.url && !embed.url.includes('spotify.com')) {
-          text += (text ? '\n' : '') + embed.url;
+
+        let result = '📋 **Added Playlist**';
+        if (playlistName) result += `\n**Playlist:** ${playlistName}`;
+        if (tracks) result += `\n**Tracks:** ${tracks}`;
+        if (length) result += `\n**Length:** ${length}`;
+        if (embed.url) result += `\n🔗 ${embed.url}`;
+        text += (text ? '\n' : '') + result;
+        continue;
+      }
+
+      // 2) Música (Started playing) – via Spotify ou provider
+      if (
+        embed.url?.includes('spotify.com') ||
+        embed.provider?.name === 'Spotify' ||
+        embed.description?.toLowerCase().includes('started playing')
+      ) {
+        let title = embed.title || '';
+        let artist = '';
+        // Extrair artista da description: "by Artista" ou "Artista • Música"
+        if (embed.description) {
+          const match = embed.description.match(/by\s+(.+)/i);
+          if (match) artist = match[1].trim();
+          else {
+            const parts = embed.description.split(/[•\-]/).map(s => s.trim());
+            if (parts.length >= 2) artist = parts[1];
+            else artist = embed.description;
+          }
         }
-        if (embed.author?.name) text += (text ? '\n' : '') + `Por ${embed.author.name}`;
-        if (embed.footer?.text) text += (text ? '\n' : '') + embed.footer.text;
+        if (!artist && embed.author?.name) artist = embed.author.name;
+        let result = `🎵 **${title}**`;
+        if (artist) result += ` por ${artist}`;
+        if (embed.url) result += `\n🔗 ${embed.url}`;
+        text += (text ? '\n' : '') + result;
+        continue;
+      }
+
+      // 3) Outros embeds (genérico)
+      let parts = [];
+      if (embed.title) parts.push(`**${embed.title}**`);
+      if (embed.description) parts.push(embed.description);
+      if (embed.fields) {
+        for (const field of embed.fields) {
+          parts.push(`**${field.name}:** ${field.value}`);
+        }
+      }
+      if (embed.url) parts.push(`🔗 ${embed.url}`);
+      if (embed.author?.name) parts.push(`Por ${embed.author.name}`);
+      if (embed.footer?.text) parts.push(embed.footer.text);
+      if (parts.length) {
+        text += (text ? '\n' : '') + parts.join('\n');
       }
     }
   }
 
-  // Anexos
+  // --- Anexos ---
   if (msg.attachments?.size) {
     for (const [, att] of msg.attachments) {
       text += (text ? '\n' : '') + `📎 ${att.name} (${att.url})`;
     }
   }
 
-  // Stickers
+  // --- Stickers ---
   if (msg.stickers?.size) {
     for (const sticker of msg.stickers.values()) {
       text += (text ? '\n' : '') + `🖼️ Sticker: ${sticker.name}`;
@@ -148,7 +167,7 @@ function getMessageText(msg) {
 }
 
 // ============================================================
-// GERAR HTML (com ordem cronológica)
+// GERAR HTML (com estrutura visual como na imagem)
 // ============================================================
 function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targetName) {
   const guild = channel.guild;
@@ -156,42 +175,22 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
   const channelName = channel.name;
   const guildIcon = guild?.iconURL({ dynamic: true, size: 64 }) || '';
 
-  // Ordenar por data (mais antiga primeiro) para o transcript
+  // Ordenar por data (mais antiga primeiro)
   const sorted = [...messages].sort((a, b) => a.createdAt - b.createdAt);
 
   const msgsHtml = sorted.map((msg, index) => {
     const avatar = msg.author.displayAvatarURL({ extension: 'png', size: 64 });
     const data = dateFormatter.format(msg.createdAt);
-    const texto = escapeHtml(getMessageText(msg)).replace(/\n/g, '<br>');
+    const rawText = getMessageText(msg);
+    // Converter quebras de linha para <br> e escapar HTML
+    const texto = escapeHtml(rawText).replace(/\n/g, '<br>');
 
     const hue = (parseInt(msg.author.id.slice(0, 6), 16) % 360);
     const authorColor = msg.author.bot ? '#5865F2' : `hsl(${hue}, 70%, 55%)`;
     const botBadge = msg.author.bot ? '<span class="bot-badge">BOT</span>' : '';
 
-    let embedsHtml = '';
-    if (msg.embeds?.length) {
-      for (const embed of msg.embeds) {
-        // Pular embeds de música pois já foram processados no texto
-        if (embed.url?.includes('spotify.com') || embed.provider?.name === 'Spotify') {
-          continue;
-        }
-        const embedColor = embed.color ? `#${embed.color.toString(16).padStart(6, '0')}` : '#5865F2';
-        embedsHtml += `
-        <div class="embed" style="border-left-color: ${embedColor};">
-          ${embed.title ? `<div class="embed-title">${escapeHtml(embed.title)}</div>` : ''}
-          ${embed.description ? `<div class="embed-desc">${escapeHtml(embed.description)}</div>` : ''}
-          ${embed.fields ? embed.fields.map(f => `
-            <div class="embed-field">
-              <div class="embed-field-name">${escapeHtml(f.name)}</div>
-              <div class="embed-field-value">${escapeHtml(f.value)}</div>
-            </div>
-          `).join('') : ''}
-          ${embed.image?.url ? `<img src="${embed.image.url}" class="embed-image" loading="lazy">` : ''}
-          ${embed.thumbnail?.url ? `<img src="${embed.thumbnail.url}" class="embed-thumbnail" loading="lazy">` : ''}
-          ${embed.url ? `<a href="${embed.url}" target="_blank" class="embed-link">🔗 Link</a>` : ''}
-        </div>`;
-      }
-    }
+    // Mostrar "APP" se for um bot com nome "Jockie Music" ou similar
+    const appBadge = msg.author.bot ? '<span class="app-badge">APP</span>' : '';
 
     const rowClass = index % 2 === 0 ? 'message' : 'message alt';
     return `
@@ -201,10 +200,10 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
         <div class="header">
           <span class="author" style="color: ${authorColor};">${escapeHtml(msg.author.username)}</span>
           ${botBadge}
+          ${appBadge}
           <span class="time">${data}</span>
         </div>
         <div class="text">${texto}</div>
-        ${embedsHtml}
       </div>
     </div>`;
   }).join('\n');
@@ -294,10 +293,16 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
       flex: 1;
       min-width: 0;
     }
+    .header {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 4px 8px;
+    }
     .header .author {
       font-weight: 600;
       font-size: 15px;
-      margin-right: 6px;
+      margin-right: 4px;
     }
     .bot-badge {
       background: #5865f2;
@@ -306,8 +311,16 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
       font-weight: 700;
       padding: 1px 6px;
       border-radius: 4px;
-      margin-right: 8px;
-      vertical-align: middle;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .app-badge {
+      background: #3ba55d;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 4px;
       text-transform: uppercase;
       letter-spacing: 0.3px;
     }
@@ -324,68 +337,10 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
       word-wrap: break-word;
       color: #dbdee1;
     }
-    .text em {
-      color: #72767d;
-      font-style: italic;
-    }
-    .embed {
-      background: #2b2d31;
-      border-left: 4px solid #5865f2;
-      padding: 10px 14px;
-      margin-top: 8px;
-      border-radius: 4px;
-      font-size: 13px;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-    }
-    .embed-title {
-      color: #ffffff;
-      font-weight: 600;
-      font-size: 14px;
-    }
-    .embed-desc {
-      color: #dbdee1;
-      margin-top: 4px;
-    }
-    .embed-field {
-      margin-top: 6px;
-    }
-    .embed-field-name {
-      color: #b9bbbe;
-      font-weight: 600;
-    }
-    .embed-field-value {
-      color: #dbdee1;
-    }
-    .embed-image {
-      max-width: 300px;
-      border-radius: 6px;
-      margin-top: 6px;
-      border: 1px solid #3a3c42;
+    .text br + br {
       display: block;
-    }
-    .embed-thumbnail {
-      float: right;
-      max-width: 80px;
-      border-radius: 6px;
-      margin-left: 12px;
-      border: 1px solid #3a3c42;
-    }
-    .embed-link {
-      color: #00aff4;
-      text-decoration: none;
-      font-weight: 500;
-      display: inline-block;
+      content: '';
       margin-top: 4px;
-    }
-    .embed-link:hover {
-      text-decoration: underline;
-    }
-    a {
-      color: #00aff4;
-      text-decoration: none;
-    }
-    a:hover {
-      text-decoration: underline;
     }
     .footer {
       background: #1e1f22;
@@ -416,8 +371,8 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
         flex-direction: column;
         align-items: flex-start;
       }
-      .header .info h1 {
-        font-size: 18px;
+      .header .time {
+        margin-left: 0;
       }
       .message {
         padding: 8px 8px;
@@ -461,7 +416,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
 }
 
 // ============================================================
-// GERAR TXT (com ordem cronológica)
+// GERAR TXT (mantido como gostas)
 // ============================================================
 function generateTxt(messages, channel, staffName, motivo, targetId, targetName) {
   const sorted = [...messages].sort((a, b) => a.createdAt - b.createdAt);
