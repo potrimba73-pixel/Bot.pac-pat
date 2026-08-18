@@ -34,7 +34,15 @@ import {
 } from "../services/tickets.js";
 
 import { sendLog } from "../services/logs.js";
-import { sendPainelChamada } from "../services/calls.js";
+import {
+  sendPainelChamada,
+  criarCall,
+  apagarCall,
+  chamarMembro,
+  addUserToCall,
+  removeUserFromCall,
+} from "../services/calls.js";
+
 import { gerarTranscript } from "../utils/transcript.js";
 import { salvarTranscriptSupabase } from "../utils/supabase.js";
 
@@ -46,7 +54,7 @@ const cooldownChamadas = new Map(); // userId -> timestamp
 const BOTS_TO_EXCLUDE = new Set([
   "1498462519818326117",
   "1516728761351929886",
-  "1394063740755771453"  // ← ID a remover
+  "1394063740755771453",  // removido da lista de staff
 ]);
 
 // ============================================================
@@ -112,7 +120,6 @@ async function safeReply(
 
 async function safeDefer(interaction) {
   try {
-    // Verifica se a interação ainda pode ser respondida
     if (!interaction.isRepliable()) {
       console.log("[safeDefer] Interação não é repliable, ignorando defer.");
       return false;
@@ -129,7 +136,6 @@ async function safeDefer(interaction) {
     return false;
   }
 }
-
 
 async function safeEdit(
   interaction,
@@ -1937,6 +1943,63 @@ export async function handleInteractionCreate(
         );
       }
 
+      // ======================================================
+      // BOTÕES DO PAINEL STAFF (CALLS)
+      // ======================================================
+
+      if (customId.startsWith("criar_call_")) {
+        const ticketId = customId.substring("criar_call_".length);
+        if (!isStaff(interaction.member)) {
+          return safeReply(interaction, "❌ Apenas staff pode criar calls.");
+        }
+        return criarCall(interaction, ticketId, client);
+      }
+
+      if (customId.startsWith("apagar_call_")) {
+        const ticketId = customId.substring("apagar_call_".length);
+        if (!isStaff(interaction.member)) {
+          return safeReply(interaction, "❌ Apenas staff pode apagar calls.");
+        }
+        return apagarCall(interaction, ticketId, client);
+      }
+
+      if (customId.startsWith("chamar_membro_")) {
+        const ticketId = customId.substring("chamar_membro_".length);
+        if (!isStaff(interaction.member)) {
+          return safeReply(interaction, "❌ Apenas staff pode chamar membros.");
+        }
+        return chamarMembro(interaction, ticketId, client);
+      }
+
+      if (customId.startsWith("add_user_")) {
+        const ticketId = customId.substring("add_user_".length);
+        if (!isStaff(interaction.member)) {
+          return safeReply(interaction, "❌ Apenas staff pode adicionar utilizadores.");
+        }
+        // Chama a função do calls.js (se existir) ou fallback
+        if (typeof addUserToCall === 'function') {
+          return addUserToCall(interaction, ticketId, client);
+        } else {
+          return safeReply(interaction, "⏳ Funcionalidade em desenvolvimento.");
+        }
+      }
+
+      if (customId.startsWith("remove_user_")) {
+        const ticketId = customId.substring("remove_user_".length);
+        if (!isStaff(interaction.member)) {
+          return safeReply(interaction, "❌ Apenas staff pode remover utilizadores.");
+        }
+        if (typeof removeUserFromCall === 'function') {
+          return removeUserFromCall(interaction, ticketId, client);
+        } else {
+          return safeReply(interaction, "⏳ Funcionalidade em desenvolvimento.");
+        }
+      }
+
+      // ======================================================
+      // FIM – AÇÃO DESCONHECIDA
+      // ======================================================
+
       return safeReply(
         interaction,
         "⚠️ Ação desconhecida."
@@ -2018,9 +2081,8 @@ async function fecharTicket(
     }
 
     // ------------------------------------------------------
-    // EMBED DE FECHO NO CANAL (mantido igual)
+    // EMBED DE FECHO NO CANAL
     // ------------------------------------------------------
-    const isRecruitment = ticket.type === 'recrutamento';
     const duracao = formatDuration(ticket.openedAt, new Date());
     const duracaoEmoji = getDurationEmoji(ticket.openedAt, new Date());
 
@@ -2105,9 +2167,10 @@ async function fecharTicket(
       );
 
       if (htmlAttachment) {
-  // htmlAttachment.attachment já é um AttachmentBuilder
-  files.push(htmlAttachment.attachment);
-}
+        // htmlAttachment já é um objeto com { attachment: AttachmentBuilder, fileName: string }
+        // Adicionar o AttachmentBuilder diretamente
+        files.push(htmlAttachment.attachment);
+      }
 
       // 4) Enviar para o canal de logs
       const logChannel = await client.channels
@@ -2158,7 +2221,7 @@ async function fecharTicket(
     }
 
     // ------------------------------------------------------
-    // DM DE AVALIAÇÃO (mantido igual)
+    // DM DE AVALIAÇÃO
     // ------------------------------------------------------
     try {
       const user = await client.users.fetch(ticket.userId);
@@ -2196,7 +2259,7 @@ async function fecharTicket(
     }
 
     // ------------------------------------------------------
-    // APAGAR CANAL (mantido igual)
+    // APAGAR CANAL
     // ------------------------------------------------------
     setTimeout(async () => {
       await channel.delete().catch(() => {});
@@ -2462,7 +2525,7 @@ async function handleFotoTruckyModal(
 }
 
 // ============================================================
-// TRANSCRIPT HTML
+// TRANSCRIPT HTML (para o comando /transcript)
 // ============================================================
 
 function escapeHTML(value) {
