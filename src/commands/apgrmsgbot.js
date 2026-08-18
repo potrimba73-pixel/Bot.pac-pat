@@ -103,8 +103,7 @@ function getMessageText(msg) {
         continue;
       }
 
-      // --- Música (Started playing) ---
-      // ALTERAÇÃO: melhor deteção e processamento de múltiplas linhas
+      // --- Música (Started playing) - MELHORADO ---
       if (
         embed.url?.includes('spotify.com') ||
         embed.provider?.name === 'Spotify' ||
@@ -113,7 +112,7 @@ function getMessageText(msg) {
       ) {
         let lines = [];
 
-        // Se a descrição contém várias linhas com "- Started playing"
+        // Caso haja descrição com várias linhas
         if (embed.description) {
           const descLines = embed.description.split('\n').map(s => s.trim()).filter(Boolean);
           const hasStartedPlaying = descLines.some(line => /^[-•*]\s*Started playing/i.test(line));
@@ -137,17 +136,15 @@ function getMessageText(msg) {
             let artist = '';
 
             // Extrair artista da description (ex: "by Ivandro" ou "Ivandro • Moça")
-            if (embed.description) {
-              const byMatch = embed.description.match(/by\s+(.+)/i);
-              if (byMatch) {
-                artist = byMatch[1].trim();
+            const byMatch = embed.description.match(/by\s+(.+)/i);
+            if (byMatch) {
+              artist = byMatch[1].trim();
+            } else {
+              const parts = embed.description.split(/[•\-]/).map(s => s.trim());
+              if (parts.length >= 2) {
+                artist = parts[1];
               } else {
-                const parts = embed.description.split(/[•\-]/).map(s => s.trim());
-                if (parts.length >= 2) {
-                  artist = parts[1];
-                } else {
-                  artist = embed.description;
-                }
+                artist = embed.description;
               }
             }
 
@@ -243,7 +240,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
     const avatar = msg.author.displayAvatarURL({ extension: 'png', size: 64 });
     const data = dateFormatter.format(msg.createdAt);
     const rawText = getMessageText(msg);
-    // ALTERAÇÃO: preservar quebras de linha e hífenes
+    // Converter quebras de linha para <br> para manter a formatação
     const texto = escapeHtml(rawText).replace(/\n/g, '<br>');
 
     const hue = (parseInt(msg.author.id.slice(0, 6), 16) % 360);
