@@ -13,19 +13,20 @@ import { safeDeferReply, safeEditReply } from '../utils/safeReply.js';
 // CONSTANTES
 // ============================================================
 const DEFAULT_BOT_IDS = [
-  '759343605726052392', // A
-  '456226577798135808', // B
-  '770599668710637608', // C
+  '759343605726052392',
+  '456226577798135808',
+  '770599668710637608',
+  '412347553141751808',
 ];
 const DEFAULT_BOT_ID = DEFAULT_BOT_IDS[0];
-const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID || '123456789012345678'; // Altere para o seu canal de logs
+const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID || '';
 
 // ============================================================
-// FUNÇÕES AUXILIARES
+// UTIL: ESCAPAR HTML
 // ============================================================
 function escapeHtml(text) {
   if (!text) return '';
-  return text
+  return String(text)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -33,10 +34,12 @@ function escapeHtml(text) {
     .replace(/'/g, '&#039;');
 }
 
+// ============================================================
+// EXTRAIR TEXTO DA MENSAGEM
+// ============================================================
 function getMessageText(msg) {
   let text = msg.content || '';
 
-  // Embeds
   if (msg.embeds?.length) {
     for (const embed of msg.embeds) {
       if (embed.title) text += (text ? '\n' : '') + embed.title;
@@ -52,30 +55,23 @@ function getMessageText(msg) {
     }
   }
 
-  // Anexos
   if (msg.attachments?.size) {
     for (const [, att] of msg.attachments) {
       text += (text ? '\n' : '') + `📎 ${att.name} (${att.url})`;
     }
   }
 
-  // Stickers
   if (msg.stickers?.size) {
     for (const sticker of msg.stickers.values()) {
-      text += (text ? '\n' : '') + `🖼️ Sticker: ${sticker.name} (${sticker.url})`;
+      text += (text ? '\n' : '') + `🖼️ Sticker: ${sticker.name}`;
     }
-  }
-
-  // Reacções (opcional) – apenas conta, não lista todas
-  if (msg.reactions?.size) {
-    text += (text ? '\n' : '') + `👍 ${msg.reactions.size} reacções`;
   }
 
   return text || '(sem conteúdo)';
 }
 
 // ============================================================
-// GERAR HTML BONITO (estilo Discord melhorado)
+// GERAR HTML
 // ============================================================
 function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targetName) {
   const guild = channel.guild;
@@ -130,7 +126,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
           ${botBadge}
           <span class="time">${data}</span>
         </div>
-        <div class="text">${texto || '<em>Sem texto</em>'}</div>
+        <div class="text">${texto}</div>
         ${embedsHtml}
       </div>
     </div>`;
@@ -377,7 +373,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
   </div>
   <div class="footer">
     <div class="stats">
-      <span>📊 ${messages.length} mensagens</span>
+      <span>📊 ${Array.from(messages).length} mensagens</span>
       <span>👤 Alvo: <@${targetId}></span>
     </div>
     <div>Transcript gerado automaticamente • ${new Intl.DateTimeFormat('pt-PT').format(new Date())}</div>
@@ -388,7 +384,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
 }
 
 // ============================================================
-// GERAR TXT SIMPLES
+// GERAR TXT
 // ============================================================
 function generateTxt(messages, channel, staffName, motivo, targetId, targetName) {
   const lines = [];
@@ -398,7 +394,7 @@ function generateTxt(messages, channel, staffName, motivo, targetId, targetName)
   lines.push(`Staff: ${staffName}`);
   lines.push(`Motivo: ${motivo}`);
   lines.push(`Alvo: ${targetId} (${targetName})`);
-  lines.push(`Quantidade: ${messages.length}`);
+  lines.push(`Quantidade: ${Array.from(messages).length}`);
   lines.push(`Data: ${new Intl.DateTimeFormat('pt-PT').format(new Date())}`);
   lines.push('================================\n');
 
@@ -419,7 +415,7 @@ function generateTxt(messages, channel, staffName, motivo, targetId, targetName)
 }
 
 // ============================================================
-// FUNÇÃO DE CONFIRMAÇÃO INTERATIVA
+// FUNÇÃO DE CONFIRMAÇÃO
 // ============================================================
 async function askConfirmation(interaction, quantidade) {
   const row = new ActionRowBuilder().addComponents(
@@ -433,31 +429,32 @@ async function askConfirmation(interaction, quantidade) {
       .setStyle(ButtonStyle.Secondary),
   );
 
-  const reply = await interaction.editReply({
+  await interaction.editReply({
     content: `⚠️ **Confirmação**: Vais apagar **${quantidade}** mensagens. Esta ação é irreversível. Continuar?`,
     components: [row],
   });
 
   const filter = (i) => i.user.id === interaction.user.id;
-  let choice = null;
   try {
-    const collected = await reply.awaitMessageComponent({ filter, time: 30000 });
-    choice = collected.customId === 'confirm_yes';
+    const collected = await interaction.channel.awaitMessageComponent({
+      filter,
+      time: 30000,
+    });
+    const choice = collected.customId === 'confirm_yes';
     await collected.deferUpdate();
+    await interaction.editReply({ components: [] });
+    return choice;
   } catch {
     await interaction.editReply({ content: '⏰ Tempo esgotado. Operação cancelada.', components: [] });
     return false;
   }
-
-  await interaction.editReply({ components: [] });
-  return choice;
 }
 
 // ============================================================
 // COMANDO PRINCIPAL
 // ============================================================
 export async function execute(interaction, client) {
-  // Verificar permissão do staff
+  // 1. Verificar permissões do utilizador
   if (!interaction.member.permissions.has('ManageMessages')) {
     return interaction.reply({
       content: '❌ Precisas da permissão **Gerenciar Mensagens**.',
@@ -465,8 +462,9 @@ export async function execute(interaction, client) {
     });
   }
 
-  // Verificar permissões do bot
   const channel = interaction.channel;
+
+  // 2. Verificar permissões do bot
   const botMember = channel.guild.members.me;
   if (!botMember.permissionsIn(channel).has(['ManageMessages', 'ReadMessageHistory'])) {
     return interaction.reply({
@@ -475,17 +473,15 @@ export async function execute(interaction, client) {
     });
   }
 
-  // Obter parâmetros
+  // 3. Obter parâmetros
   const targetUser = interaction.options.getUser('membro');
-  const targetIdRaw = interaction.options.getString('bot-id'); // opção customizada
-  let targetId = null;
-  let targetName = '';
+  const targetIdRaw = interaction.options.getString('bot-id');
+  let targetId, targetName;
 
   if (targetUser) {
     targetId = targetUser.id;
     targetName = targetUser.username;
   } else if (targetIdRaw) {
-    // Verifica se é um ID válido
     if (/^\d{17,19}$/.test(targetIdRaw)) {
       targetId = targetIdRaw;
       try {
@@ -501,7 +497,6 @@ export async function execute(interaction, client) {
       });
     }
   } else {
-    // Usa o primeiro bot predefinido
     targetId = DEFAULT_BOT_ID;
     try {
       const user = await client.users.fetch(targetId);
@@ -511,29 +506,25 @@ export async function execute(interaction, client) {
     }
   }
 
-  // Impedir apagar mensagens do próprio bot (a menos que seja explicitamente o alvo)
   if (targetId === client.user.id) {
     return interaction.reply({
-      content: '❌ Não podes apagar mensagens do próprio bot (a menos que uses um ID específico e não seja o do bot).',
+      content: '❌ Não podes apagar mensagens do próprio bot.',
       flags: 64,
     });
   }
 
   const quantidade = interaction.options.getInteger('quantidade') || 50;
   const motivo = interaction.options.getString('motivo') || 'Limpeza de mensagens';
-  const formato = interaction.options.getString('formato') || 'ambos'; // 'html', 'txt', 'ambos'
+  const formato = interaction.options.getString('formato') || 'ambos';
 
-  // Deferir resposta
-  const deferred = await safeDeferReply(interaction);
-  if (!deferred) {
-    return interaction.reply({ content: '⏳ A processar...', flags: 64 });
-  }
+  // 4. Deferir resposta
+  await interaction.deferReply({ flags: 64 });
 
   try {
-    // ===== BUSCAR MENSAGENS (paginado) =====
+    // 5. Buscar mensagens (paginado)
     let collected = new Collection();
     let lastId = null;
-    const maxFetch = Math.min(quantidade, 1000); // limite de segurança
+    const maxFetch = Math.min(quantidade, 1000);
     while (collected.size < maxFetch) {
       const opts = {
         limit: Math.min(100, maxFetch - collected.size),
@@ -545,44 +536,36 @@ export async function execute(interaction, client) {
       lastId = batch.last().id;
     }
 
-    // Filtrar pelo alvo
     const targetMessages = collected.filter(msg => msg.author.id === targetId);
     const totalFound = targetMessages.size;
 
     if (totalFound === 0) {
-      return await safeEditReply(interaction, {
+      return interaction.editReply({
         content: `ℹ️ Nenhuma mensagem de <@${targetId}> encontrada nas últimas ${collected.size} mensagens.`,
-        flags: 64,
       });
     }
 
-    // Se a quantidade for maior que 50, pedir confirmação
+    // 6. Confirmar se for grande
     if (totalFound > 50) {
       const confirm = await askConfirmation(interaction, totalFound);
       if (!confirm) {
-        return await safeEditReply(interaction, {
-          content: '❌ Operação cancelada pelo utilizador.',
-          flags: 64,
-        });
+        return interaction.editReply({ content: '❌ Operação cancelada.' });
       }
     }
 
-    // ===== APAGAR MENSAGENS =====
+    // 7. Apagar mensagens
     const now = Date.now();
-    const bulkable = targetMessages.filter(m => (now - m.createdTimestamp) < 1209600000); // 14 dias
+    const bulkable = targetMessages.filter(m => (now - m.createdTimestamp) < 1209600000);
     const rest = targetMessages.filter(m => !bulkable.has(m.id));
 
     let deletedCount = 0;
     let failedCount = 0;
 
-    // Bulk delete
     if (bulkable.size > 0) {
       try {
         const deleted = await channel.bulkDelete(bulkable, true);
         deletedCount += deleted.size;
-      } catch (err) {
-        console.warn('[Apgrmsgbot] Bulk delete falhou, a tentar individual:', err);
-        // Fallback para individual
+      } catch {
         for (const msg of bulkable.values()) {
           try {
             await msg.delete();
@@ -594,7 +577,6 @@ export async function execute(interaction, client) {
       }
     }
 
-    // Mensagens mais antigas (individuais)
     for (const msg of rest.values()) {
       try {
         await msg.delete();
@@ -604,7 +586,7 @@ export async function execute(interaction, client) {
       }
     }
 
-    // ===== GERAR TRANSCRIPTS =====
+    // 8. Gerar ficheiros
     const timestamp = Date.now();
     const baseName = `transcript-${channel.name}-${timestamp}`;
     const files = [];
@@ -618,8 +600,7 @@ export async function execute(interaction, client) {
         targetId,
         targetName,
       );
-      const htmlBuffer = Buffer.from(html, 'utf-8');
-      files.push(new AttachmentBuilder(htmlBuffer, { name: `${baseName}.html` }));
+      files.push(new AttachmentBuilder(Buffer.from(html, 'utf-8'), { name: `${baseName}.html` }));
     }
 
     if (formato === 'txt' || formato === 'ambos') {
@@ -631,15 +612,14 @@ export async function execute(interaction, client) {
         targetId,
         targetName,
       );
-      const txtBuffer = Buffer.from(txt, 'utf-8');
-      files.push(new AttachmentBuilder(txtBuffer, { name: `${baseName}.txt` }));
+      files.push(new AttachmentBuilder(Buffer.from(txt, 'utf-8'), { name: `${baseName}.txt` }));
     }
 
-    // ===== ENVIAR TRANSCRIPT NO CANAL =====
+    // 9. Enviar transcript no canal
     const embed = new EmbedBuilder()
       .setTitle('🧹 Mensagens apagadas')
       .setDescription(
-        `📊 **Quantidade:** ${deletedCount} (${failedCount > 0 ? `+ ${failedCount} falhas` : ''})\n` +
+        `📊 **Quantidade:** ${deletedCount}${failedCount > 0 ? ` (${failedCount} falhas)` : ''}\n` +
         `👤 **Alvo:** <@${targetId}>\n` +
         `📅 **Data:** ${new Intl.DateTimeFormat('pt-PT').format(new Date())}\n` +
         `👮 **Staff:** <@${interaction.user.id}>\n` +
@@ -651,7 +631,7 @@ export async function execute(interaction, client) {
 
     await channel.send({ embeds: [embed], files });
 
-    // ===== LOG DE AUDITORIA (canal separado) =====
+    // 10. Log de auditoria (opcional)
     if (LOG_CHANNEL_ID) {
       const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
       if (logChannel) {
@@ -670,17 +650,23 @@ export async function execute(interaction, client) {
       }
     }
 
-    // ===== RESPOSTA AO UTILIZADOR =====
-    await safeEditReply(interaction, {
+    // 11. Responder ao utilizador (editar a deferida)
+    await interaction.editReply({
       content: `✅ ${deletedCount} mensagens apagadas. ${failedCount > 0 ? `(${failedCount} falhas)` : ''} Transcript(s) enviado(s) no canal.`,
-      flags: 64,
     });
 
   } catch (error) {
     console.error('[Apgrmsgbot] Erro:', error);
-    await safeEditReply(interaction, {
-      content: `❌ Erro: ${error.message || 'tente novamente.'}`,
-      flags: 64,
-    });
+    // Se a interação ainda estiver deferida, editar; senão, tentar reply normal
+    try {
+      await interaction.editReply({
+        content: `❌ Erro: ${error.message || 'tente novamente.'}`,
+      });
+    } catch {
+      await interaction.reply({
+        content: `❌ Erro: ${error.message || 'tente novamente.'}`,
+        flags: 64,
+      });
+    }
   }
 }
