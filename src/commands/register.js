@@ -64,23 +64,26 @@ export async function registerCommands() {
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
     .toJSON(),
 
-  // ⬇️ NOVO COMANDO (apenas este, sem duplicados antes)
-  new SlashCommandBuilder()
-    .setName("apgrmsgbot")
-    .setDescription("Gera transcript (HTML/TXT) e apaga mensagens do BOT neste canal")
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
-    .addIntegerOption(option =>
-      option.setName("quantidade")
-        .setDescription("Número máximo de mensagens do bot a apagar (1-100)")
-        .setMinValue(1)
-        .setMaxValue(100)
-        .setRequired(false))
-    .addStringOption(option =>
-      option.setName("motivo")
-        .setDescription("Motivo da limpeza (opcional)")
-        .setRequired(false))
-    .toJSON(),
-
+new SlashCommandBuilder()
+  .setName("apgrmsgbot")
+  .setDescription("Gera transcript e apaga mensagens de um membro/bot")
+  .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+  .addUserOption(option =>
+    option.setName("membro")
+      .setDescription("Membro ou bot a apagar (opcional, padrão é o bot Jockie)")
+      .setRequired(false))
+  .addIntegerOption(option =>
+    option.setName("quantidade")
+      .setDescription("Número máximo de mensagens (1-100)")
+      .setMinValue(1)
+      .setMaxValue(100)
+      .setRequired(false))
+  .addStringOption(option =>
+    option.setName("motivo")
+      .setDescription("Motivo da limpeza")
+      .setRequired(false))
+  .toJSON(),
+    
   // === COMANDOS TRUCKY IMAGE ===
   ...truckyImageSlashCommands,
 ];
