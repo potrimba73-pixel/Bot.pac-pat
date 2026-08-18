@@ -2,7 +2,7 @@
 import { EmbedBuilder, AttachmentBuilder } from 'discord.js';
 import { safeDeferReply, safeEditReply } from '../utils/safeReply.js';
 
-const TARGET_BOT_ID = '412347553141751808';
+const DEFAULT_BOT_ID = '412347553141751808';
 
 // ============================================================
 // EXTRAI O TEXTO REAL DA MENSAGEM (inclui embeds, links, anexos)
@@ -37,16 +37,14 @@ function getMessageText(msg) {
 // ============================================================
 // GERAR HTML BONITO (estilo Discord)
 // ============================================================
-function generatePrettyHTML(messages, channelName, staffName, motivo, botId) {
+function generatePrettyHTML(messages, channelName, staffName, motivo, targetId) {
   const msgsHtml = messages.map(msg => {
     const avatar = msg.author.displayAvatarURL({ extension: 'png', size: 64 });
     const data = msg.createdAt.toLocaleString('pt-PT');
     const texto = getMessageText(msg).replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
 
-    // Cor do utilizador (se for bot, usa uma cor diferente)
     const authorColor = msg.author.bot ? '#5865F2' : '#FFFFFF';
 
-    // Se houver embeds, adiciona uma caixa especial
     let embedsHtml = '';
     if (msg.embeds && msg.embeds.length > 0) {
       for (const embed of msg.embeds) {
@@ -194,8 +192,8 @@ function generatePrettyHTML(messages, channelName, staffName, motivo, botId) {
 </head>
 <body>
   <div class="header">
-    <h1>🧹 Mensagens do BOT apagadas</h1>
-    <p><strong>Canal:</strong> ${channelName} &bull; <strong>Staff:</strong> ${staffName} &bull; <strong>Motivo:</strong> ${motivo} &bull; <strong>Data:</strong> ${new Date().toLocaleString('pt-PT')}</p>
+    <h1>🧹 Mensagens apagadas</h1>
+    <p><strong>Canal:</strong> ${channelName} &bull; <strong>Staff:</strong> ${staffName} &bull; <strong>Motivo:</strong> ${motivo} &bull; <strong>Alvo:</strong> <@${targetId}> &bull; <strong>Data:</strong> ${new Date().toLocaleString('pt-PT')}</p>
   </div>
   ${msgsHtml}
   <div class="footer">Transcript gerado automaticamente • ${new Date().toLocaleString('pt-PT')}</div>
@@ -215,10 +213,14 @@ export async function execute(interaction, client) {
     });
   }
 
-  const quantidade = interaction.options.getInteger('quantidade') || 50;
-  const motivo = interaction.options.getString('motivo') || 'Limpeza de mensagens do bot';
+  // Obter alvo (utilizador opcional)
+  const targetUser = interaction.options.getUser('membro');
+  const targetId = targetUser ? targetUser.id : DEFAULT_BOT_ID;
+  const targetName = targetUser ? targetUser.username : 'Jockie Music (bot)';
 
-  // Deferir a resposta (só uma vez)
+  const quantidade = interaction.options.getInteger('quantidade') || 50;
+  const motivo = interaction.options.getString('motivo') || 'Limpeza de mensagens';
+
   const deferred = await safeDeferReply(interaction);
   if (!deferred) {
     return interaction.reply({ content: '⏳ A processar...', flags: 64 });
@@ -228,36 +230,36 @@ export async function execute(interaction, client) {
 
   try {
     const messages = await channel.messages.fetch({ limit: Math.min(quantidade, 100) });
-    const botMessages = messages.filter(msg => msg.author.id === TARGET_BOT_ID);
+    const targetMessages = messages.filter(msg => msg.author.id === targetId);
 
-    if (botMessages.size === 0) {
+    if (targetMessages.size === 0) {
       return await safeEditReply(interaction, {
-        content: `ℹ️ Nenhuma mensagem do bot <@${TARGET_BOT_ID}> encontrada.`,
+        content: `ℹ️ Nenhuma mensagem de <@${targetId}> encontrada.`,
         flags: 64
       });
     }
 
     // ===== GERAR HTML BONITO =====
     const html = generatePrettyHTML(
-      botMessages.values(),
+      targetMessages.values(),
       channel.name,
       interaction.user.username,
       motivo,
-      TARGET_BOT_ID
+      targetId
     );
 
     // ===== GERAR TXT SIMPLES =====
-    let txt = '🧹 MENSAGENS DO BOT APAGADAS\n';
+    let txt = '🧹 MENSAGENS APAGADAS\n';
     txt += '================================\n';
     txt += `Canal: ${channel.name}\n`;
     txt += `Staff: ${interaction.user.username}\n`;
     txt += `Motivo: ${motivo}\n`;
-    txt += `Bot alvo: ${TARGET_BOT_ID}\n`;
-    txt += `Quantidade: ${botMessages.size}\n`;
+    txt += `Alvo: ${targetId} (${targetName})\n`;
+    txt += `Quantidade: ${targetMessages.size}\n`;
     txt += `Data: ${new Date().toLocaleString('pt-PT')}\n`;
     txt += '================================\n\n';
 
-    for (const msg of botMessages.values()) {
+    for (const msg of targetMessages.values()) {
       const data = msg.createdAt.toLocaleString('pt-PT');
       const text = getMessageText(msg);
       txt += `[${data}] ${msg.author.username}: ${text}\n`;
@@ -272,16 +274,16 @@ export async function execute(interaction, client) {
     ];
 
     // ===== APAGAR MENSAGENS =====
-    for (const msg of botMessages.values()) {
+    for (const msg of targetMessages.values()) {
       await msg.delete().catch(() => {});
     }
 
     // ===== ENVIAR RESULTADO =====
     const embed = new EmbedBuilder()
-      .setTitle('🧹 Mensagens do BOT apagadas')
+      .setTitle('🧹 Mensagens apagadas')
       .setDescription(
-        `📊 **Quantidade:** ${botMessages.size}\n` +
-        `🤖 **Bot alvo:** <@${TARGET_BOT_ID}>\n` +
+        `📊 **Quantidade:** ${targetMessages.size}\n` +
+        `👤 **Alvo:** <@${targetId}>\n` +
         `📅 **Data:** ${new Date().toLocaleString('pt-PT')}\n` +
         `👮 **Staff:** <@${interaction.user.id}>\n` +
         `ℹ️ **Motivo:** ${motivo}`
@@ -294,7 +296,7 @@ export async function execute(interaction, client) {
 
     // ===== RESPOSTA AO UTILIZADOR =====
     await safeEditReply(interaction, {
-      content: `✅ ${botMessages.size} mensagens apagadas. Transcript (HTML + TXT) enviado no canal.`,
+      content: `✅ ${targetMessages.size} mensagens apagadas. Transcript (HTML + TXT) enviado no canal.`,
       flags: 64
     });
 
