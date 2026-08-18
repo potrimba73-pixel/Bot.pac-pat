@@ -108,31 +108,26 @@ async function safeReply(
   }
 }
 
-async function safeDefer(
-  interaction
-) {
+async function safeDefer(interaction) {
   try {
-    if (
-      !interaction.deferred &&
-      !interaction.replied
-    ) {
-      await interaction.deferReply({
-        flags: 64,
-      });
+    // Verifica se a interação ainda pode ser respondida
+    if (!interaction.isRepliable()) {
+      console.log("[safeDefer] Interação não é repliable, ignorando defer.");
+      return false;
+    }
 
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferReply({ flags: 64 });
       return true;
     }
 
     return true;
   } catch (error) {
-    console.error(
-      "[Interaction] Não foi possível deferir:",
-      error
-    );
-
+    console.error("[Interaction] Não foi possível deferir:", error);
     return false;
   }
 }
+
 
 async function safeEdit(
   interaction,
@@ -401,28 +396,45 @@ async function chamarStaff(interaction, ticket, staffId) {
 // FUNÇÕES DOS PAINÉIS
 // ============================================================
 
-async function enviarPainelMembro(interaction) {
-  if (!(await safeDefer(interaction))) return;
+async function async function enviarPainelMembro(interaction) {
+  // Primeiro, tenta deferir
+  const deferred = await safeDefer(interaction);
 
-  const ticket = getTicketForInteraction(null, interaction.channelId);
-  if (!ticket || ticket.closed) {
-    return safeEdit(interaction, {
-      content: "⚠️ Ticket não encontrado ou já fechado.",
-    });
+  // Se não foi possível deferir e a interação ainda é repliable, usa reply direto
+  if (!deferred && interaction.isRepliable()) {
+    return await responderPainelMembro(interaction, false);
   }
 
-  // Verificar se o utilizador é o dono do ticket (mantido, mas ele pode chamar-se a si mesmo)
+  // Se deferiu com sucesso (ou já estava deferido/replied), usa editReply
+  if (deferred || interaction.deferred || interaction.replied) {
+    return await responderPainelMembro(interaction, true);
+  }
+
+  // Se chegou aqui, a interação não é repliable e não foi deferida – ignorar
+  console.log("[enviarPainelMembro] Interação não é repliable e não foi deferida.");
+  return null;
+}
+
+// Função auxiliar que constrói e envia o painel
+async function responderPainelMembro(interaction, deferred = false) {
+  const ticket = getTicketForInteraction(null, interaction.channelId);
+  if (!ticket || ticket.closed) {
+    const content = "⚠️ Ticket não encontrado ou já fechado.";
+    if (deferred) return interaction.editReply({ content });
+    else return interaction.reply({ content, flags: 64 });
+  }
+
   if (interaction.user.id !== ticket.userId) {
-    return safeEdit(interaction, {
-      content: "❌ Apenas o utilizador que abriu o ticket pode chamar staff.",
-    });
+    const content = "❌ Apenas o utilizador que abriu o ticket pode chamar staff.";
+    if (deferred) return interaction.editReply({ content });
+    else return interaction.reply({ content, flags: 64 });
   }
 
   const staffList = await buildStaffList(interaction.channel, ticket);
   if (staffList.length === 0) {
-    return safeEdit(interaction, {
-      content: "⚠️ Nenhum membro da staff disponível para ser chamado.",
-    });
+    const content = "⚠️ Nenhum membro da staff disponível para ser chamado.";
+    if (deferred) return interaction.editReply({ content });
+    else return interaction.reply({ content, flags: 64 });
   }
 
   // Verificar cooldown
@@ -432,12 +444,12 @@ async function enviarPainelMembro(interaction) {
     const restante = Math.ceil((COOLDOWN_CHAMAR - (now - lastCall)) / 1000);
     const minutos = Math.floor(restante / 60);
     const segundos = restante % 60;
-    return safeEdit(interaction, {
-      content: `⏱️ Aviso: Apenas 1 chamada permitida a cada 5 minutos. Aguarde **${minutos}m ${segundos}s**.`,
-    });
+    const content = `⏱️ Aviso: Apenas 1 chamada permitida a cada 5 minutos. Aguarde **${minutos}m ${segundos}s**.`;
+    if (deferred) return interaction.editReply({ content });
+    else return interaction.reply({ content, flags: 64 });
   }
 
-  // Construir descrição com o novo formato
+  // Construir descrição com o formato pedido
   const desc = staffList.map((staff) =>
     `${staff.roleEmoji} **${staff.roleName}** • <@${staff.member.id}> | ${staff.displayName} • ${staff.statusEmoji} ${staff.status}`
   ).join("\n");
@@ -452,7 +464,6 @@ async function enviarPainelMembro(interaction) {
     .setFooter({ text: `Ticket #${ticket.id}` })
     .setTimestamp();
 
-  // Criar menu de seleção
   const selectMenu = new StringSelectMenuBuilder()
     .setCustomId(`chamar_staff_${ticket.id}`)
     .setPlaceholder("🎯 Escolha um staff para chamar")
@@ -466,10 +477,11 @@ async function enviarPainelMembro(interaction) {
 
   const row = new ActionRowBuilder().addComponents(selectMenu);
 
-  await safeEdit(interaction, {
-    embeds: [embed],
-    components: [row],
-  });
+  if (deferred) {
+    return await interaction.editReply({ embeds: [embed], components: [row] });
+  } else {
+    return await interaction.reply({ embeds: [embed], components: [row], flags: 64 });
+  }
 }
 
 async function enviarPainelStaff(interaction, client) {
