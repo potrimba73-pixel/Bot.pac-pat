@@ -8,6 +8,7 @@ import {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  StringSelectMenuBuilder,
   AttachmentBuilder,
 } from "discord.js";
 
@@ -35,10 +36,15 @@ import {
 import { sendLog } from "../services/logs.js";
 import { sendPainelChamada } from "../services/calls.js";
 
-// ============================================================
-// IMPORTAR FUNÇÕES DE DATA
-// ============================================================
-import { formatDateFull, formatDateShort, formatDateSimple, getClockEmoji, formatDuration, getDurationEmoji } from "../utils/dateUtils.js";
+// ===== COOLDOWN PARA CHAMAR STAFF =====
+const COOLDOWN_CHAMAR = 5 * 60 * 1000; // 5 minutos
+const cooldownChamadas = new Map(); // userId -> timestamp
+
+// IDs dos bots a excluir da lista de staff
+const BOTS_TO_EXCLUDE = new Set([
+  "1498462519818326117",
+  "1516728761351929886"
+]);
 
 // ============================================================
 // PROTEÇÕES
@@ -250,6 +256,228 @@ function clearClosing(ticketId) {
   closingTickets.delete(
     String(ticketId)
   );
+}
+
+// ============================================================
+// FUNÇÕES PARA CHAMAR STAFF
+// ============================================================
+
+async function buildStaffList(channel, ticket) {
+  // Carregar todos os membros do servidor primeiro
+  await channel.guild.members.fetch().catch(() => null);
+
+  const members = channel.members;
+  if (!members || members.size === 0) return [];
+
+  const staffList = [];
+  const botId = CONFIG.BOT_ID_EXCLUIR || channel.client.user.id;
+
+  for (const [memberId, member] of members) {
+    // Excluir bots (os dois IDs fixos e o configurado)
+    if (BOTS_TO_EXCLUDE.has(memberId) || memberId === botId) continue;
+    if (memberId === ticket.userId) continue; // Não mostrar o próprio utilizador
+
+    const permissions = channel.permissionsFor(member);
+    if (!permissions?.has(PermissionFlagsBits.ViewChannel) ||
+        !permissions?.has(PermissionFlagsBits.SendMessages)) {
+      continue;
+    }
+
+    // Verificar se é staff (tem cargo staff ou permissão de gestão de mensagens)
+    const isStaffMember = member.roles.cache.has(CONFIG.CARGO_STAFF) ||
+                    member.permissions.has(PermissionFlagsBits.ManageMessages);
+
+    if (!isStaffMember) continue;
+
+    const highestRole = member.roles.cache
+      .sort((a, b) => b.position - a.position)
+      .first();
+
+    staffList.push({
+      member,
+      rolePosition: highestRole?.position || 0,
+      roleName: highestRole?.name || "Staff",
+      displayName: member.displayName || member.user.username,
+      username: member.user.username,
+    });
+  }
+
+  // Ordenar por cargo (posição) decrescente e depois por nome A-Z
+  staffList.sort((a, b) => {
+    if (b.rolePosition !== a.rolePosition) {
+      return b.rolePosition - a.rolePosition;
+    }
+    return a.displayName.localeCompare(b.displayName);
+  });
+
+  return staffList;
+}
+
+async function chamarStaff(interaction, ticket, staffId) {
+  try {
+    const guild = interaction.guild;
+    const staffMember = await guild.members.fetch(staffId).catch(() => null);
+    if (!staffMember) {
+      return safeReply(interaction, "❌ Staff não encontrado.");
+    }
+
+    // Atualizar cooldown
+    cooldownChamadas.set(interaction.user.id, Date.now());
+
+    const membro = interaction.user;
+    const motivo = ticket.label || "Sem motivo especificado";
+    const ticketLink = `https://discord.com/channels/${ticket.guildId}/${ticket.channelId}`;
+
+    // ===== MENSAGEM NO PV DO STAFF =====
+    const embedDM = new EmbedBuilder()
+      .setTitle("📢 Membro a Chamar!")
+      .setDescription(
+        `Olá <@${staffId}>!\n\n` +
+        `👋 Um membro está a chamar-te no ticket **#${ticket.id}**.\n\n` +
+        `📋 **Motivo:** ${motivo}\n` +
+        `👤 **Membro:** <@${membro.id}> | \`${membro.username}\`\n\n` +
+        `⚠️ **Importante:** Responde o mais breve possível!`
+      )
+      .setColor(0x00ff88)
+      .setTimestamp()
+      .setFooter({
+        text: `Portugal Alfa Community 🚛 • ${new Date().toLocaleString("pt-PT")}`,
+        iconURL: interaction.client.user.displayAvatarURL(),
+      });
+
+    const rowDM = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel("🎫 Ir para o Ticket")
+        .setStyle(ButtonStyle.Link)
+        .setURL(ticketLink)
+    );
+
+    // Enviar DM para o staff
+    await staffMember.send({ embeds: [embedDM], components: [rowDM] }).catch(() => {
+      throw new Error("Staff tem DMs fechadas.");
+    });
+
+    // ===== MENSAGEM NO TICKET =====
+    await interaction.channel.send({
+      content: `<@${staffId}> foi chamado com sucesso no privado.`,
+    });
+
+    // ===== RESPOSTA AO MEMBRO =====
+    await safeReply(interaction, {
+      content: `✅ Staff <@${staffId}> foi notificado no privado. Aguarde resposta.`,
+      ephemeral: true,
+    });
+
+  } catch (error) {
+    console.error("[ChamarStaff] Erro:", error);
+    await safeReply(interaction, {
+      content: `❌ Não foi possível chamar o staff: ${error.message || "Tente novamente mais tarde."}`,
+      ephemeral: true,
+    });
+  }
+}
+
+// ============================================================
+// FUNÇÕES DOS PAINÉIS
+// ============================================================
+
+async function enviarPainelMembro(interaction) {
+  if (!(await safeDefer(interaction))) return;
+
+  const ticket = getTicketForInteraction(null, interaction.channelId);
+  if (!ticket || ticket.closed) {
+    return safeEdit(interaction, {
+      content: "⚠️ Ticket não encontrado ou já fechado.",
+    });
+  }
+
+  // Verificar se o utilizador é o dono do ticket
+  if (interaction.user.id !== ticket.userId) {
+    return safeEdit(interaction, {
+      content: "❌ Apenas o utilizador que abriu o ticket pode chamar staff.",
+    });
+  }
+
+  const staffList = await buildStaffList(interaction.channel, ticket);
+  if (staffList.length === 0) {
+    return safeEdit(interaction, {
+      content: "⚠️ Nenhum membro da staff disponível para ser chamado.",
+    });
+  }
+
+  // Verificar cooldown
+  const now = Date.now();
+  const lastCall = cooldownChamadas.get(interaction.user.id);
+  if (lastCall && (now - lastCall) < COOLDOWN_CHAMAR) {
+    const restante = Math.ceil((COOLDOWN_CHAMAR - (now - lastCall)) / 1000);
+    const minutos = Math.floor(restante / 60);
+    const segundos = restante % 60;
+    return safeEdit(interaction, {
+      content: `⏳ Olá, para chamar novamente a staff espera **${minutos}m ${segundos}s**.`,
+    });
+  }
+
+  // Construir descrição da lista de staff
+  const desc = staffList.map((staff, index) =>
+    `${index + 1}. **${staff.roleName}** | ${staff.displayName} | <@${staff.member.id}>`
+  ).join("\n");
+
+  const embed = new EmbedBuilder()
+    .setTitle("🛡️ Painel Membro – Chamar Staff")
+    .setDescription(
+      `📋 Selecione um membro da staff para chamar:\n\n${desc}\n\n` +
+      `⚠️ **Apenas 1 chamada a cada 5 minutos.**`
+    )
+    .setColor(0x2629F1)
+    .setFooter({ text: `Ticket #${ticket.id}` })
+    .setTimestamp();
+
+  // Criar menu de seleção com os staff
+  const selectMenu = new StringSelectMenuBuilder()
+    .setCustomId(`chamar_staff_${ticket.id}`)
+    .setPlaceholder("🎯 Escolha um staff para chamar")
+    .addOptions(
+      staffList.map(staff => ({
+        label: staff.displayName || staff.username,
+        description: staff.roleName,
+        value: staff.member.id,
+      }))
+    );
+
+  const row = new ActionRowBuilder().addComponents(selectMenu);
+
+  await safeEdit(interaction, {
+    embeds: [embed],
+    components: [row],
+  });
+}
+
+async function enviarPainelStaff(interaction, client) {
+  if (!(await safeDefer(interaction))) return;
+
+  const ticket = getTicketForInteraction(null, interaction.channelId);
+  if (!ticket) {
+    return safeEdit(interaction, {
+      content: "⚠️ Nenhum ticket ativo encontrado neste canal.",
+    });
+  }
+
+  try {
+    return await sendPainelChamada(
+      interaction.channel,
+      ticket.id,
+      interaction
+    );
+  } catch (error) {
+    console.error(
+      "[PainelStaff] Erro:",
+      error
+    );
+
+    return safeEdit(interaction, {
+      content: "❌ Não foi possível abrir o painel de staff.",
+    });
+  }
 }
 
 // ============================================================
@@ -670,6 +898,35 @@ export async function handleInteractionCreate(
     if (
       interaction.isStringSelectMenu()
     ) {
+      // ===== NOVO: CHAMAR STAFF =====
+      if (interaction.customId.startsWith("chamar_staff_")) {
+        const ticketId = interaction.customId.replace("chamar_staff_", "");
+        const staffId = interaction.values[0];
+
+        const ticket = getTicketForInteraction(ticketId, interaction.channelId);
+        if (!ticket || ticket.closed) {
+          return safeReply(interaction, "⚠️ Ticket não encontrado ou já fechado.");
+        }
+
+        // Verificar se o utilizador é o dono do ticket
+        if (interaction.user.id !== ticket.userId) {
+          return safeReply(interaction, "❌ Apenas o dono do ticket pode chamar staff.");
+        }
+
+        // Verificar cooldown (reforço)
+        const now = Date.now();
+        const lastCall = cooldownChamadas.get(interaction.user.id);
+        if (lastCall && (now - lastCall) < COOLDOWN_CHAMAR) {
+          const restante = Math.ceil((COOLDOWN_CHAMAR - (now - lastCall)) / 1000);
+          const minutos = Math.floor(restante / 60);
+          const segundos = restante % 60;
+          return safeReply(interaction, `⏳ Olá, para chamar novamente a staff espera **${minutos}m ${segundos}s**.`);
+        }
+
+        await chamarStaff(interaction, ticket, staffId);
+        return;
+      }
+
       if (
         interaction.customId ===
         "ticket_geral"
@@ -1146,7 +1403,7 @@ export async function handleInteractionCreate(
       }
 
       // ======================================================
-      // PAINEL MEMBRO
+      // PAINEL MEMBRO (BOTÃO)
       // ======================================================
 
       if (
@@ -1154,84 +1411,7 @@ export async function handleInteractionCreate(
           "painel_membro_"
         )
       ) {
-        const ticketId =
-          customId.substring(
-            "painel_membro_".length
-          );
-
-        if (
-          !(await safeDefer(
-            interaction
-          ))
-        ) {
-          return;
-        }
-
-        const ticket =
-          getTicketForInteraction(
-            ticketId,
-            interaction.channelId
-          );
-
-        if (
-          !ticket ||
-          ticket.closed
-        ) {
-          return safeEdit(
-            interaction,
-            {
-              content:
-                "⚠️ Ticket não encontrado ou já fechado.",
-            }
-          );
-        }
-
-        const staffList =
-          await buildStaffList(
-            interaction.channel,
-            ticket
-          );
-
-        if (
-          staffList.length === 0
-        ) {
-          return safeEdit(
-            interaction,
-            {
-              content:
-                "⚠️ Nenhum membro da staff encontrado neste ticket.",
-            }
-          );
-        }
-
-        const staffText =
-          staffList
-            .map(
-              (staff) =>
-                `**${staff.roleName}** | ${staff.displayName} | <@${staff.member.id}>`
-            )
-            .join("\n");
-
-        const embed =
-          new EmbedBuilder()
-            .setTitle(
-              "🛡️ Painel Membro"
-            )
-            .setDescription(
-              [
-                "📋 **Lista de staff disponível neste ticket:**",
-                "",
-                staffText,
-              ].join("\n")
-            )
-            .setColor(0x2629F1);
-
-        return safeEdit(
-          interaction,
-          {
-            embeds: [embed],
-          }
-        );
+        return enviarPainelMembro(interaction);
       }
 
       // ======================================================
@@ -1326,7 +1506,7 @@ export async function handleInteractionCreate(
         }
       }
 
-            // ======================================================
+      // ======================================================
       // FECHAR
       // ======================================================
 
@@ -1653,6 +1833,25 @@ export async function handleInteractionCreate(
             5 - estrelas
           );
 
+        // ===== LOG DA AVALIAÇÃO =====
+        try {
+          const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS || CONFIG.CANAL_AVALIACOES).catch(() => null);
+          if (logChannel) {
+            const logEmbed = new EmbedBuilder()
+              .setTitle("📝 Nova Avaliação")
+              .setDescription(
+                `👤 **Utilizador:** <@${interaction.user.id}> | \`${interaction.user.tag}\`\n` +
+                `🎫 **Ticket:** #${ticket.id} (${ticket.label})\n` +
+                `⭐ **Avaliação:** ${stars} (${estrelas}/5)`
+              )
+              .setColor(0x00ff00)
+              .setTimestamp();
+            await logChannel.send({ embeds: [logEmbed] });
+          }
+        } catch (e) {
+          console.error("[Avaliação] Erro ao enviar log:", e.message);
+        }
+
         try {
           return await interaction.update(
             {
@@ -1813,68 +2012,59 @@ async function fecharTicket(
         .catch(() => null);
 
     if (channel) {
-// ------------------------------------------------------
-// EMBED DE FECHO NO CANAL (NOVO FORMATO)
-// ------------------------------------------------------
-const isRecruitment = ticket.type === 'recrutamento';
-const duracao = formatDuration(ticket.openedAt, new Date());
-const duracaoEmoji = getDurationEmoji(ticket.openedAt, new Date());
+      // ------------------------------------------------------
+      // EMBED DE FECHO NO CANAL (NOVO FORMATO)
+      // ------------------------------------------------------
+      const isRecruitment = ticket.type === 'recrutamento';
+      const duracao = formatDuration(ticket.openedAt, new Date());
+      const duracaoEmoji = getDurationEmoji(ticket.openedAt, new Date());
 
-let desc = `🔴 **Ticket Fechado**\n\n`;
-desc += `Este ticket foi encerrado por <@${interaction.user.id}>.\n\n`;
-desc += `📁 **Informações:**\n`;
-desc += `• **Aberto por:** <@${ticket.userId}>\n`;
-desc += `• **Motivo:** ${ticket.label}\n`;
-desc += `\n${duracaoEmoji} **Duração:** ${duracao}`;
-desc += `\n\n⏳ Este canal será eliminado automaticamente em **5 segundos**...`;
+      let desc = `🔴 **Ticket Fechado**\n\n`;
+      desc += `Este ticket foi encerrado por <@${interaction.user.id}>.\n\n`;
+      desc += `📁 **Informações:**\n`;
+      desc += `• **Aberto por:** <@${ticket.userId}>\n`;
+      desc += `• **Motivo:** ${ticket.label}\n`;
+      desc += `\n${duracaoEmoji} **Duração:** ${duracao}`;
+      desc += `\n\n⏳ Este canal será eliminado automaticamente em **5 segundos**...`;
 
-const embed = new EmbedBuilder()
-  .setDescription(desc)
-  .setColor(0xFF0000)
-  .setTimestamp();
+      const embed = new EmbedBuilder()
+        .setDescription(desc)
+        .setColor(0xFF0000)
+        .setTimestamp();
 
-await channel.send({
-  embeds: [embed],
-}).catch(() => {});
+      await channel.send({
+        embeds: [embed],
+      }).catch(() => {});
 
-// ------------------------------------------------------
-// TRANSCRIPT AUTOMÁTICO
-// ------------------------------------------------------
-try {
-  const { gerarTranscript } = await import("../utils/transcript.js");
-  const transcript = await gerarTranscript(channel, ticket.id);
-  if (transcript) {
-    const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
-    if (logChannel) {
-      await logChannel.send({
-        content: `📋 **Transcript do Ticket #${ticket.id}**`,
-        files: [transcript.attachment]
-      });
-    }
-  }
-} catch (e) {
-  console.error("[Transcript Auto] Erro:", e.message);
-}
+      // ------------------------------------------------------
+      // TRANSCRIPT AUTOMÁTICO
+      // ------------------------------------------------------
+      try {
+        const { gerarTranscript } = await import("../utils/transcript.js");
+        const transcript = await gerarTranscript(channel, ticket.id);
+        if (transcript) {
+          const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
+          if (logChannel) {
+            await logChannel.send({
+              content: `📋 **Transcript do Ticket #${ticket.id}**`,
+              files: [transcript.attachment]
+            });
+          }
+        }
+      } catch (e) {
+        console.error("[Transcript Auto] Erro:", e.message);
+      }
 
-// ------------------------------------------------------
-// DM DE AVALIAÇÃO (NOVO FORMATO) - CORRIGIDO
-// ------------------------------------------------------
-try {
-  const user =
-    await client.users.fetch(
-      ticket.userId
-    );
+      // ------------------------------------------------------
+      // DM DE AVALIAÇÃO (NOVO FORMATO)
+      // ------------------------------------------------------
+      try {
+        const user =
+          await client.users.fetch(
+            ticket.userId
+          );
 
         const clockEmojiDM = getClockEmoji(new Date());
-
-        // ✅ OBTÉM O DISPLAY NAME DO STAFF QUE FECHOU
-        let staffDisplayName = interaction.user.username;
-        try {
-          const guildMember = await interaction.guild.members.fetch(interaction.user.id);
-          staffDisplayName = guildMember.displayName || interaction.user.username;
-        } catch (e) {
-          // fallback
-        }
 
         const embedDM =
           new EmbedBuilder()
@@ -1883,7 +2073,7 @@ try {
               `ℹ️ O seu ticket foi fechado com sucesso! Avalie o nosso atendimento clicando nas estrelas abaixo.` +
               `\n\n🎫 **Ticket:** #${ticket.id}` +
               `\n📝 **Tipo:** ${ticket.label}` +
-              `\n\n⚒️ **Fechado por:** ${staffDisplayName}` +
+              `\n\n⚒️ **Fechado por:** ${interaction.user.username}` +
               `\n${clockEmojiDM} **Fechado em:** ${formatDateShort(new Date())}` +
               `\n\n🎫 Caso seja necessário, não hesite em abrir um novo ticket!`
             )
@@ -2154,7 +2344,7 @@ async function handleFotoTruckyModal(
     }
 
     // --------------------------------------------------------
-    // MENSAGEM GERAL - NOVA VERSÃO
+    // MENSAGEM GERAL
     // --------------------------------------------------------
 
     if (CONFIG.CANAL_GERAL) {
@@ -2168,13 +2358,11 @@ async function handleFotoTruckyModal(
       if (canalGeral) {
         await canalGeral.send(
           [
-            "🎉 **Boas-Vindas à Portugal Alfa Truckers!**",
+            "🎉 **Bem-vindo a Portugal Alfa Truckers!**",
             "",
             `Parabéns <@${ticket.userId}>! Foste recrutado com sucesso.`,
-            "🚛 Segue as <#1200170228093550712> e diverte-te!",
-            "A tua foto de perfil para o Trucky ficará disponível em <#1204160547092697088>.",
-            "Caso precises de ajuda, abre um ticket ou coloca a tua dúvida num chat aberto.",
-            "Bons quilómetros!"
+            "",
+            "🚛 Segue as regras em <#1200170228093550712> e diverte-te com bons quilómetros!",
           ].join("\n")
         ).catch(() => {});
       }
@@ -2241,189 +2429,6 @@ async function handleFotoTruckyModal(
   } finally {
     clearClosing(ticketId);
   }
-}
-
-// ============================================================
-// PAINEL MEMBRO
-// ============================================================
-
-async function enviarPainelMembro(
-  interaction
-) {
-  if (
-    !(await safeDefer(
-      interaction
-    ))
-  ) {
-    return;
-  }
-
-  const ticket =
-    getTicketForInteraction(
-      null,
-      interaction.channelId
-    );
-
-  if (!ticket) {
-    return safeEdit(
-      interaction,
-      {
-        content:
-          "⚠️ Nenhum ticket ativo encontrado neste canal.",
-      }
-    );
-  }
-
-  const staffList =
-    await buildStaffList(
-      interaction.channel,
-      ticket
-    );
-
-  if (
-    staffList.length === 0
-  ) {
-    return safeEdit(
-      interaction,
-      {
-        content:
-          "⚠️ Nenhum membro da staff encontrado neste ticket.",
-      }
-    );
-  }
-
-  const text =
-    staffList
-      .map(
-        (staff) =>
-          `**${staff.roleName}** | ${staff.displayName} | <@${staff.member.id}>`
-      )
-      .join("\n");
-
-  const embed =
-    new EmbedBuilder()
-      .setTitle(
-        "🛡️ Painel Membro"
-      )
-      .setDescription(
-        [
-          "📋 **Lista de staff disponível neste ticket:**",
-          "",
-          text,
-        ].join("\n")
-      )
-      .setColor(0x2629F1);
-
-  return safeEdit(
-    interaction,
-    {
-      embeds: [embed],
-    }
-  );
-}
-
-// ============================================================
-// PAINEL STAFF
-// ============================================================
-
-async function enviarPainelStaff(
-  interaction,
-  client
-) {
-  if (
-    !(await safeDefer(
-      interaction
-    ))
-  ) {
-    return;
-  }
-
-  const ticket =
-    getTicketForInteraction(
-      null,
-      interaction.channelId
-    );
-
-  if (!ticket) {
-    return safeEdit(
-      interaction,
-      {
-        content:
-          "⚠️ Nenhum ticket ativo encontrado neste canal.",
-      }
-    );
-  }
-
-  try {
-    return await sendPainelChamada(
-      interaction.channel,
-      ticket.id,
-      interaction
-    );
-  } catch (error) {
-    console.error(
-      "[PainelStaff] Erro:",
-      error
-    );
-
-    return safeEdit(
-      interaction,
-      {
-        content:
-          "❌ Não foi possível abrir o painel de staff.",
-      }
-    );
-  }
-}
-
-// ============================================================
-// STAFF LIST (CORRIGIDA)
-// ============================================================
-
-async function buildStaffList(
-  channel,
-  ticket
-) {
-  // Carregar todos os membros do servidor primeiro
-  await channel.guild.members.fetch().catch(() => null);
-
-  // channel.members é uma Collection de membros que podem ver o canal
-  const members = channel.members;
-  if (!members || members.size === 0) return [];
-
-  const staffList = [];
-  const botId = CONFIG.BOT_ID_EXCLUIR || channel.client.user.id;
-
-  for (const [memberId, member] of members) {
-    if (memberId === botId) continue;
-    if (memberId === ticket.userId) continue;
-
-    const permissions = channel.permissionsFor(member);
-    if (!permissions?.has(PermissionFlagsBits.ViewChannel) ||
-        !permissions?.has(PermissionFlagsBits.SendMessages)) {
-      continue;
-    }
-
-    const highestRole = member.roles.cache
-      .sort((a, b) => b.position - a.position)
-      .first();
-
-    staffList.push({
-      member,
-      rolePosition: highestRole?.position || 0,
-      roleName: highestRole?.name || "Sem cargo",
-      displayName: member.displayName || member.user.username,
-    });
-  }
-
-  staffList.sort((a, b) => {
-    if (b.rolePosition !== a.rolePosition) {
-      return b.rolePosition - a.rolePosition;
-    }
-    return a.displayName.localeCompare(b.displayName);
-  });
-
-  return staffList;
 }
 
 // ============================================================
@@ -2630,3 +2635,9 @@ ${content}
 </body>
 </html>`;
 }
+
+// ============================================================
+// FUNÇÕES DE DATA (importadas)
+// ============================================================
+
+import { formatDateFull, formatDateShort, formatDateSimple, getClockEmoji, formatDuration, getDurationEmoji } from "../utils/dateUtils.js";
