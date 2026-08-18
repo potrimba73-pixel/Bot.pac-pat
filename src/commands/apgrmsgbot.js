@@ -11,15 +11,15 @@ import {
 // ============================================================
 // CONSTANTES
 // ============================================================
-// IDs predefinidos (podes editar ou adicionar mais)
 const PRESET_IDS = {
   '412347553141751808': 'Jockie Music (bot)',
   '759343605726052392': 'pt.jp lyaz',
   '770599668710637608': 'Utilizador 7705...',
   '456226577798135808': 'Utilizador 4562...',
 };
-const DEFAULT_TARGET_ID = '412347553141751808'; // Jockie Music
+const DEFAULT_TARGET_ID = '412347553141751808';
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID || '';
+const TIMEZONE = 'Europe/Lisbon'; // ou 'UTC'
 
 // ============================================================
 // UTIL: ESCAPAR HTML
@@ -35,32 +35,109 @@ function escapeHtml(text) {
 }
 
 // ============================================================
-// EXTRAIR TEXTO DA MENSAGEM
+// FORMATAR DATA COM TIMEZONE FIXO
+// ============================================================
+const dateFormatter = new Intl.DateTimeFormat('pt-PT', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  timeZone: TIMEZONE,
+});
+
+const dateFormatterShort = new Intl.DateTimeFormat('pt-PT', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  timeZone: TIMEZONE,
+});
+
+// ============================================================
+// SANITIZAR NOME DO CANAL PARA FICHEIROS
+// ============================================================
+function sanitizeFileName(name) {
+  return name.replace(/[^a-zA-Z0-9\-_]/g, '_');
+}
+
+// ============================================================
+// FORMATAR EMBED DE MÚSICA (SPOTIFY)
+// ============================================================
+function formatMusicEmbed(embed) {
+  // Se for um embed do Spotify, tentar extrair título e artista
+  if (embed.url?.includes('spotify.com')) {
+    let title = embed.title || '';
+    let artist = '';
+    // A descrição costuma ser "by Artista" ou "Artista • Música"
+    if (embed.description) {
+      const match = embed.description.match(/by\s+(.+)/i);
+      if (match) artist = match[1].trim();
+      else {
+        // Tenta separar por " • " ou " - "
+        const parts = embed.description.split(/[•\-]/).map(s => s.trim());
+        if (parts.length >= 2) {
+          artist = parts[1];
+        } else {
+          artist = embed.description;
+        }
+      }
+    }
+    // Se não conseguir extrair da descrição, usa o author
+    if (!artist && embed.author?.name) {
+      artist = embed.author.name;
+    }
+    let result = `🎵 ${title}`;
+    if (artist) result += ` por ${artist}`;
+    if (embed.url) result += ` (${embed.url})`;
+    return result;
+  }
+  // Fallback: usar o texto normal do embed
+  let text = '';
+  if (embed.title) text += embed.title;
+  if (embed.description) text += (text ? ' ' : '') + embed.description;
+  if (embed.url) text += (text ? ' ' : '') + embed.url;
+  return text || '(embed)';
+}
+
+// ============================================================
+// EXTRAIR TEXTO DA MENSAGEM (com formatação especial para música)
 // ============================================================
 function getMessageText(msg) {
   let text = msg.content || '';
 
+  // Embeds
   if (msg.embeds?.length) {
     for (const embed of msg.embeds) {
-      if (embed.title) text += (text ? '\n' : '') + embed.title;
-      if (embed.description) text += (text ? '\n' : '') + embed.description;
-      if (embed.fields) {
-        for (const field of embed.fields) {
-          text += (text ? '\n' : '') + `${field.name}: ${field.value}`;
+      // Se for embed de música (Spotify), usar formatação especial
+      if (embed.url?.includes('spotify.com') || embed.provider?.name === 'Spotify') {
+        text += (text ? '\n' : '') + formatMusicEmbed(embed);
+      } else {
+        // Fallback para outros embeds
+        if (embed.title) text += (text ? '\n' : '') + embed.title;
+        if (embed.description) text += (text ? '\n' : '') + embed.description;
+        if (embed.fields) {
+          for (const field of embed.fields) {
+            text += (text ? '\n' : '') + `${field.name}: ${field.value}`;
+          }
         }
+        if (embed.url && !embed.url.includes('spotify.com')) {
+          text += (text ? '\n' : '') + embed.url;
+        }
+        if (embed.author?.name) text += (text ? '\n' : '') + `Por ${embed.author.name}`;
+        if (embed.footer?.text) text += (text ? '\n' : '') + embed.footer.text;
       }
-      if (embed.url) text += (text ? '\n' : '') + embed.url;
-      if (embed.author?.name) text += (text ? '\n' : '') + `Por ${embed.author.name}`;
-      if (embed.footer?.text) text += (text ? '\n' : '') + embed.footer.text;
     }
   }
 
+  // Anexos
   if (msg.attachments?.size) {
     for (const [, att] of msg.attachments) {
       text += (text ? '\n' : '') + `📎 ${att.name} (${att.url})`;
     }
   }
 
+  // Stickers
   if (msg.stickers?.size) {
     for (const sticker of msg.stickers.values()) {
       text += (text ? '\n' : '') + `🖼️ Sticker: ${sticker.name}`;
@@ -71,7 +148,7 @@ function getMessageText(msg) {
 }
 
 // ============================================================
-// GERAR HTML (estilo Discord melhorado)
+// GERAR HTML (com ordem cronológica)
 // ============================================================
 function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targetName) {
   const guild = channel.guild;
@@ -79,16 +156,12 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
   const channelName = channel.name;
   const guildIcon = guild?.iconURL({ dynamic: true, size: 64 }) || '';
 
-  const msgsHtml = Array.from(messages).map((msg, index) => {
+  // Ordenar por data (mais antiga primeiro) para o transcript
+  const sorted = [...messages].sort((a, b) => a.createdAt - b.createdAt);
+
+  const msgsHtml = sorted.map((msg, index) => {
     const avatar = msg.author.displayAvatarURL({ extension: 'png', size: 64 });
-    const data = new Intl.DateTimeFormat('pt-PT', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }).format(msg.createdAt);
+    const data = dateFormatter.format(msg.createdAt);
     const texto = escapeHtml(getMessageText(msg)).replace(/\n/g, '<br>');
 
     const hue = (parseInt(msg.author.id.slice(0, 6), 16) % 360);
@@ -98,6 +171,10 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
     let embedsHtml = '';
     if (msg.embeds?.length) {
       for (const embed of msg.embeds) {
+        // Pular embeds de música pois já foram processados no texto
+        if (embed.url?.includes('spotify.com') || embed.provider?.name === 'Spotify') {
+          continue;
+        }
         const embedColor = embed.color ? `#${embed.color.toString(16).padStart(6, '0')}` : '#5865F2';
         embedsHtml += `
         <div class="embed" style="border-left-color: ${embedColor};">
@@ -364,7 +441,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
         <strong>Canal:</strong> #${escapeHtml(channelName)} &bull;
         <strong>Staff:</strong> ${escapeHtml(staffName)} &bull;
         <strong>Alvo:</strong> <@${targetId}> (${escapeHtml(targetName)}) &bull;
-        <strong>Data:</strong> ${new Intl.DateTimeFormat('pt-PT').format(new Date())}
+        <strong>Data:</strong> ${dateFormatterShort.format(new Date())}
       </p>
     </div>
   </div>
@@ -373,10 +450,10 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
   </div>
   <div class="footer">
     <div class="stats">
-      <span>📊 ${Array.from(messages).length} mensagens</span>
+      <span>📊 ${sorted.length} mensagens</span>
       <span>👤 Alvo: <@${targetId}></span>
     </div>
-    <div>Transcript gerado automaticamente • ${new Intl.DateTimeFormat('pt-PT').format(new Date())}</div>
+    <div>Transcript gerado automaticamente • ${dateFormatterShort.format(new Date())}</div>
   </div>
 </div>
 </body>
@@ -384,9 +461,11 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
 }
 
 // ============================================================
-// GERAR TXT
+// GERAR TXT (com ordem cronológica)
 // ============================================================
 function generateTxt(messages, channel, staffName, motivo, targetId, targetName) {
+  const sorted = [...messages].sort((a, b) => a.createdAt - b.createdAt);
+
   const lines = [];
   lines.push('🧹 MENSAGENS APAGADAS');
   lines.push('================================');
@@ -394,19 +473,12 @@ function generateTxt(messages, channel, staffName, motivo, targetId, targetName)
   lines.push(`Staff: ${staffName}`);
   lines.push(`Motivo: ${motivo}`);
   lines.push(`Alvo: ${targetId} (${targetName})`);
-  lines.push(`Quantidade: ${Array.from(messages).length}`);
-  lines.push(`Data: ${new Intl.DateTimeFormat('pt-PT').format(new Date())}`);
+  lines.push(`Quantidade: ${sorted.length}`);
+  lines.push(`Data: ${dateFormatterShort.format(new Date())}`);
   lines.push('================================\n');
 
-  for (const msg of messages) {
-    const data = new Intl.DateTimeFormat('pt-PT', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }).format(msg.createdAt);
+  for (const msg of sorted) {
+    const data = dateFormatter.format(msg.createdAt);
     const text = getMessageText(msg);
     lines.push(`[${data}] ${msg.author.username}: ${text}`);
   }
@@ -479,11 +551,9 @@ export async function execute(interaction, client) {
   let targetId, targetName;
 
   if (targetUser) {
-    // Se o utilizador foi selecionado na lista de membros
     targetId = targetUser.id;
     targetName = targetUser.username;
   } else if (targetIdRaw) {
-    // Se foi fornecido um ID manualmente
     if (!/^\d{17,19}$/.test(targetIdRaw)) {
       return interaction.reply({
         content: '❌ O ID deve ser numérico e ter entre 17 e 19 dígitos.',
@@ -491,7 +561,6 @@ export async function execute(interaction, client) {
       });
     }
     targetId = targetIdRaw;
-    // Verificar se o ID está na lista predefinida
     if (PRESET_IDS[targetId]) {
       targetName = PRESET_IDS[targetId];
     } else {
@@ -503,12 +572,10 @@ export async function execute(interaction, client) {
       }
     }
   } else {
-    // Nenhum alvo especificado – usar o predefinido (Jockie Music)
     targetId = DEFAULT_TARGET_ID;
     targetName = PRESET_IDS[targetId] || 'Alvo predefinido';
   }
 
-  // Não permitir apagar mensagens do próprio bot
   if (targetId === client.user.id) {
     return interaction.reply({
       content: '❌ Não podes apagar mensagens do próprio bot.',
@@ -542,9 +609,8 @@ export async function execute(interaction, client) {
     const targetMessages = collected.filter(msg => msg.author.id === targetId);
     const totalFound = targetMessages.size;
 
-    // 6. Se não encontrou, sugerir IDs predefinidos com mensagens
+    // 6. Sugestão se não encontrar
     if (totalFound === 0) {
-      // Contar mensagens por autor (apenas IDs predefinidos)
       const foundPresets = [];
       for (const [id, name] of Object.entries(PRESET_IDS)) {
         const count = collected.filter(msg => msg.author.id === id).size;
@@ -557,7 +623,6 @@ export async function execute(interaction, client) {
       if (foundPresets.length > 0) {
         suggestion = `\n💡 **IDs predefinidos com mensagens neste canal:**\n${foundPresets.join('\n')}`;
       } else {
-        // Se nenhum predefinido tiver mensagens, mostrar os bots que têm
         const botCounts = new Map();
         for (const msg of collected.values()) {
           if (msg.author.bot && msg.author.id !== client.user.id) {
@@ -567,7 +632,7 @@ export async function execute(interaction, client) {
         if (botCounts.size > 0) {
           const sorted = [...botCounts.entries()].sort((a, b) => b[1] - a[1]);
           const top = sorted[0];
-          suggestion = `\n💡 **Sugestão**: O bot com mais mensagens é <@${top[0]}> (${top[1]} mensagens). Talvez queiras usar esse ID?`;
+          suggestion = `\n💡 **Sugestão**: O bot com mais mensagens é <@${top[0]}> (${top[1]} mensagens).`;
         }
       }
 
@@ -617,14 +682,16 @@ export async function execute(interaction, client) {
       }
     }
 
-    // 9. Gerar ficheiros
+    // 9. Gerar ficheiros (usando array para evitar duplicados)
+    const msgArray = Array.from(targetMessages.values());
     const timestamp = Date.now();
-    const baseName = `transcript-${channel.name}-${timestamp}`;
+    const safeChannelName = sanitizeFileName(channel.name);
+    const baseName = `transcript-${safeChannelName}-${timestamp}`;
     const files = [];
 
     if (formato === 'html' || formato === 'ambos') {
       const html = generatePrettyHTML(
-        targetMessages.values(),
+        msgArray,
         channel,
         interaction.user.username,
         motivo,
@@ -636,7 +703,7 @@ export async function execute(interaction, client) {
 
     if (formato === 'txt' || formato === 'ambos') {
       const txt = generateTxt(
-        targetMessages.values(),
+        msgArray,
         channel,
         interaction.user.username,
         motivo,
@@ -652,7 +719,7 @@ export async function execute(interaction, client) {
       .setDescription(
         `📊 **Quantidade:** ${deletedCount}${failedCount > 0 ? ` (${failedCount} falhas)` : ''}\n` +
         `👤 **Alvo:** <@${targetId}>\n` +
-        `📅 **Data:** ${new Intl.DateTimeFormat('pt-PT').format(new Date())}\n` +
+        `📅 **Data:** ${dateFormatterShort.format(new Date())}\n` +
         `👮 **Staff:** <@${interaction.user.id}>\n` +
         `ℹ️ **Motivo:** ${motivo}`
       )
