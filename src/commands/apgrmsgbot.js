@@ -59,124 +59,134 @@ const dateFormatterShort = new Intl.DateTimeFormat('pt-PT', {
 });
 
 // ============================================================
-// EXTRAIR TEXTO DA MENSAGEM (limpo para Jockie Music)
+// EXTRAIR TEXTO DA MENSAGEM (ESPECIALMENTE PARA JOCKIE MUSIC)
 // ============================================================
 function getMessageText(msg) {
+  // Se for uma mensagem do Jockie Music, tratamos de forma especial
+  const isJockie = msg.author.id === '412347553141751808';
+
+  // Primeiro, tentamos extrair o conteúdo do embed
   let text = msg.content || '';
 
-  if (!msg.embeds?.length) {
-    return text || '(sem conteúdo)';
-  }
+  if (msg.embeds?.length) {
+    for (const embed of msg.embeds) {
+      // --- Playlist (Added Playlist) ---
+      if (
+        embed.title?.toLowerCase().includes('playlist') ||
+        embed.fields?.some(f => f.name?.toLowerCase().includes('playlist'))
+      ) {
+        let playlistName = '';
+        let tracks = '';
+        let length = '';
 
-  for (const embed of msg.embeds) {
-    // --- 1) PLAYLIST (Added Playlist) ---
-    if (
-      embed.title?.toLowerCase().includes('playlist') ||
-      embed.fields?.some(f => f.name?.toLowerCase().includes('playlist'))
-    ) {
-      let playlistName = '';
-      let tracks = '';
-      let length = '';
-
-      for (const field of embed.fields || []) {
-        const fname = field.name.toLowerCase();
-        if (fname.includes('playlist')) playlistName = field.value;
-        else if (fname.includes('tracks')) tracks = field.value;
-        else if (fname.includes('length') || fname.includes('duração')) length = field.value;
-      }
-
-      if (!playlistName && embed.description) {
-        const lines = embed.description.split('\n');
-        for (const line of lines) {
-          if (line.includes('Playlist') && !line.includes('Length')) {
-            playlistName = line.replace('Playlist', '').trim();
-          }
-          if (line.includes('Tracks')) tracks = line.replace(/.*Tracks\s*/, '').trim();
-          if (line.includes('Length')) length = line.replace(/.*Length\s*/, '').trim();
+        for (const field of embed.fields || []) {
+          const fname = field.name.toLowerCase();
+          if (fname.includes('playlist')) playlistName = field.value;
+          else if (fname.includes('tracks')) tracks = field.value;
+          else if (fname.includes('length') || fname.includes('duração')) length = field.value;
         }
+
+        if (!playlistName && embed.description) {
+          const lines = embed.description.split('\n');
+          for (const line of lines) {
+            if (line.includes('Playlist') && !line.includes('Length')) {
+              playlistName = line.replace('Playlist', '').trim();
+            }
+            if (line.includes('Tracks')) tracks = line.replace(/.*Tracks\s*/, '').trim();
+            if (line.includes('Length')) length = line.replace(/.*Length\s*/, '').trim();
+          }
+        }
+
+        let result = '📋 **Added Playlist**';
+        if (playlistName) result += `\n**Playlist:** ${playlistName}`;
+        if (tracks) result += `\n**Tracks:** ${tracks}`;
+        if (length) result += `\n**Length:** ${length}`;
+        if (embed.url) result += `\n🔗 ${embed.url}`;
+        text += (text ? '\n' : '') + result;
+        continue;
       }
 
-      let result = '📋 **Added Playlist**';
-      if (playlistName) result += `\n**Playlist:** ${playlistName}`;
-      if (tracks) result += `\n**Tracks:** ${tracks}`;
-      if (length) result += `\n**Length:** ${length}`;
-      if (embed.url) result += `\n🔗 ${embed.url}`;
-      text += (text ? '\n' : '') + result;
-      continue;
-    }
+      // --- Música (Started playing) ---
+      // Para Jockie Music, o título é a música, a description contém o artista
+      if (
+        embed.url?.includes('spotify.com') ||
+        embed.provider?.name === 'Spotify' ||
+        (isJockie && embed.title) ||
+        embed.description?.toLowerCase().includes('started playing')
+      ) {
+        let title = embed.title || '';
+        let artist = '';
 
-    // --- 2) MÚSICA (Started playing) ---
-    // Jockie Music usa título com nome da música, descrição "by Artista" e URL do Spotify
-    if (
-      embed.url?.includes('spotify.com') ||
-      embed.provider?.name === 'Spotify' ||
-      embed.description?.toLowerCase().includes('started playing') ||
-      embed.title?.toLowerCase().includes('started playing')
-    ) {
-      let title = embed.title || '';
-      // Remove "Started playing" se estiver no título
-      title = title.replace(/^Started playing\s*/i, '').trim();
+        // Limpar título de possíveis caracteres estranhos
+        title = title.replace(/^["']|["']$/g, '').trim();
 
-      let artist = '';
-
-      // Extrair artista da descrição
-      if (embed.description) {
-        // Padrão: "by Artista" ou "Artista • Música" ou "Artista - Música"
-        const byMatch = embed.description.match(/by\s+(.+)/i);
-        if (byMatch) {
-          artist = byMatch[1].trim();
-        } else {
-          // Tentar separar por " • " ou " - "
-          const parts = embed.description.split(/[•\-]/).map(s => s.trim());
-          if (parts.length >= 2) {
-            // Normalmente o primeiro é a música, o segundo o artista, mas vamos tentar detetar
-            // Se o título estiver no primeiro, o segundo é artista
-            if (title && parts[0].includes(title)) {
+        // Extrair artista da descrição
+        if (embed.description) {
+          // Tenta padrão "by Artista" ou "Artista • Música"
+          const byMatch = embed.description.match(/by\s+(.+)/i);
+          if (byMatch) {
+            artist = byMatch[1].trim();
+          } else {
+            // Separa por "•" ou "-" e pega a segunda parte
+            const parts = embed.description.split(/[•\-]/).map(s => s.trim());
+            if (parts.length >= 2) {
               artist = parts[1];
             } else {
-              artist = parts[1] || parts[0];
+              artist = embed.description;
             }
-          } else {
-            artist = embed.description;
           }
         }
+
+        // Se não encontrou artista, usa author.name
+        if (!artist && embed.author?.name) {
+          artist = embed.author.name;
+        }
+
+        // Se ainda não tiver artista, tenta extrair do título (ex: "Música - Artista")
+        if (!artist && title.includes('-')) {
+          const parts = title.split('-').map(s => s.trim());
+          if (parts.length === 2) {
+            title = parts[0];
+            artist = parts[1];
+          }
+        }
+
+        // Se a mensagem tiver conteúdo de texto, pode ser o nome da música
+        if (!title && msg.content) {
+          title = msg.content;
+        }
+
+        let result = `🎵 **${title}**`;
+        if (artist) result += ` por ${artist}`;
+        if (embed.url) result += `\n🔗 ${embed.url}`;
+        text += (text ? '\n' : '') + result;
+        continue;
       }
 
-      // Se não encontrou artista, usar author.name
-      if (!artist && embed.author?.name) {
-        artist = embed.author.name;
+      // --- Outros embeds (genérico) ---
+      let parts = [];
+      if (embed.title) parts.push(`**${embed.title}**`);
+      if (embed.description) parts.push(embed.description);
+      if (embed.fields) {
+        for (const field of embed.fields) {
+          parts.push(`**${field.name}:** ${field.value}`);
+        }
       }
-
-      // Remover "by" e outras palavras indesejadas do artista
-      if (artist) {
-        artist = artist.replace(/^by\s+/i, '').trim();
+      if (embed.url) parts.push(`🔗 ${embed.url}`);
+      if (embed.author?.name) parts.push(`Por ${embed.author.name}`);
+      if (embed.footer?.text) parts.push(embed.footer.text);
+      if (parts.length) {
+        text += (text ? '\n' : '') + parts.join('\n');
       }
-
-      let result = `🎵 **${title}**`;
-      if (artist) result += ` por ${artist}`;
-      if (embed.url) result += `\n🔗 ${embed.url}`;
-      text += (text ? '\n' : '') + result;
-      continue;
-    }
-
-    // --- 3) OUTROS EMBEDS (genérico) ---
-    let parts = [];
-    if (embed.title) parts.push(`**${embed.title}**`);
-    if (embed.description) parts.push(embed.description);
-    if (embed.fields) {
-      for (const field of embed.fields) {
-        parts.push(`**${field.name}:** ${field.value}`);
-      }
-    }
-    if (embed.url) parts.push(`🔗 ${embed.url}`);
-    if (embed.author?.name) parts.push(`Por ${embed.author.name}`);
-    if (embed.footer?.text) parts.push(embed.footer.text);
-    if (parts.length) {
-      text += (text ? '\n' : '') + parts.join('\n');
     }
   }
 
-  // --- Anexos e stickers ---
+  // Se ainda não tiver texto e for Jockie, pode ser uma mensagem de texto simples (ex: "Did you know...")
+  if (!text && isJockie && msg.content) {
+    text = msg.content;
+  }
+
+  // Anexos e stickers
   if (msg.attachments?.size) {
     for (const [, att] of msg.attachments) {
       text += (text ? '\n' : '') + `📎 ${att.name} (${att.url})`;
@@ -192,7 +202,7 @@ function getMessageText(msg) {
 }
 
 // ============================================================
-// GERAR HTML (com estrutura visual limpa e cores corretas)
+// GERAR HTML (com estrutura visual limpa)
 // ============================================================
 function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targetName) {
   const guild = channel.guild;
@@ -207,6 +217,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
     const avatar = msg.author.displayAvatarURL({ extension: 'png', size: 64 });
     const data = dateFormatter.format(msg.createdAt);
     const rawText = getMessageText(msg);
+    // Escapar HTML e converter quebras de linha para <br>
     const texto = escapeHtml(rawText).replace(/\n/g, '<br>');
 
     const hue = (parseInt(msg.author.id.slice(0, 6), 16) % 360);
@@ -564,11 +575,13 @@ export async function execute(interaction, client) {
   const motivo = interaction.options.getString('motivo') || 'Limpeza de mensagens';
   const formato = interaction.options.getString('formato') || 'ambos';
 
-  // 4. Deferir resposta
+  // ============================================================
+  // IMPORTANTE: Defere a resposta IMEDIATAMENTE para evitar expiração
+  // ============================================================
   await interaction.deferReply({ flags: 64 });
 
   try {
-    // 5. Buscar mensagens (paginado)
+    // 4. Buscar mensagens (paginado)
     let collected = new Collection();
     let lastId = null;
     const maxFetch = Math.min(quantidade, 1000);
@@ -586,7 +599,7 @@ export async function execute(interaction, client) {
     const targetMessages = collected.filter(msg => msg.author.id === targetId);
     const totalFound = targetMessages.size;
 
-    // 6. Sugestão se não encontrar
+    // 5. Sugestão se não encontrar
     if (totalFound === 0) {
       const foundPresets = [];
       for (const [id, name] of Object.entries(PRESET_IDS)) {
@@ -618,7 +631,7 @@ export async function execute(interaction, client) {
       });
     }
 
-    // 7. Confirmar se for grande
+    // 6. Confirmar se for grande
     if (totalFound > 50) {
       const confirm = await askConfirmation(interaction, totalFound);
       if (!confirm) {
@@ -626,7 +639,7 @@ export async function execute(interaction, client) {
       }
     }
 
-    // 8. Apagar mensagens (bulk + individual)
+    // 7. Apagar mensagens (bulk + individual)
     const now = Date.now();
     const bulkable = targetMessages.filter(m => (now - m.createdTimestamp) < 1209600000);
     const rest = targetMessages.filter(m => !bulkable.has(m.id));
@@ -659,7 +672,7 @@ export async function execute(interaction, client) {
       }
     }
 
-    // 9. Gerar ficheiros (usando array para evitar duplicados)
+    // 8. Gerar ficheiros (usando array para evitar duplicados)
     const msgArray = Array.from(targetMessages.values());
     const timestamp = Date.now();
     const safeChannelName = sanitizeFileName(channel.name);
@@ -690,7 +703,7 @@ export async function execute(interaction, client) {
       files.push(new AttachmentBuilder(Buffer.from(txt, 'utf-8'), { name: `${baseName}.txt` }));
     }
 
-    // 10. Enviar transcript no canal
+    // 9. Enviar transcript no canal
     const embed = new EmbedBuilder()
       .setTitle('🧹 Mensagens apagadas')
       .setDescription(
@@ -706,7 +719,7 @@ export async function execute(interaction, client) {
 
     await channel.send({ embeds: [embed], files });
 
-    // 11. Log de auditoria
+    // 10. Log de auditoria
     if (LOG_CHANNEL_ID) {
       const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
       if (logChannel) {
@@ -725,22 +738,21 @@ export async function execute(interaction, client) {
       }
     }
 
-    // 12. Responder ao utilizador
+    // 11. Responder ao utilizador
     await interaction.editReply({
       content: `✅ ${deletedCount} mensagens apagadas. ${failedCount > 0 ? `(${failedCount} falhas)` : ''} Transcript(s) enviado(s) no canal.`,
     });
 
   } catch (error) {
     console.error('[Apgrmsgbot] Erro:', error);
+    // Se a interação já foi deferida, edita; senão, tenta responder
     try {
       await interaction.editReply({
         content: `❌ Erro: ${error.message || 'tente novamente.'}`,
       });
     } catch {
-      await interaction.reply({
-        content: `❌ Erro: ${error.message || 'tente novamente.'}`,
-        flags: 64,
-      });
+      // Se falhar, a interação pode ter expirado completamente, então ignoramos
+      console.error('Não foi possível responder à interação.');
     }
   }
 }
