@@ -88,7 +88,7 @@ export async function execute(interaction, client) {
         `👮 **Staff:** <@${interaction.user.id}>\n` +
         `ℹ️ **Motivo:** ${motivo}`
       )
-      .setColor(0xff6b6b)
+      .setColor(0x#FF0000)
       .setFooter({ text: "Transcript gerado automaticamente" })
       .setTimestamp();
 
