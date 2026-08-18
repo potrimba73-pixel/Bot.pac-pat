@@ -289,7 +289,7 @@ export async function updateTicketEmbed(channel, ticketId) {
 
     // Fallback: enviar nova mensagem (não deveria acontecer)
     const newMessage = await channel.send({
-      content: `||<@&${CONFIG.CARGO_STAFF}>||`,
+      content: `||<@&1390770675567956018>||`,
       embeds: [embed],
       components: [row],
     });
@@ -481,7 +481,7 @@ export async function createTicket(interaction, type, label, client) {
 
     // Mensagem inicial com menção ao cargo dentro de spoiler
     const panelMessage = await channel.send({
-      content: `||<@&${CONFIG.CARGO_STAFF}>||`,
+      content: `||<@&1390770675567956018>||`,
       embeds: [embed],
       components: [row],
     });
@@ -882,7 +882,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky = 
     const row = buildTicketButtons(ticketId);
 
     const panelMessage = await channel.send({
-      content: `||<@&${CONFIG.CARGO_STAFF}>||`,
+      content: `||<@&1390770675567956018>||`,
       embeds: [embed],
       components: [row],
     });
