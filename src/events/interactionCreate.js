@@ -41,7 +41,10 @@ import {
   chamarMembro,
   addUserToCall,
   removeUserFromCall,
+  handleAddUserModal,
+  handleRemoveUserModal,
 } from "../services/calls.js";
+
 
 import { gerarTranscript } from "../utils/transcript.js";
 import { salvarTranscriptSupabase } from "../utils/supabase.js";
@@ -874,63 +877,52 @@ export async function handleInteractionCreate(
     // MODALS
     // ========================================================
 
-    if (interaction.isModalSubmit()) {
-      if (
-        interaction.customId.startsWith(
-          "modal_trucky_"
-        )
-      ) {
-        return handleTruckyVerification(
-          interaction,
-          client
-        );
-      }
+// ========================================================
+// MODALS
+// ========================================================
 
-      if (
-        interaction.customId.startsWith(
-          "modal_ajuda_"
-        )
-      ) {
-        const especificacoes =
-          interaction.fields
-            .getTextInputValue(
-              "ajuda_especificacoes"
-            )
-            ?.trim();
+if (interaction.isModalSubmit()) {
+  // Modal de verificação Trucky (recrutamento)
+  if (interaction.customId.startsWith("modal_trucky_")) {
+    return handleTruckyVerification(interaction, client);
+  }
 
-        interaction._ajudaEspecificacoes =
-          especificacoes;
+  // Modal de ajuda (abrir ticket)
+  if (interaction.customId.startsWith("modal_ajuda_")) {
+    const especificacoes = interaction.fields
+      .getTextInputValue("ajuda_especificacoes")
+      ?.trim();
 
-        return createTicket(
-          interaction,
-          "ajuda",
-          "❓ Pedir ajuda",
-          client
-        );
-      }
+    interaction._ajudaEspecificacoes = especificacoes;
 
-      if (
-        interaction.customId.startsWith(
-          "modal_foto_trucky_"
-        )
-      ) {
-        if (
-          !(await safeDefer(
-            interaction
-          ))
-        ) {
-          return;
-        }
+    return createTicket(
+      interaction,
+      "ajuda",
+      "❓ Pedir ajuda",
+      client
+    );
+  }
 
-        return handleFotoTruckyModal(
-          interaction,
-          client
-        );
-      }
-
+  // Modal de foto Trucky (recrutamento concluído)
+  if (interaction.customId.startsWith("modal_foto_trucky_")) {
+    if (!(await safeDefer(interaction))) {
       return;
     }
+    return handleFotoTruckyModal(interaction, client);
+  }
 
+  // ===== NOVOS: Adicionar/Remover utilizador da call =====
+  if (interaction.customId.startsWith("modal_add_user_")) {
+    return handleAddUserModal(interaction, client);
+  }
+
+  if (interaction.customId.startsWith("modal_remove_user_")) {
+    return handleRemoveUserModal(interaction, client);
+  }
+
+  // Se nenhum dos anteriores, apenas retorna
+  return;
+}
     // ========================================================
     // SELECT MENUS
     // ========================================================
