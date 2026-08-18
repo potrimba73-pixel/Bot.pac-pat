@@ -59,7 +59,7 @@ const dateFormatterShort = new Intl.DateTimeFormat('pt-PT', {
 });
 
 // ============================================================
-// EXTRAIR TEXTO DA MENSAGEM (robusto para Jockie Music)
+// EXTRAIR TEXTO DA MENSAGEM (limpo para Jockie Music)
 // ============================================================
 function getMessageText(msg) {
   let text = msg.content || '';
@@ -69,8 +69,7 @@ function getMessageText(msg) {
   }
 
   for (const embed of msg.embeds) {
-    // --- 1) DETECTAR PLAYLIST (Added Playlist) ---
-    // O Jockie Music usa título "Added Playlist" e campos: "Playlist", "Tracks", "Length"
+    // --- 1) PLAYLIST (Added Playlist) ---
     if (
       embed.title?.toLowerCase().includes('playlist') ||
       embed.fields?.some(f => f.name?.toLowerCase().includes('playlist'))
@@ -86,7 +85,6 @@ function getMessageText(msg) {
         else if (fname.includes('length') || fname.includes('duração')) length = field.value;
       }
 
-      // Fallback: se não encontrou nos fields, tenta description
       if (!playlistName && embed.description) {
         const lines = embed.description.split('\n');
         for (const line of lines) {
@@ -107,8 +105,8 @@ function getMessageText(msg) {
       continue;
     }
 
-    // --- 2) DETECTAR MÚSICA (Started playing) ---
-    // O Jockie Music usa título com nome da música, descrição "by Artista" e URL do Spotify
+    // --- 2) MÚSICA (Started playing) ---
+    // Jockie Music usa título com nome da música, descrição "by Artista" e URL do Spotify
     if (
       embed.url?.includes('spotify.com') ||
       embed.provider?.name === 'Spotify' ||
@@ -116,27 +114,42 @@ function getMessageText(msg) {
       embed.title?.toLowerCase().includes('started playing')
     ) {
       let title = embed.title || '';
+      // Remove "Started playing" se estiver no título
+      title = title.replace(/^Started playing\s*/i, '').trim();
+
       let artist = '';
 
-      // Extrair artista da description (ex: "by Artista" ou "Artista • Música")
+      // Extrair artista da descrição
       if (embed.description) {
-        const match = embed.description.match(/by\s+(.+)/i);
-        if (match) {
-          artist = match[1].trim();
+        // Padrão: "by Artista" ou "Artista • Música" ou "Artista - Música"
+        const byMatch = embed.description.match(/by\s+(.+)/i);
+        if (byMatch) {
+          artist = byMatch[1].trim();
         } else {
           // Tentar separar por " • " ou " - "
           const parts = embed.description.split(/[•\-]/).map(s => s.trim());
           if (parts.length >= 2) {
-            artist = parts[1];
+            // Normalmente o primeiro é a música, o segundo o artista, mas vamos tentar detetar
+            // Se o título estiver no primeiro, o segundo é artista
+            if (title && parts[0].includes(title)) {
+              artist = parts[1];
+            } else {
+              artist = parts[1] || parts[0];
+            }
           } else {
             artist = embed.description;
           }
         }
       }
 
-      // Se não encontrou artista na descrição, usar author.name
+      // Se não encontrou artista, usar author.name
       if (!artist && embed.author?.name) {
         artist = embed.author.name;
+      }
+
+      // Remover "by" e outras palavras indesejadas do artista
+      if (artist) {
+        artist = artist.replace(/^by\s+/i, '').trim();
       }
 
       let result = `🎵 **${title}**`;
@@ -226,8 +239,8 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      background: #1e1f22;          /* corrigido: era #1ef122 */
-      color: #dbdee1;               /* corrigido: era #dbeed1 */
+      background: #1e1f22;
+      color: #dbdee1;
       font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
       padding: 20px;
       line-height: 1.6;
@@ -284,7 +297,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
       border-radius: 6px;
       transition: background 0.15s;
     }
-    .message.alt {                     /* corrigido: era '.message alt' */
+    .message.alt {
       background: rgba(255,255,255,0.03);
     }
     .message:hover {
