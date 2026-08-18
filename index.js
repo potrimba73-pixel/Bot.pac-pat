@@ -141,14 +141,40 @@ process.on('uncaughtException', (error) => {
 });
 
 // ==================== WEB SERVER (RENDER) ====================
-http.createServer((req, res) => {
+const server = http.createServer((req, res) => {
   const ticketsAbertos = Object.values(db.tickets || {}).filter(t => !t.closed).length;
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.write("PAC Bot Online!\n");
   res.write("Uptime: " + Math.floor(process.uptime()) + "s\n");
   res.write("Tickets abertos: " + ticketsAbertos + "\n");
   res.end();
-}).listen(process.env.PORT || 3000);
+});
 
-// ==================== LOGIN ====================
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`[INDEX] Servidor HTTP a escutar na porta ${PORT}`);
+});
+
+// ==================== LOGIN (com tratamento de erro) ====================
+(async () => {
+  try {
+    console.log("[INDEX] A tentar login no Discord...");
+    await client.login(process.env.TOKEN);
+    console.log("[INDEX] Login efetuado com sucesso!");
+  } catch (error) {
+    console.error("[INDEX] Erro fatal no login:", error);
+    // Não termina o processo para que o servidor HTTP continue a responder (opcional)
+    // Mas se o login falhar, o bot não funcionará.
+    // Podes optar por process.exit(1) se preferires.
+  }
+})();
+
+// ==================== TRATAR ERROS NÃO CAPTURADOS ====================
+process.on('unhandledRejection', (error) => {
+  console.error("[INDEX] Unhandled Rejection:", error);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error("[INDEX] Uncaught Exception:", error);
+});// ==================== LOGIN ====================
 client.login(process.env.TOKEN);
