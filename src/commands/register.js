@@ -58,14 +58,32 @@ export async function registerCommands() {
       .setDescription("Pedir assumo de um ticket que esta com outro staff")
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
       .toJSON(),
-    new SlashCommandBuilder()
-      .setName("transcript")
-      .setDescription("Gera um transcript completo do canal atual (HTML + TXT) - Apenas Staff")
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
-      .toJSON(),
-    // === COMANDOS TRUCKY IMAGE ===
-    ...truckyImageSlashCommands,
-  ];
+  new SlashCommandBuilder()
+    .setName("transcript")
+    .setDescription("Gera um transcript completo do canal atual (HTML + TXT) - Apenas Staff")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+    .toJSON(),
+
+  // ⬇️ NOVO COMANDO (apenas este, sem duplicados antes)
+  new SlashCommandBuilder()
+    .setName("apgrmsgbot")
+    .setDescription("Gera transcript (HTML/TXT) e apaga mensagens do BOT neste canal")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+    .addIntegerOption(option =>
+      option.setName("quantidade")
+        .setDescription("Número máximo de mensagens do bot a apagar (1-100)")
+        .setMinValue(1)
+        .setMaxValue(100)
+        .setRequired(false))
+    .addStringOption(option =>
+      option.setName("motivo")
+        .setDescription("Motivo da limpeza (opcional)")
+        .setRequired(false))
+    .toJSON(),
+
+  // === COMANDOS TRUCKY IMAGE ===
+  ...truckyImageSlashCommands,
+];
 
   const rest = new REST({ version: "10" }).setToken(CONFIG.TOKEN);
 
