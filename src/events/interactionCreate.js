@@ -273,22 +273,24 @@ async function buildStaffList(channel, ticket) {
   const botId = CONFIG.BOT_ID_EXCLUIR || channel.client.user.id;
 
   for (const [memberId, member] of members) {
-    // Excluir bots (os dois IDs fixos e o configurado)
-    if (BOTS_TO_EXCLUDE.has(memberId) || memberId === botId) continue;
-    if (memberId === ticket.userId) continue; // Não mostrar o próprio utilizador
+    // ===== FILTRAR BOTS =====
+    // 1. Excluir bots (qualquer membro que seja bot)
+    if (member.user.bot) continue;
+    // 2. Excluir bots específicos (por ID)
+    if (BOTS_TO_EXCLUDE.has(memberId)) continue;
+    // 3. Excluir o bot configurado (se houver)
+    if (memberId === botId) continue;
+    // 4. Não mostrar o próprio utilizador do ticket
+    if (memberId === ticket.userId) continue;
 
-    const permissions = channel.permissionsFor(member);
-    if (!permissions?.has(PermissionFlagsBits.ViewChannel) ||
-        !permissions?.has(PermissionFlagsBits.SendMessages)) {
-      continue;
-    }
-
-    // Verificar se é staff (tem cargo staff ou permissão de gestão de mensagens)
-    const isStaffMember = member.roles.cache.has(CONFIG.CARGO_STAFF) ||
-                    member.permissions.has(PermissionFlagsBits.ManageMessages);
+    // ===== VERIFICAR PERMISSÕES DE STAFF =====
+    // Verificar se tem permissão de gestão de mensagens OU cargo de staff
+    const isStaffMember = member.permissions.has(PermissionFlagsBits.ManageMessages) ||
+                          member.roles.cache.has(CONFIG.CARGO_STAFF);
 
     if (!isStaffMember) continue;
 
+    // ===== OBTER O CARGO MAIS ALTO =====
     const highestRole = member.roles.cache
       .sort((a, b) => b.position - a.position)
       .first();
@@ -302,7 +304,7 @@ async function buildStaffList(channel, ticket) {
     });
   }
 
-  // Ordenar por cargo (posição) decrescente e depois por nome A-Z
+  // ===== ORDENAR POR CARGO (POSIÇÃO) E DEPOIS POR NOME =====
   staffList.sort((a, b) => {
     if (b.rolePosition !== a.rolePosition) {
       return b.rolePosition - a.rolePosition;
