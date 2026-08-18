@@ -35,6 +35,8 @@ import {
 
 import { sendLog } from "../services/logs.js";
 import { sendPainelChamada } from "../services/calls.js";
+import { gerarTranscript } from "../utils/transcript.js";
+import { salvarTranscriptSupabase } from "../utils/supabase.js";
 
 // ===== COOLDOWN PARA CHAMAR STAFF =====
 const COOLDOWN_CHAMAR = 5 * 60 * 1000; // 5 minutos
@@ -396,7 +398,7 @@ async function chamarStaff(interaction, ticket, staffId) {
 // FUNÇÕES DOS PAINÉIS
 // ============================================================
 
-async function async function enviarPainelMembro(interaction) {
+async function enviarPainelMembro(interaction) {
   // Primeiro, tenta deferir
   const deferred = await safeDefer(interaction);
 
@@ -2103,13 +2105,9 @@ async function fecharTicket(
       );
 
       if (htmlAttachment) {
-        // htmlAttachment contém { attachment: AttachmentBuilder, fileName: string }
-        files.push(
-          new AttachmentBuilder(htmlAttachment.attachment.attachment, {
-            name: htmlAttachment.fileName
-          })
-        );
-      }
+  // htmlAttachment.attachment já é um AttachmentBuilder
+  files.push(htmlAttachment.attachment);
+}
 
       // 4) Enviar para o canal de logs
       const logChannel = await client.channels
