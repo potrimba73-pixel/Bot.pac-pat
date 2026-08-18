@@ -570,7 +570,7 @@ async function iniciarFluxoRecrutamento(interaction, client, guild) {
   const inputLink = new TextInputBuilder()
     .setCustomId("trucky_link")
     .setLabel("Link do teu perfil Trucky (opcional)")
-    .setPlaceholder("https://truckyapp.com/profile/12345")
+    .setPlaceholder("https://hub.truckyapp.com/user/123456")
     .setStyle(TextInputStyle.Short)
     .setRequired(false)
     .setMaxLength(100);
