@@ -2154,7 +2154,7 @@ async function handleFotoTruckyModal(
     }
 
     // --------------------------------------------------------
-    // MENSAGEM GERAL
+    // MENSAGEM GERAL - NOVA VERSÃO
     // --------------------------------------------------------
 
     if (CONFIG.CANAL_GERAL) {
@@ -2165,34 +2165,22 @@ async function handleFotoTruckyModal(
           )
           .catch(() => null);
 
-// --------------------------------------------------------
-// MENSAGEM GERAL
-// --------------------------------------------------------
+      if (canalGeral) {
+        await canalGeral.send(
+          [
+            "🎉 **Boas-Vindas à Portugal Alfa Truckers!**",
+            "",
+            `Parabéns <@${ticket.userId}>! Foste recrutado com sucesso.`,
+            "🚛 Segue as <#1200170228093550712> e diverte-te!",
+            "A tua foto de perfil para o Trucky ficará disponível em <#1204160547092697088>.",
+            "Caso precises de ajuda, abre um ticket ou coloca a tua dúvida num chat aberto.",
+            "Bons quilómetros!"
+          ].join("\n")
+        ).catch(() => {});
+      }
+    }
 
-if (CONFIG.CANAL_GERAL) {
-  const canalGeral =
-    await client.channels
-      .fetch(
-        CONFIG.CANAL_GERAL
-      )
-      .catch(() => null);
-
-  if (canalGeral) {
-    await canalGeral.send(
-      [
-        "🎉 **Boas-Vindas à Portugal Alfa Truckers!**",
-        "",
-        `Parabéns <@${ticket.userId}>! Foste recrutado com sucesso.`,
-        "🚛 Segue as <#1200170228093550712> e diverte-te!",
-        "A tua foto de perfil para o Trucky ficará disponível em <#1204160547092697088>.",
-        "Caso precises de ajuda, abre um ticket ou coloca a tua dúvida num chat aberto.",
-        "Bons quilómetros!"
-      ].join("\n")
-    ).catch(() => {});
-  }
-}
-      
-      await sendLog(
+    await sendLog(
       ticket.id,
       "close",
       client
