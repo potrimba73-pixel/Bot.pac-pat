@@ -845,9 +845,7 @@ export async function handleInteractionCreate(
         );
       }
 
-      if (
-        command === "transcript-full"
-      ) {
+      if (command === "transcript-full") {
         if (!isStaff(interaction.member)) {
           return safeReply(
             interaction,
@@ -867,12 +865,24 @@ export async function handleInteractionCreate(
         );
       }
 
+      // ⬇️ NOVO COMANDO AQUI (FORA DO transcript-full) ⬇️
+      if (command === "apgrmsgbot") {
+        if (!isStaff(interaction.member)) {
+          return safeReply(
+            interaction,
+            "❌ Apenas staff pode usar este comando."
+          );
+        }
+
+        const { execute } = await import("../commands/apgrmsgbot.js");
+        return execute(interaction, client);
+      }
+
       return safeReply(
         interaction,
         "⚠️ Comando não reconhecido."
       );
-    }
-
+    } // <-- FIM DO if (interaction.isChatInputCommand())
     // ========================================================
     // MODALS
     // ========================================================
