@@ -1,10 +1,10 @@
 // src/commands/apgrmsgbot.js
 import { EmbedBuilder, AttachmentBuilder } from "discord.js";
-import { CONFIG } from "../config/index.js";
 import { gerarTranscript } from "../utils/transcript.js";
+import { safeDefer, safeEdit } from "../utils/safeReply.js";
 
 export async function execute(interaction, client) {
-  // Verificar permissão (já garantida pelo slash, mas reforçar)
+  // ===== VERIFICAR PERMISSÃO (reforço) =====
   if (!interaction.member.permissions.has("ManageMessages")) {
     return interaction.reply({
       content: "❌ Precisas da permissão `Gerenciar Mensagens` para usar este comando.",
@@ -12,43 +12,47 @@ export async function execute(interaction, client) {
     });
   }
 
+  // ===== OPÇÕES =====
   const quantidade = interaction.options.getInteger("quantidade") || 50;
   const motivo = interaction.options.getString("motivo") || "Limpeza de mensagens do bot";
 
-  await interaction.deferReply({ flags: 64 });
+  // ===== DEFERIR A RESPOSTA (com segurança) =====
+  const deferred = await safeDefer(interaction);
+  if (!deferred) {
+    // Se não foi possível deferir, tenta responder diretamente
+    return interaction.reply({ content: "⏳ A processar...", flags: 64 });
+  }
 
   const channel = interaction.channel;
 
   try {
-    // Buscar mensagens do canal
+    // ===== BUSCAR MENSAGENS DO BOT =====
     const messages = await channel.messages.fetch({ limit: Math.min(quantidade, 100) });
     const botMessages = messages.filter(msg => msg.author.id === client.user.id);
 
     if (botMessages.size === 0) {
-      return interaction.editReply({
+      return await safeEdit(interaction, {
         content: "ℹ️ Nenhuma mensagem do BOT encontrada neste canal.",
         flags: 64
       });
     }
 
-    // ----- Gerar transcript (HTML + TXT) -----
+    // ===== GERAR TRANSCRIPT (HTML + TXT) =====
     let transcriptResult = null;
     try {
-      // Usa a função já existente que gera HTML e TXT
       transcriptResult = await gerarTranscript(channel, `bot-clean-${Date.now()}`);
     } catch (err) {
       console.error("[Apgrmsgbot] Erro ao gerar transcript:", err.message);
     }
 
-    // ----- Preparar ficheiros -----
+    // ===== PREPARAR FICHEIROS =====
     const files = [];
 
-    // Se o transcript foi gerado com sucesso, adiciona os anexos
     if (transcriptResult) {
       files.push(transcriptResult.attachment);      // HTML
       files.push(transcriptResult.txtAttachment);   // TXT
     } else {
-      // Fallback: gerar apenas um TXT simples
+      // Fallback: TXT simples
       let txtFallback = `🧹 MENSAGENS DO BOT APAGADAS\n`;
       txtFallback += `================================\n`;
       txtFallback += `Canal: ${channel.name}\n`;
@@ -72,12 +76,12 @@ export async function execute(interaction, client) {
       files.push(new AttachmentBuilder(txtBuffer, { name: `bot-transcript-${Date.now()}.txt` }));
     }
 
-    // ----- Apagar as mensagens do bot -----
+    // ===== APAGAR MENSAGENS DO BOT =====
     for (const msg of botMessages.values()) {
       await msg.delete().catch(() => {});
     }
 
-    // ----- Enviar resultado no canal -----
+    // ===== ENVIAR RESULTADO NO CANAL =====
     const embed = new EmbedBuilder()
       .setTitle("🧹 Mensagens do BOT apagadas")
       .setDescription(
@@ -95,15 +99,15 @@ export async function execute(interaction, client) {
       files: files
     });
 
-    // ----- Responder ao utilizador -----
-    await interaction.editReply({
+    // ===== RESPONDER AO UTILIZADOR =====
+    await safeEdit(interaction, {
       content: `✅ ${botMessages.size} mensagens do BOT apagadas com sucesso! Transcript enviado no canal.`,
       flags: 64
     });
 
   } catch (error) {
     console.error("[Apgrmsgbot] Erro:", error);
-    await interaction.editReply({
+    await safeEdit(interaction, {
       content: "❌ Ocorreu um erro ao processar o comando.",
       flags: 64
     });
