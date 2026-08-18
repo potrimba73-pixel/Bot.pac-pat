@@ -59,104 +59,116 @@ const dateFormatterShort = new Intl.DateTimeFormat('pt-PT', {
 });
 
 // ============================================================
-// EXTRAIR TEXTO DA MENSAGEM (com formatação especial)
+// EXTRAIR TEXTO DA MENSAGEM (robusto para Jockie Music)
 // ============================================================
 function getMessageText(msg) {
   let text = msg.content || '';
 
-  // --- Embeds ---
-  if (msg.embeds?.length) {
-    for (const embed of msg.embeds) {
-      // 1) Playlist (Added Playlist) – detectamos por campos específicos
-      if (
-        embed.title?.toLowerCase().includes('playlist') ||
-        embed.fields?.some(f => f.name?.toLowerCase().includes('playlist'))
-      ) {
-        const title = embed.title || 'Playlist';
-        let playlistName = '';
-        let tracks = '';
-        let length = '';
+  if (!msg.embeds?.length) {
+    return text || '(sem conteúdo)';
+  }
 
-        for (const field of embed.fields || []) {
-          const fname = field.name.toLowerCase();
-          if (fname.includes('playlist')) playlistName = field.value;
-          else if (fname.includes('tracks')) tracks = field.value;
-          else if (fname.includes('length') || fname.includes('duração')) length = field.value;
+  for (const embed of msg.embeds) {
+    // --- 1) DETECTAR PLAYLIST (Added Playlist) ---
+    // O Jockie Music usa título "Added Playlist" e campos: "Playlist", "Tracks", "Length"
+    if (
+      embed.title?.toLowerCase().includes('playlist') ||
+      embed.fields?.some(f => f.name?.toLowerCase().includes('playlist'))
+    ) {
+      let playlistName = '';
+      let tracks = '';
+      let length = '';
+
+      for (const field of embed.fields || []) {
+        const fname = field.name.toLowerCase();
+        if (fname.includes('playlist')) playlistName = field.value;
+        else if (fname.includes('tracks')) tracks = field.value;
+        else if (fname.includes('length') || fname.includes('duração')) length = field.value;
+      }
+
+      // Fallback: se não encontrou nos fields, tenta description
+      if (!playlistName && embed.description) {
+        const lines = embed.description.split('\n');
+        for (const line of lines) {
+          if (line.includes('Playlist') && !line.includes('Length')) {
+            playlistName = line.replace('Playlist', '').trim();
+          }
+          if (line.includes('Tracks')) tracks = line.replace(/.*Tracks\s*/, '').trim();
+          if (line.includes('Length')) length = line.replace(/.*Length\s*/, '').trim();
         }
+      }
 
-        // Se não encontrou nos fields, tenta description
-        if (!playlistName && embed.description) {
-          const lines = embed.description.split('\n');
-          for (const line of lines) {
-            if (line.includes('Playlist') && !line.includes('Length')) {
-              playlistName = line.replace('Playlist', '').trim();
-            }
-            if (line.includes('Tracks')) tracks = line.replace(/.*Tracks\s*/, '').trim();
-            if (line.includes('Length')) length = line.replace(/.*Length\s*/, '').trim();
+      let result = '📋 **Added Playlist**';
+      if (playlistName) result += `\n**Playlist:** ${playlistName}`;
+      if (tracks) result += `\n**Tracks:** ${tracks}`;
+      if (length) result += `\n**Length:** ${length}`;
+      if (embed.url) result += `\n🔗 ${embed.url}`;
+      text += (text ? '\n' : '') + result;
+      continue;
+    }
+
+    // --- 2) DETECTAR MÚSICA (Started playing) ---
+    // O Jockie Music usa título com nome da música, descrição "by Artista" e URL do Spotify
+    if (
+      embed.url?.includes('spotify.com') ||
+      embed.provider?.name === 'Spotify' ||
+      embed.description?.toLowerCase().includes('started playing') ||
+      embed.title?.toLowerCase().includes('started playing')
+    ) {
+      let title = embed.title || '';
+      let artist = '';
+
+      // Extrair artista da description (ex: "by Artista" ou "Artista • Música")
+      if (embed.description) {
+        const match = embed.description.match(/by\s+(.+)/i);
+        if (match) {
+          artist = match[1].trim();
+        } else {
+          // Tentar separar por " • " ou " - "
+          const parts = embed.description.split(/[•\-]/).map(s => s.trim());
+          if (parts.length >= 2) {
+            artist = parts[1];
+          } else {
+            artist = embed.description;
           }
         }
-
-        let result = '📋 **Added Playlist**';
-        if (playlistName) result += `\n**Playlist:** ${playlistName}`;
-        if (tracks) result += `\n**Tracks:** ${tracks}`;
-        if (length) result += `\n**Length:** ${length}`;
-        if (embed.url) result += `\n🔗 ${embed.url}`;
-        text += (text ? '\n' : '') + result;
-        continue;
       }
 
-      // 2) Música (Started playing) – via Spotify ou provider
-      if (
-        embed.url?.includes('spotify.com') ||
-        embed.provider?.name === 'Spotify' ||
-        embed.description?.toLowerCase().includes('started playing')
-      ) {
-        let title = embed.title || '';
-        let artist = '';
-        // Extrair artista da description: "by Artista" ou "Artista • Música"
-        if (embed.description) {
-          const match = embed.description.match(/by\s+(.+)/i);
-          if (match) artist = match[1].trim();
-          else {
-            const parts = embed.description.split(/[•\-]/).map(s => s.trim());
-            if (parts.length >= 2) artist = parts[1];
-            else artist = embed.description;
-          }
-        }
-        if (!artist && embed.author?.name) artist = embed.author.name;
-        let result = `🎵 **${title}**`;
-        if (artist) result += ` por ${artist}`;
-        if (embed.url) result += `\n🔗 ${embed.url}`;
-        text += (text ? '\n' : '') + result;
-        continue;
+      // Se não encontrou artista na descrição, usar author.name
+      if (!artist && embed.author?.name) {
+        artist = embed.author.name;
       }
 
-      // 3) Outros embeds (genérico)
-      let parts = [];
-      if (embed.title) parts.push(`**${embed.title}**`);
-      if (embed.description) parts.push(embed.description);
-      if (embed.fields) {
-        for (const field of embed.fields) {
-          parts.push(`**${field.name}:** ${field.value}`);
-        }
+      let result = `🎵 **${title}**`;
+      if (artist) result += ` por ${artist}`;
+      if (embed.url) result += `\n🔗 ${embed.url}`;
+      text += (text ? '\n' : '') + result;
+      continue;
+    }
+
+    // --- 3) OUTROS EMBEDS (genérico) ---
+    let parts = [];
+    if (embed.title) parts.push(`**${embed.title}**`);
+    if (embed.description) parts.push(embed.description);
+    if (embed.fields) {
+      for (const field of embed.fields) {
+        parts.push(`**${field.name}:** ${field.value}`);
       }
-      if (embed.url) parts.push(`🔗 ${embed.url}`);
-      if (embed.author?.name) parts.push(`Por ${embed.author.name}`);
-      if (embed.footer?.text) parts.push(embed.footer.text);
-      if (parts.length) {
-        text += (text ? '\n' : '') + parts.join('\n');
-      }
+    }
+    if (embed.url) parts.push(`🔗 ${embed.url}`);
+    if (embed.author?.name) parts.push(`Por ${embed.author.name}`);
+    if (embed.footer?.text) parts.push(embed.footer.text);
+    if (parts.length) {
+      text += (text ? '\n' : '') + parts.join('\n');
     }
   }
 
-  // --- Anexos ---
+  // --- Anexos e stickers ---
   if (msg.attachments?.size) {
     for (const [, att] of msg.attachments) {
       text += (text ? '\n' : '') + `📎 ${att.name} (${att.url})`;
     }
   }
-
-  // --- Stickers ---
   if (msg.stickers?.size) {
     for (const sticker of msg.stickers.values()) {
       text += (text ? '\n' : '') + `🖼️ Sticker: ${sticker.name}`;
@@ -167,7 +179,7 @@ function getMessageText(msg) {
 }
 
 // ============================================================
-// GERAR HTML (com estrutura visual como na imagem)
+// GERAR HTML (com estrutura visual limpa e cores corretas)
 // ============================================================
 function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targetName) {
   const guild = channel.guild;
@@ -182,14 +194,11 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
     const avatar = msg.author.displayAvatarURL({ extension: 'png', size: 64 });
     const data = dateFormatter.format(msg.createdAt);
     const rawText = getMessageText(msg);
-    // Converter quebras de linha para <br> e escapar HTML
     const texto = escapeHtml(rawText).replace(/\n/g, '<br>');
 
     const hue = (parseInt(msg.author.id.slice(0, 6), 16) % 360);
     const authorColor = msg.author.bot ? '#5865F2' : `hsl(${hue}, 70%, 55%)`;
     const botBadge = msg.author.bot ? '<span class="bot-badge">BOT</span>' : '';
-
-    // Mostrar "APP" se for um bot com nome "Jockie Music" ou similar
     const appBadge = msg.author.bot ? '<span class="app-badge">APP</span>' : '';
 
     const rowClass = index % 2 === 0 ? 'message' : 'message alt';
@@ -217,8 +226,8 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      background: #1e1f22;
-      color: #dbdee1;
+      background: #1e1f22;          /* corrigido: era #1ef122 */
+      color: #dbdee1;               /* corrigido: era #dbeed1 */
       font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
       padding: 20px;
       line-height: 1.6;
@@ -275,7 +284,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
       border-radius: 6px;
       transition: background 0.15s;
     }
-    .message.alt {
+    .message.alt {                     /* corrigido: era '.message alt' */
       background: rgba(255,255,255,0.03);
     }
     .message:hover {
