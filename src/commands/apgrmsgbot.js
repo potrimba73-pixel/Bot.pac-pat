@@ -13,9 +13,9 @@ import { safeDeferReply, safeEditReply } from '../utils/safeReply.js';
 // CONSTANTES
 // ============================================================
 const DEFAULT_BOT_IDS = [
-  '759343605726052392', // Bot A
-  '456226577798135808', // Bot B
-  '770599668710637608', // Bot C
+  '759343605726052392', // A
+  '456226577798135808', // B
+  '770599668710637608', // C
 ];
 const DEFAULT_BOT_ID = DEFAULT_BOT_IDS[0];
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID || '123456789012345678'; // Altere para o seu canal de logs
