@@ -54,7 +54,7 @@ const cooldownChamadas = new Map(); // userId -> timestamp
 const BOTS_TO_EXCLUDE = new Set([
   "1498462519818326117",
   "1516728761351929886",
-  "1394063740755771453",  // removido da lista de staff
+  "1394063740755771453", // removido da lista de staff
 ]);
 
 // ============================================================
@@ -938,7 +938,7 @@ export async function handleInteractionCreate(
     if (
       interaction.isStringSelectMenu()
     ) {
-      // ===== NOVO: CHAMAR STAFF =====
+      // ===== CHAMAR STAFF =====
       if (interaction.customId.startsWith("chamar_staff_")) {
         const ticketId = interaction.customId.replace("chamar_staff_", "");
         const staffId = interaction.values[0];
@@ -1072,6 +1072,9 @@ export async function handleInteractionCreate(
     if (interaction.isButton()) {
       const customId =
         interaction.customId;
+
+      // Log para depuração
+      console.log(`[Button] CustomId recebido: ${customId}`);
 
       // ======================================================
       // REGRAS
@@ -1976,7 +1979,6 @@ export async function handleInteractionCreate(
         if (!isStaff(interaction.member)) {
           return safeReply(interaction, "❌ Apenas staff pode adicionar utilizadores.");
         }
-        // Chama a função do calls.js (se existir) ou fallback
         if (typeof addUserToCall === 'function') {
           return addUserToCall(interaction, ticketId, client);
         } else {
