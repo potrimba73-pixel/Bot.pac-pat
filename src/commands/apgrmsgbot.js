@@ -7,7 +7,6 @@ import {
   ButtonStyle,
   Collection,
 } from 'discord.js';
-import { safeDeferReply, safeEditReply } from '../utils/safeReply.js';
 
 // ============================================================
 // CONSTANTES
@@ -16,7 +15,6 @@ const DEFAULT_BOT_IDS = [
   '759343605726052392',
   '456226577798135808',
   '770599668710637608',
-  '412347553141751808',
 ];
 const DEFAULT_BOT_ID = DEFAULT_BOT_IDS[0];
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID || '';
@@ -31,36 +29,63 @@ function escapeHtml(text) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+    .replace(/'/g, '&#039;')
+    .replace(/\n/g, '<br>');
 }
 
 // ============================================================
-// EXTRAIR TEXTO DA MENSAGEM
+// EXTRAIR TEXTO DA MENSAGEM (com suporte a rich embeds)
 // ============================================================
 function getMessageText(msg) {
   let text = msg.content || '';
 
+  // Embeds - processar todos os campos ricos
   if (msg.embeds?.length) {
     for (const embed of msg.embeds) {
-      if (embed.title) text += (text ? '\n' : '') + embed.title;
-      if (embed.description) text += (text ? '\n' : '') + embed.description;
-      if (embed.fields) {
+      // Título
+      if (embed.title) {
+        text += (text ? '\n' : '') + `**${embed.title}**`;
+      }
+      // Descrição
+      if (embed.description) {
+        text += (text ? '\n' : '') + embed.description;
+      }
+      // Campos (lista de músicas, etc.)
+      if (embed.fields?.length) {
         for (const field of embed.fields) {
           text += (text ? '\n' : '') + `${field.name}: ${field.value}`;
         }
       }
-      if (embed.url) text += (text ? '\n' : '') + embed.url;
-      if (embed.author?.name) text += (text ? '\n' : '') + `Por ${embed.author.name}`;
-      if (embed.footer?.text) text += (text ? '\n' : '') + embed.footer.text;
+      // URL (link do Spotify, etc.)
+      if (embed.url) {
+        text += (text ? '\n' : '') + `🔗 ${embed.url}`;
+      }
+      // Autor
+      if (embed.author?.name) {
+        text += (text ? '\n' : '') + `Por ${embed.author.name}`;
+      }
+      // Rodapé
+      if (embed.footer?.text) {
+        text += (text ? '\n' : '') + embed.footer.text;
+      }
+      // Thumbnail e imagem (apenas indicar, não incluir URL porque pode ser grande)
+      if (embed.thumbnail?.url) {
+        text += (text ? '\n' : '') + `🖼️ Thumbnail: ${embed.thumbnail.url}`;
+      }
+      if (embed.image?.url) {
+        text += (text ? '\n' : '') + `🖼️ Imagem: ${embed.image.url}`;
+      }
     }
   }
 
+  // Anexos
   if (msg.attachments?.size) {
     for (const [, att] of msg.attachments) {
       text += (text ? '\n' : '') + `📎 ${att.name} (${att.url})`;
     }
   }
 
+  // Stickers
   if (msg.stickers?.size) {
     for (const sticker of msg.stickers.values()) {
       text += (text ? '\n' : '') + `🖼️ Sticker: ${sticker.name}`;
@@ -71,7 +96,22 @@ function getMessageText(msg) {
 }
 
 // ============================================================
-// GERAR HTML
+// FORMATAR DATA (fixa)
+// ============================================================
+function formatDate(date) {
+  return new Intl.DateTimeFormat('pt-PT', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZone: 'Europe/Lisbon',
+  }).format(date);
+}
+
+// ============================================================
+// GERAR HTML MELHORADO
 // ============================================================
 function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targetName) {
   const guild = channel.guild;
@@ -81,37 +121,39 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
 
   const msgsHtml = Array.from(messages).map((msg, index) => {
     const avatar = msg.author.displayAvatarURL({ extension: 'png', size: 64 });
-    const data = new Intl.DateTimeFormat('pt-PT', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }).format(msg.createdAt);
-    const texto = escapeHtml(getMessageText(msg)).replace(/\n/g, '<br>');
+    const data = formatDate(msg.createdAt);
+    const rawText = getMessageText(msg);
+    const texto = rawText ? escapeHtml(rawText) : '<em>Sem texto</em>';
 
     const hue = (parseInt(msg.author.id.slice(0, 6), 16) % 360);
     const authorColor = msg.author.bot ? '#5865F2' : `hsl(${hue}, 70%, 55%)`;
     const botBadge = msg.author.bot ? '<span class="bot-badge">BOT</span>' : '';
 
+    // Embeds (renderização melhorada)
     let embedsHtml = '';
     if (msg.embeds?.length) {
       for (const embed of msg.embeds) {
         const embedColor = embed.color ? `#${embed.color.toString(16).padStart(6, '0')}` : '#5865F2';
+        const embedTitle = embed.title ? `<div class="embed-title">${escapeHtml(embed.title)}</div>` : '';
+        const embedDesc = embed.description ? `<div class="embed-desc">${escapeHtml(embed.description)}</div>` : '';
+        const embedFields = embed.fields?.length ? embed.fields.map(f => `
+          <div class="embed-field">
+            <div class="embed-field-name">${escapeHtml(f.name)}</div>
+            <div class="embed-field-value">${escapeHtml(f.value)}</div>
+          </div>
+        `).join('') : '';
+        const embedUrl = embed.url ? `<a href="${escapeHtml(embed.url)}" target="_blank" class="embed-link">🔗 Link</a>` : '';
+        const embedThumb = embed.thumbnail?.url ? `<img src="${embed.thumbnail.url}" class="embed-thumbnail" loading="lazy">` : '';
+        const embedImage = embed.image?.url ? `<img src="${embed.image.url}" class="embed-image" loading="lazy">` : '';
+
         embedsHtml += `
         <div class="embed" style="border-left-color: ${embedColor};">
-          ${embed.title ? `<div class="embed-title">${escapeHtml(embed.title)}</div>` : ''}
-          ${embed.description ? `<div class="embed-desc">${escapeHtml(embed.description)}</div>` : ''}
-          ${embed.fields ? embed.fields.map(f => `
-            <div class="embed-field">
-              <div class="embed-field-name">${escapeHtml(f.name)}</div>
-              <div class="embed-field-value">${escapeHtml(f.value)}</div>
-            </div>
-          `).join('') : ''}
-          ${embed.image?.url ? `<img src="${embed.image.url}" class="embed-image" loading="lazy">` : ''}
-          ${embed.thumbnail?.url ? `<img src="${embed.thumbnail.url}" class="embed-thumbnail" loading="lazy">` : ''}
-          ${embed.url ? `<a href="${embed.url}" target="_blank" class="embed-link">🔗 Link</a>` : ''}
+          ${embedTitle}
+          ${embedDesc}
+          ${embedFields}
+          ${embedImage}
+          ${embedThumb}
+          ${embedUrl}
         </div>`;
       }
     }
@@ -131,6 +173,8 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
       </div>
     </div>`;
   }).join('\n');
+
+  const total = Array.from(messages).length;
 
   return `<!DOCTYPE html>
 <html lang="pt">
@@ -271,6 +315,8 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
     }
     .embed-field {
       margin-top: 6px;
+      border-top: 1px solid #3a3c42;
+      padding-top: 6px;
     }
     .embed-field-name {
       color: #b9bbbe;
@@ -364,7 +410,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
         <strong>Canal:</strong> #${escapeHtml(channelName)} &bull;
         <strong>Staff:</strong> ${escapeHtml(staffName)} &bull;
         <strong>Alvo:</strong> <@${targetId}> (${escapeHtml(targetName)}) &bull;
-        <strong>Data:</strong> ${new Intl.DateTimeFormat('pt-PT').format(new Date())}
+        <strong>Data:</strong> ${formatDate(new Date())}
       </p>
     </div>
   </div>
@@ -373,10 +419,10 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
   </div>
   <div class="footer">
     <div class="stats">
-      <span>📊 ${Array.from(messages).length} mensagens</span>
+      <span>📊 ${total} mensagens</span>
       <span>👤 Alvo: <@${targetId}></span>
     </div>
-    <div>Transcript gerado automaticamente • ${new Intl.DateTimeFormat('pt-PT').format(new Date())}</div>
+    <div>Transcript gerado automaticamente • ${formatDate(new Date())}</div>
   </div>
 </div>
 </body>
@@ -384,7 +430,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
 }
 
 // ============================================================
-// GERAR TXT
+// GERAR TXT MELHORADO
 // ============================================================
 function generateTxt(messages, channel, staffName, motivo, targetId, targetName) {
   const lines = [];
@@ -395,18 +441,11 @@ function generateTxt(messages, channel, staffName, motivo, targetId, targetName)
   lines.push(`Motivo: ${motivo}`);
   lines.push(`Alvo: ${targetId} (${targetName})`);
   lines.push(`Quantidade: ${Array.from(messages).length}`);
-  lines.push(`Data: ${new Intl.DateTimeFormat('pt-PT').format(new Date())}`);
+  lines.push(`Data: ${formatDate(new Date())}`);
   lines.push('================================\n');
 
   for (const msg of messages) {
-    const data = new Intl.DateTimeFormat('pt-PT', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }).format(msg.createdAt);
+    const data = formatDate(msg.createdAt);
     const text = getMessageText(msg);
     lines.push(`[${data}] ${msg.author.username}: ${text}`);
   }
@@ -621,7 +660,7 @@ export async function execute(interaction, client) {
       .setDescription(
         `📊 **Quantidade:** ${deletedCount}${failedCount > 0 ? ` (${failedCount} falhas)` : ''}\n` +
         `👤 **Alvo:** <@${targetId}>\n` +
-        `📅 **Data:** ${new Intl.DateTimeFormat('pt-PT').format(new Date())}\n` +
+        `📅 **Data:** ${formatDate(new Date())}\n` +
         `👮 **Staff:** <@${interaction.user.id}>\n` +
         `ℹ️ **Motivo:** ${motivo}`
       )
@@ -657,7 +696,6 @@ export async function execute(interaction, client) {
 
   } catch (error) {
     console.error('[Apgrmsgbot] Erro:', error);
-    // Se a interação ainda estiver deferida, editar; senão, tentar reply normal
     try {
       await interaction.editReply({
         content: `❌ Erro: ${error.message || 'tente novamente.'}`,
