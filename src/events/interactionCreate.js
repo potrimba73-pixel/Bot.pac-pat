@@ -1956,7 +1956,7 @@ export async function handleInteractionCreate(
 }
 
 // ============================================================
-// FECHAR TICKET (com novo formato)
+// FECHAR TICKET (com transcript completo + TXT + Supabase)
 // ============================================================
 
 async function fecharTicket(
@@ -1975,246 +1975,246 @@ async function fecharTicket(
   setClosing(ticketId);
 
   try {
-    const ticket =
-      getTicketForInteraction(
-        ticketId,
-        interaction.channelId
-      );
+    const ticket = getTicketForInteraction(
+      ticketId,
+      interaction.channelId
+    );
 
-    if (
-      !ticket ||
-      ticket.closed
-    ) {
+    if (!ticket || ticket.closed) {
       return safeReply(
         interaction,
         "⚠️ Ticket não encontrado ou já fechado."
       );
     }
 
-    await withTicketLock(
-      ticket.id,
-      async () => {
-        const current =
-          db.tickets[
-            String(ticket.id)
-          ];
-
-        if (
-          !current ||
-          current.closed
-        ) {
-          throw new Error(
-            "ALREADY_CLOSED"
-          );
-        }
-
-        current.closed = true;
-        current.recrutado =
-          recrutado;
-
-        current.closedBy =
-          interaction.user.id;
-
-        current.closedByName =
-          interaction.user.username;
-
-        current.closedAt =
-          new Date().toISOString();
-
-        const saved =
-          await persistDB();
-
-        if (!saved) {
-          throw new Error(
-            "DB_SAVE_FAILED"
-          );
-        }
+    await withTicketLock(ticket.id, async () => {
+      const current = db.tickets[String(ticket.id)];
+      if (!current || current.closed) {
+        throw new Error("ALREADY_CLOSED");
       }
-    );
+      current.closed = true;
+      current.recrutado = recrutado;
+      current.closedBy = interaction.user.id;
+      current.closedByName = interaction.user.username;
+      current.closedAt = new Date().toISOString();
 
-    await sendLog(
-      ticket.id,
-      "close",
-      client
-    ).catch(() => {});
+      const saved = await persistDB();
+      if (!saved) throw new Error("DB_SAVE_FAILED");
+    });
 
-    const channel =
-      await client.channels
-        .fetch(ticket.channelId)
-        .catch(() => null);
+    await sendLog(ticket.id, "close", client).catch(() => {});
 
-    if (channel) {
-      // ------------------------------------------------------
-      // EMBED DE FECHO NO CANAL (NOVO FORMATO)
-      // ------------------------------------------------------
-      const isRecruitment = ticket.type === 'recrutamento';
-      const duracao = formatDuration(ticket.openedAt, new Date());
-      const duracaoEmoji = getDurationEmoji(ticket.openedAt, new Date());
+    const channel = await client.channels
+      .fetch(ticket.channelId)
+      .catch(() => null);
 
-      let desc = `🔴 **Ticket Fechado**\n\n`;
-      desc += `Este ticket foi encerrado por <@${interaction.user.id}>.\n\n`;
-      desc += `📁 **Informações:**\n`;
-      desc += `• **Aberto por:** <@${ticket.userId}>\n`;
-      desc += `• **Motivo:** ${ticket.label}\n`;
-      desc += `\n${duracaoEmoji} **Duração:** ${duracao}`;
-      desc += `\n\n⏳ Este canal será eliminado automaticamente em **5 segundos**...`;
+    if (!channel) {
+      return safeReply(
+        interaction,
+        "❌ O canal do ticket já não existe."
+      );
+    }
 
-      const embed = new EmbedBuilder()
-        .setDescription(desc)
-        .setColor(0xFF0000)
-        .setTimestamp();
+    // ------------------------------------------------------
+    // EMBED DE FECHO NO CANAL (mantido igual)
+    // ------------------------------------------------------
+    const isRecruitment = ticket.type === 'recrutamento';
+    const duracao = formatDuration(ticket.openedAt, new Date());
+    const duracaoEmoji = getDurationEmoji(ticket.openedAt, new Date());
 
-      await channel.send({
-        embeds: [embed],
-      }).catch(() => {});
+    let desc = `🔴 **Ticket Fechado**\n\n`;
+    desc += `Este ticket foi encerrado por <@${interaction.user.id}>.\n\n`;
+    desc += `📁 **Informações:**\n`;
+    desc += `• **Aberto por:** <@${ticket.userId}>\n`;
+    desc += `• **Motivo:** ${ticket.label}\n`;
+    desc += `\n${duracaoEmoji} **Duração:** ${duracao}`;
+    desc += `\n\n⏳ Este canal será eliminado automaticamente em **5 segundos**...`;
 
-      // ------------------------------------------------------
-      // TRANSCRIPT AUTOMÁTICO
-      // ------------------------------------------------------
+    const embed = new EmbedBuilder()
+      .setDescription(desc)
+      .setColor(0xFF0000)
+      .setTimestamp();
+
+    await channel.send({ embeds: [embed] }).catch(() => {});
+
+    // ------------------------------------------------------
+    // TRANSCRIPT AUTOMÁTICO COMPLETO (HTML + TXT + SUPABASE)
+    // ------------------------------------------------------
+    try {
+      // Buscar mensagens
+      const messages = await channel.messages.fetch({ limit: 200 });
+      const msgsArray = Array.from(messages.values())
+        .sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+
+      // 1) Gerar HTML (usando a função existente)
+      let htmlAttachment = null;
       try {
-        const { gerarTranscript } = await import("../utils/transcript.js");
-        const transcript = await gerarTranscript(channel, ticket.id);
-        if (transcript) {
-          const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
-          if (logChannel) {
-            await logChannel.send({
-              content: `📋 **Transcript do Ticket #${ticket.id}**`,
-              files: [transcript.attachment]
-            });
-          }
-        }
+        htmlAttachment = await gerarTranscript(
+          channel,
+          `transcript-ticket-${ticket.id}-${Date.now()}`
+        );
       } catch (e) {
-        console.error("[Transcript Auto] Erro:", e.message);
+        console.error("[Transcript Auto] Erro ao gerar HTML:", e.message);
       }
 
-      // ------------------------------------------------------
-      // DM DE AVALIAÇÃO (NOVO FORMATO)
-      // ------------------------------------------------------
-      try {
-        const user =
-          await client.users.fetch(
-            ticket.userId
-          );
+      // 2) Gerar TXT (mesmo formato do comando /transcript-full)
+      let txtContent = `═══════════════════════════════════════════════════════════════\n`;
+      txtContent += `  TRANSCRIPT - PORTUGAL ALFA COMMUNITY\n`;
+      txtContent += `  Ticket #${ticket.id}\n`;
+      txtContent += `═══════════════════════════════════════════════════════════════\n`;
+      txtContent += `Canal:        #${channel.name}\n`;
+      txtContent += `ID do Canal:  ${channel.id}\n`;
+      txtContent += `Servidor:     ${interaction.guild.name}\n`;
+      txtContent += `Aberto por:   ${ticket.username} (${ticket.userId})\n`;
+      txtContent += `Tipo:         ${ticket.label}\n`;
+      txtContent += `Fechado por:  ${interaction.user.tag}\n`;
+      txtContent += `Data:         ${new Date().toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" })}\n`;
+      txtContent += `Total msgs:   ${msgsArray.length}\n`;
+      txtContent += `═══════════════════════════════════════════════════════════════\n\n`;
 
-        const clockEmojiDM = getClockEmoji(new Date());
-
-        const embedDM =
-          new EmbedBuilder()
-            .setTitle('🎫 Ticket Fechado')
-            .setDescription(
-              `ℹ️ O seu ticket foi fechado com sucesso! Avalie o nosso atendimento clicando nas estrelas abaixo.` +
-              `\n\n🎫 **Ticket:** #${ticket.id}` +
-              `\n📝 **Tipo:** ${ticket.label}` +
-              `\n\n⚒️ **Fechado por:** ${interaction.user.username}` +
-              `\n${clockEmojiDM} **Fechado em:** ${formatDateShort(new Date())}` +
-              `\n\n🎫 Caso seja necessário, não hesite em abrir um novo ticket!`
-            )
-            .setColor(0xFF0000)
-            .setTimestamp();
-
-        const row =
-          new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId(
-                `avaliar_${ticket.id}_1`
-              )
-              .setLabel(
-                "1 ⭐"
-              )
-              .setStyle(
-                ButtonStyle.Secondary
-              ),
-
-            new ButtonBuilder()
-              .setCustomId(
-                `avaliar_${ticket.id}_2`
-              )
-              .setLabel(
-                "2 ⭐⭐"
-              )
-              .setStyle(
-                ButtonStyle.Secondary
-              ),
-
-            new ButtonBuilder()
-              .setCustomId(
-                `avaliar_${ticket.id}_3`
-              )
-              .setLabel(
-                "3 ⭐⭐⭐"
-              )
-              .setStyle(
-                ButtonStyle.Secondary
-              ),
-
-            new ButtonBuilder()
-              .setCustomId(
-                `avaliar_${ticket.id}_4`
-              )
-              .setLabel(
-                "4 ⭐⭐⭐⭐"
-              )
-              .setStyle(
-                ButtonStyle.Secondary
-              ),
-
-            new ButtonBuilder()
-              .setCustomId(
-                `avaliar_${ticket.id}_5`
-              )
-              .setLabel(
-                "5 ⭐⭐⭐⭐⭐"
-              )
-              .setStyle(
-                ButtonStyle.Secondary
-              )
-          );
-
-        await user.send({
-          embeds: [embedDM],
-          components: [row],
+      for (const msg of msgsArray) {
+        const data = new Date(msg.createdTimestamp).toLocaleString("pt-PT", {
+          timeZone: "Europe/Lisbon",
+          day: '2-digit', month: '2-digit', year: 'numeric',
+          hour: '2-digit', minute: '2-digit', second: '2-digit'
         });
-      } catch (error) {
-        console.log(
-          "[Tickets] Não foi possível enviar DM:",
-          error.message
+        txtContent += `[${data}] ${msg.author.tag} (${msg.author.id})\n`;
+        if (msg.content) txtContent += `  ${msg.content}\n`;
+        if (msg.attachments.size > 0) {
+          txtContent += `  [Anexos: ${msg.attachments.map(a => `${a.name} (${a.url})`).join(", ")}]\n`;
+        }
+        if (msg.embeds.length > 0) {
+          txtContent += `  [Embed: ${msg.embeds.length} embed(s)]\n`;
+        }
+        txtContent += `\n`;
+      }
+
+      txtContent += `═══════════════════════════════════════════════════════════════\n`;
+      txtContent += `  FIM DO TRANSCRIPT\n`;
+      txtContent += `═══════════════════════════════════════════════════════════════\n`;
+
+      // 3) Construir anexos
+      const files = [];
+      const txtBuffer = Buffer.from(txtContent, "utf-8");
+      files.push(
+        new AttachmentBuilder(txtBuffer, {
+          name: `transcript-ticket-${ticket.id}.txt`
+        })
+      );
+
+      if (htmlAttachment) {
+        // htmlAttachment contém { attachment: AttachmentBuilder, fileName: string }
+        files.push(
+          new AttachmentBuilder(htmlAttachment.attachment.attachment, {
+            name: htmlAttachment.fileName
+          })
         );
       }
 
-      // ------------------------------------------------------
-      // APAGAR CANAL
-      // ------------------------------------------------------
-      setTimeout(async () => {
-        await channel
-          .delete()
-          .catch(() => {});
-      }, 10000);
+      // 4) Enviar para o canal de logs
+      const logChannel = await client.channels
+        .fetch(CONFIG.CANAL_LOGS)
+        .catch(() => null);
+
+      if (logChannel) {
+        const embedLog = new EmbedBuilder()
+          .setTitle(`📋 Transcript do Ticket #${ticket.id}`)
+          .setDescription([
+            `**Ticket:** #${ticket.id}`,
+            `**Tipo:** ${ticket.label}`,
+            `**Aberto por:** <@${ticket.userId}>`,
+            `**Fechado por:** ${interaction.user.tag}`,
+            `**Mensagens:** ${msgsArray.length}`,
+            `**Ficheiros:** ${files.length} anexo(s)`
+          ].join("\n"))
+          .setColor(0x0099ff)
+          .setTimestamp();
+
+        await logChannel.send({
+          embeds: [embedLog],
+          files: files
+        });
+      }
+
+      // 5) Guardar no Supabase
+      const transcriptData = {
+        id: `transcript-ticket-${ticket.id}-${Date.now()}`,
+        canalId: channel.id,
+        canalNome: channel.name,
+        guildId: interaction.guild.id,
+        guildNome: interaction.guild.name,
+        geradoPor: interaction.user.id,
+        geradoPorTag: interaction.user.tag,
+        data: new Date().toISOString(),
+        totalMensagens: msgsArray.length,
+        txtConteudo: txtContent,
+        htmlFileName: htmlAttachment ? htmlAttachment.fileName : null,
+      };
+
+      await salvarTranscriptSupabase(transcriptData).catch(e =>
+        console.error("[Supabase] Erro ao guardar:", e)
+      );
+
+    } catch (error) {
+      console.error("[Transcript Auto] Erro geral:", error.message);
     }
+
+    // ------------------------------------------------------
+    // DM DE AVALIAÇÃO (mantido igual)
+    // ------------------------------------------------------
+    try {
+      const user = await client.users.fetch(ticket.userId);
+      const clockEmojiDM = getClockEmoji(new Date());
+      let staffDisplayName = interaction.user.username;
+      try {
+        const guildMember = await interaction.guild.members.fetch(interaction.user.id);
+        staffDisplayName = guildMember.displayName || interaction.user.username;
+      } catch (e) {}
+
+      const embedDM = new EmbedBuilder()
+        .setTitle('🎫 Ticket Fechado')
+        .setDescription(
+          `ℹ️ O seu ticket foi fechado com sucesso! Avalie o nosso atendimento clicando nas estrelas abaixo.` +
+          `\n\n🎫 **Ticket:** #${ticket.id}` +
+          `\n📝 **Tipo:** ${ticket.label}` +
+          `\n\n⚒️ **Fechado por:** ${staffDisplayName}` +
+          `\n${clockEmojiDM} **Fechado em:** ${formatDateShort(new Date())}` +
+          `\n\n🎫 Caso seja necessário, não hesite em abrir um novo ticket!`
+        )
+        .setColor(0xFF0000)
+        .setTimestamp();
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`avaliar_${ticket.id}_1`).setLabel("1 ⭐").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`avaliar_${ticket.id}_2`).setLabel("2 ⭐⭐").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`avaliar_${ticket.id}_3`).setLabel("3 ⭐⭐⭐").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`avaliar_${ticket.id}_4`).setLabel("4 ⭐⭐⭐⭐").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`avaliar_${ticket.id}_5`).setLabel("5 ⭐⭐⭐⭐⭐").setStyle(ButtonStyle.Secondary)
+      );
+
+      await user.send({ embeds: [embedDM], components: [row] });
+    } catch (error) {
+      console.log("[Tickets] Não foi possível enviar DM:", error.message);
+    }
+
+    // ------------------------------------------------------
+    // APAGAR CANAL (mantido igual)
+    // ------------------------------------------------------
+    setTimeout(async () => {
+      await channel.delete().catch(() => {});
+    }, 10000);
 
     return safeReply(
       interaction,
       "✅ Ticket fechado com sucesso."
     );
+
   } catch (error) {
-    console.error(
-      "[FecharTicket] Erro:",
-      error
-    );
-
-    if (
-      error.message ===
-      "ALREADY_CLOSED"
-    ) {
-      return safeReply(
-        interaction,
-        "⚠️ Este ticket já foi fechado."
-      );
+    console.error("[FecharTicket] Erro:", error);
+    if (error.message === "ALREADY_CLOSED") {
+      return safeReply(interaction, "⚠️ Este ticket já foi fechado.");
     }
-
-    return safeReply(
-      interaction,
-      "❌ Ocorreu um erro ao fechar o ticket."
-    );
+    return safeReply(interaction, "❌ Ocorreu um erro ao fechar o ticket.");
   } finally {
     clearClosing(ticketId);
   }
