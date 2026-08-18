@@ -43,7 +43,8 @@ const cooldownChamadas = new Map(); // userId -> timestamp
 // IDs dos bots a excluir da lista de staff
 const BOTS_TO_EXCLUDE = new Set([
   "1498462519818326117",
-  "1516728761351929886"
+  "1516728761351929886",
+  "1394063740755771453"  // ← ID a remover
 ]);
 
 // ============================================================
@@ -263,7 +264,6 @@ function clearClosing(ticketId) {
 // ============================================================
 
 async function buildStaffList(channel, ticket) {
-  // Carregar todos os membros do servidor primeiro
   await channel.guild.members.fetch().catch(() => null);
 
   const members = channel.members;
@@ -274,41 +274,59 @@ async function buildStaffList(channel, ticket) {
 
   for (const [memberId, member] of members) {
     // ===== FILTRAR BOTS =====
-    // 1. Excluir bots (qualquer membro que seja bot)
     if (member.user.bot) continue;
-    // 2. Excluir bots específicos (por ID)
     if (BOTS_TO_EXCLUDE.has(memberId)) continue;
-    // 3. Excluir o bot configurado (se houver)
     if (memberId === botId) continue;
-    // 4. Não mostrar o próprio utilizador do ticket
-    if (memberId === ticket.userId) continue;
 
     // ===== VERIFICAR PERMISSÕES DE STAFF =====
-    // Verificar se tem permissão de gestão de mensagens OU cargo de staff
     const isStaffMember = member.permissions.has(PermissionFlagsBits.ManageMessages) ||
                           member.roles.cache.has(CONFIG.CARGO_STAFF);
 
     if (!isStaffMember) continue;
 
-    // ===== OBTER O CARGO MAIS ALTO =====
+    // ===== OBTER CARGO MAIS ALTO =====
     const highestRole = member.roles.cache
       .sort((a, b) => b.position - a.position)
       .first();
 
+    const roleName = highestRole?.name || "Staff";
+
+    // ===== STATUS (presence) =====
+    const presence = member.presence;
+    let status = "offline";
+    let statusEmoji = "⚫";
+    if (presence) {
+      const st = presence.status;
+      if (st === "online") { status = "Online"; statusEmoji = "🟢"; }
+      else if (st === "idle") { status = "Ausente"; statusEmoji = "🟡"; }
+      else if (st === "dnd") { status = "Não perturbar"; statusEmoji = "🔴"; }
+      else if (st === "offline") { status = "Offline"; statusEmoji = "⚫"; }
+    }
+
+    // ===== EMOJI POR CARGO =====
+    let roleEmoji = "🛡️";
+    const lowerRole = roleName.toLowerCase();
+    if (lowerRole.includes("fundador")) roleEmoji = "👑";
+    else if (lowerRole.includes("administrador") || lowerRole.includes("admin")) roleEmoji = "🛡️";
+    else if (lowerRole.includes("suporte") || lowerRole.includes("support")) roleEmoji = "🎫";
+    else if (lowerRole.includes("moderador") || lowerRole.includes("mod")) roleEmoji = "🛠️";
+    else if (lowerRole.includes("desenvolvedor") || lowerRole.includes("dev")) roleEmoji = "💻";
+
     staffList.push({
       member,
       rolePosition: highestRole?.position || 0,
-      roleName: highestRole?.name || "Staff",
+      roleName,
+      roleEmoji,
       displayName: member.displayName || member.user.username,
       username: member.user.username,
+      status,
+      statusEmoji,
     });
   }
 
-  // ===== ORDENAR POR CARGO (POSIÇÃO) E DEPOIS POR NOME =====
+  // ===== ORDENAR =====
   staffList.sort((a, b) => {
-    if (b.rolePosition !== a.rolePosition) {
-      return b.rolePosition - a.rolePosition;
-    }
+    if (b.rolePosition !== a.rolePosition) return b.rolePosition - a.rolePosition;
     return a.displayName.localeCompare(b.displayName);
   });
 
@@ -393,7 +411,7 @@ async function enviarPainelMembro(interaction) {
     });
   }
 
-  // Verificar se o utilizador é o dono do ticket
+  // Verificar se o utilizador é o dono do ticket (mantido, mas ele pode chamar-se a si mesmo)
   if (interaction.user.id !== ticket.userId) {
     return safeEdit(interaction, {
       content: "❌ Apenas o utilizador que abriu o ticket pode chamar staff.",
@@ -415,33 +433,33 @@ async function enviarPainelMembro(interaction) {
     const minutos = Math.floor(restante / 60);
     const segundos = restante % 60;
     return safeEdit(interaction, {
-      content: `⏳ Olá, para chamar novamente a staff espera **${minutos}m ${segundos}s**.`,
+      content: `⏱️ Aviso: Apenas 1 chamada permitida a cada 5 minutos. Aguarde **${minutos}m ${segundos}s**.`,
     });
   }
 
-  // Construir descrição da lista de staff
-  const desc = staffList.map((staff, index) =>
-    `${index + 1}. **${staff.roleName}** | ${staff.displayName} | <@${staff.member.id}>`
+  // Construir descrição com o novo formato
+  const desc = staffList.map((staff) =>
+    `${staff.roleEmoji} **${staff.roleName}** • <@${staff.member.id}> | ${staff.displayName} • ${staff.statusEmoji} ${staff.status}`
   ).join("\n");
 
   const embed = new EmbedBuilder()
     .setTitle("🛡️ Painel Membro – Chamar Staff")
     .setDescription(
       `📋 Selecione um membro da staff para chamar:\n\n${desc}\n\n` +
-      `⚠️ **Apenas 1 chamada a cada 5 minutos.**`
+      `⏱️ **Aviso:** Apenas 1 chamada permitida a cada 5 minutos.`
     )
     .setColor(0x2629F1)
     .setFooter({ text: `Ticket #${ticket.id}` })
     .setTimestamp();
 
-  // Criar menu de seleção com os staff
+  // Criar menu de seleção
   const selectMenu = new StringSelectMenuBuilder()
     .setCustomId(`chamar_staff_${ticket.id}`)
     .setPlaceholder("🎯 Escolha um staff para chamar")
     .addOptions(
       staffList.map(staff => ({
         label: staff.displayName || staff.username,
-        description: staff.roleName,
+        description: `${staff.roleName} • ${staff.status}`,
         value: staff.member.id,
       }))
     );
