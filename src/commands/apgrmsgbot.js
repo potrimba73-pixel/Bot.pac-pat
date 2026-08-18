@@ -62,10 +62,7 @@ const dateFormatterShort = new Intl.DateTimeFormat('pt-PT', {
 // EXTRAIR TEXTO DA MENSAGEM (ESPECIALMENTE PARA JOCKIE MUSIC)
 // ============================================================
 function getMessageText(msg) {
-  // Se for uma mensagem do Jockie Music, tratamos de forma especial
   const isJockie = msg.author.id === '412347553141751808';
-
-  // Primeiro, tentamos extrair o conteúdo do embed
   let text = msg.content || '';
 
   if (msg.embeds?.length) {
@@ -107,59 +104,89 @@ function getMessageText(msg) {
       }
 
       // --- Música (Started playing) ---
-      // Para Jockie Music, o título é a música, a description contém o artista
+      // ALTERAÇÃO: melhor deteção e processamento de múltiplas linhas
       if (
         embed.url?.includes('spotify.com') ||
         embed.provider?.name === 'Spotify' ||
-        (isJockie && embed.title) ||
+        (isJockie && (embed.title || embed.description)) ||
         embed.description?.toLowerCase().includes('started playing')
       ) {
-        let title = embed.title || '';
-        let artist = '';
+        let lines = [];
 
-        // Limpar título de possíveis caracteres estranhos
-        title = title.replace(/^["']|["']$/g, '').trim();
-
-        // Extrair artista da descrição
+        // Se a descrição contém várias linhas com "- Started playing"
         if (embed.description) {
-          // Tenta padrão "by Artista" ou "Artista • Música"
-          const byMatch = embed.description.match(/by\s+(.+)/i);
-          if (byMatch) {
-            artist = byMatch[1].trim();
-          } else {
-            // Separa por "•" ou "-" e pega a segunda parte
-            const parts = embed.description.split(/[•\-]/).map(s => s.trim());
-            if (parts.length >= 2) {
-              artist = parts[1];
-            } else {
-              artist = embed.description;
+          const descLines = embed.description.split('\n').map(s => s.trim()).filter(Boolean);
+          const hasStartedPlaying = descLines.some(line => /^[-•*]\s*Started playing/i.test(line));
+
+          if (hasStartedPlaying) {
+            // Processar cada linha individualmente
+            for (const line of descLines) {
+              const match = line.match(/^[-•*]\s*Started playing\s+(.+?)\s+by\s+(.+)/i);
+              if (match) {
+                const title = match[1].trim();
+                const artist = match[2].trim();
+                lines.push(`- Started playing **${title}** by ${artist}`);
+              } else {
+                // Se não encaixar, manter a linha original
+                lines.push(line);
+              }
             }
+          } else {
+            // Caso normal: uma única música (ou description sem lista)
+            let title = embed.title || '';
+            let artist = '';
+
+            // Extrair artista da description (ex: "by Ivandro" ou "Ivandro • Moça")
+            if (embed.description) {
+              const byMatch = embed.description.match(/by\s+(.+)/i);
+              if (byMatch) {
+                artist = byMatch[1].trim();
+              } else {
+                const parts = embed.description.split(/[•\-]/).map(s => s.trim());
+                if (parts.length >= 2) {
+                  artist = parts[1];
+                } else {
+                  artist = embed.description;
+                }
+              }
+            }
+
+            if (!artist && embed.author?.name) {
+              artist = embed.author.name;
+            }
+
+            // Se título tiver " - ", separar
+            if (!artist && title.includes('-')) {
+              const parts = title.split('-').map(s => s.trim());
+              if (parts.length === 2) {
+                title = parts[0];
+                artist = parts[1];
+              }
+            }
+
+            if (!title && msg.content) {
+              title = msg.content;
+            }
+
+            let result = `🎵 **${title}**`;
+            if (artist) result += ` por ${artist}`;
+            if (embed.url) result += `\n🔗 ${embed.url}`;
+            lines.push(result);
           }
+        } else {
+          // Sem description, usar apenas título
+          let title = embed.title || '';
+          let artist = '';
+          if (embed.author?.name) artist = embed.author.name;
+          let result = `🎵 **${title}**`;
+          if (artist) result += ` por ${artist}`;
+          if (embed.url) result += `\n🔗 ${embed.url}`;
+          lines.push(result);
         }
 
-        // Se não encontrou artista, usa author.name
-        if (!artist && embed.author?.name) {
-          artist = embed.author.name;
+        if (lines.length) {
+          text += (text ? '\n' : '') + lines.join('\n');
         }
-
-        // Se ainda não tiver artista, tenta extrair do título (ex: "Música - Artista")
-        if (!artist && title.includes('-')) {
-          const parts = title.split('-').map(s => s.trim());
-          if (parts.length === 2) {
-            title = parts[0];
-            artist = parts[1];
-          }
-        }
-
-        // Se a mensagem tiver conteúdo de texto, pode ser o nome da música
-        if (!title && msg.content) {
-          title = msg.content;
-        }
-
-        let result = `🎵 **${title}**`;
-        if (artist) result += ` por ${artist}`;
-        if (embed.url) result += `\n🔗 ${embed.url}`;
-        text += (text ? '\n' : '') + result;
         continue;
       }
 
@@ -210,14 +237,13 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
   const channelName = channel.name;
   const guildIcon = guild?.iconURL({ dynamic: true, size: 64 }) || '';
 
-  // Ordenar por data (mais antiga primeiro)
   const sorted = [...messages].sort((a, b) => a.createdAt - b.createdAt);
 
   const msgsHtml = sorted.map((msg, index) => {
     const avatar = msg.author.displayAvatarURL({ extension: 'png', size: 64 });
     const data = dateFormatter.format(msg.createdAt);
     const rawText = getMessageText(msg);
-    // Escapar HTML e converter quebras de linha para <br>
+    // ALTERAÇÃO: preservar quebras de linha e hífenes
     const texto = escapeHtml(rawText).replace(/\n/g, '<br>');
 
     const hue = (parseInt(msg.author.id.slice(0, 6), 16) % 360);
@@ -745,13 +771,11 @@ export async function execute(interaction, client) {
 
   } catch (error) {
     console.error('[Apgrmsgbot] Erro:', error);
-    // Se a interação já foi deferida, edita; senão, tenta responder
     try {
       await interaction.editReply({
         content: `❌ Erro: ${error.message || 'tente novamente.'}`,
       });
     } catch {
-      // Se falhar, a interação pode ter expirado completamente, então ignoramos
       console.error('Não foi possível responder à interação.');
     }
   }
