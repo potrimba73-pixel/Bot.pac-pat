@@ -4,12 +4,9 @@ import { safeDeferReply, safeEditReply } from '../utils/safeReply.js';
 
 const DEFAULT_BOT_ID = '412347553141751808';
 
-// ============================================================
-// EXTRAI O TEXTO REAL DA MENSAGEM (inclui embeds, links, anexos)
-// ============================================================
+// Função getMessageText (igual à anterior)
 function getMessageText(msg) {
   let text = msg.content || '';
-
   if (msg.embeds && msg.embeds.length > 0) {
     for (const embed of msg.embeds) {
       if (embed.title) text += (text ? '\n' : '') + embed.title;
@@ -24,25 +21,21 @@ function getMessageText(msg) {
       if (embed.footer?.text) text += (text ? '\n' : '') + embed.footer.text;
     }
   }
-
   if (msg.attachments && msg.attachments.size > 0) {
     for (const [id, att] of msg.attachments) {
       text += (text ? '\n' : '') + `📎 ${att.name} (${att.url})`;
     }
   }
-
   return text || '(sem texto)';
 }
 
-// ============================================================
-// GERAR HTML BONITO (estilo Discord)
-// ============================================================
+// Função generatePrettyHTML (igual à anterior, mas com targetId)
 function generatePrettyHTML(messages, channelName, staffName, motivo, targetId) {
+  // messages é um array de mensagens
   const msgsHtml = messages.map(msg => {
     const avatar = msg.author.displayAvatarURL({ extension: 'png', size: 64 });
     const data = msg.createdAt.toLocaleString('pt-PT');
     const texto = getMessageText(msg).replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
-
     const authorColor = msg.author.bot ? '#5865F2' : '#FFFFFF';
 
     let embedsHtml = '';
@@ -85,7 +78,7 @@ function generatePrettyHTML(messages, channelName, staffName, motivo, targetId) 
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Transcript - Limpeza de BOT</title>
+  <title>Transcript - Limpeza</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -201,9 +194,6 @@ function generatePrettyHTML(messages, channelName, staffName, motivo, targetId) 
 </html>`;
 }
 
-// ============================================================
-// COMANDO PRINCIPAL
-// ============================================================
 export async function execute(interaction, client) {
   // Verificar permissão
   if (!interaction.member.permissions.has('ManageMessages')) {
@@ -213,16 +203,16 @@ export async function execute(interaction, client) {
     });
   }
 
-  // Obter alvo (utilizador opcional)
   const targetUser = interaction.options.getUser('membro');
   const targetId = targetUser ? targetUser.id : DEFAULT_BOT_ID;
   const targetName = targetUser ? targetUser.username : 'Jockie Music (bot)';
-
   const quantidade = interaction.options.getInteger('quantidade') || 50;
   const motivo = interaction.options.getString('motivo') || 'Limpeza de mensagens';
 
+  // Deferir a resposta uma única vez
   const deferred = await safeDeferReply(interaction);
   if (!deferred) {
+    // Se não conseguiu deferir, tenta responder diretamente (não deve acontecer)
     return interaction.reply({ content: '⏳ A processar...', flags: 64 });
   }
 
@@ -230,42 +220,36 @@ export async function execute(interaction, client) {
 
   try {
     const messages = await channel.messages.fetch({ limit: Math.min(quantidade, 100) });
+    // Filtrar e converter para array
     const targetMessages = messages.filter(msg => msg.author.id === targetId);
+    const msgArray = Array.from(targetMessages.values());
 
-    if (targetMessages.size === 0) {
+    if (msgArray.length === 0) {
       return await safeEditReply(interaction, {
         content: `ℹ️ Nenhuma mensagem de <@${targetId}> encontrada.`,
         flags: 64
       });
     }
 
-    // ===== GERAR HTML BONITO =====
-    const html = generatePrettyHTML(
-      targetMessages.values(),
-      channel.name,
-      interaction.user.username,
-      motivo,
-      targetId
-    );
+    // Gerar HTML com o array
+    const html = generatePrettyHTML(msgArray, channel.name, interaction.user.username, motivo, targetId);
 
-    // ===== GERAR TXT SIMPLES =====
+    // Gerar TXT
     let txt = '🧹 MENSAGENS APAGADAS\n';
     txt += '================================\n';
     txt += `Canal: ${channel.name}\n`;
     txt += `Staff: ${interaction.user.username}\n`;
     txt += `Motivo: ${motivo}\n`;
     txt += `Alvo: ${targetId} (${targetName})\n`;
-    txt += `Quantidade: ${targetMessages.size}\n`;
+    txt += `Quantidade: ${msgArray.length}\n`;
     txt += `Data: ${new Date().toLocaleString('pt-PT')}\n`;
     txt += '================================\n\n';
-
-    for (const msg of targetMessages.values()) {
+    for (const msg of msgArray) {
       const data = msg.createdAt.toLocaleString('pt-PT');
       const text = getMessageText(msg);
       txt += `[${data}] ${msg.author.username}: ${text}\n`;
     }
 
-    // ===== CRIAR FICHEIROS =====
     const htmlBuffer = Buffer.from(html, 'utf-8');
     const txtBuffer = Buffer.from(txt, 'utf-8');
     const files = [
@@ -273,16 +257,16 @@ export async function execute(interaction, client) {
       new AttachmentBuilder(txtBuffer, { name: `transcript-${Date.now()}.txt` })
     ];
 
-    // ===== APAGAR MENSAGENS =====
-    for (const msg of targetMessages.values()) {
+    // Apagar mensagens
+    for (const msg of msgArray) {
       await msg.delete().catch(() => {});
     }
 
-    // ===== ENVIAR RESULTADO =====
+    // Enviar embed com ficheiros
     const embed = new EmbedBuilder()
       .setTitle('🧹 Mensagens apagadas')
       .setDescription(
-        `📊 **Quantidade:** ${targetMessages.size}\n` +
+        `📊 **Quantidade:** ${msgArray.length}\n` +
         `👤 **Alvo:** <@${targetId}>\n` +
         `📅 **Data:** ${new Date().toLocaleString('pt-PT')}\n` +
         `👮 **Staff:** <@${interaction.user.id}>\n` +
@@ -294,9 +278,9 @@ export async function execute(interaction, client) {
 
     await channel.send({ embeds: [embed], files });
 
-    // ===== RESPOSTA AO UTILIZADOR =====
+    // Responder ao utilizador
     await safeEditReply(interaction, {
-      content: `✅ ${targetMessages.size} mensagens apagadas. Transcript (HTML + TXT) enviado no canal.`,
+      content: `✅ ${msgArray.length} mensagens apagadas. Transcript (HTML + TXT) enviado no canal.`,
       flags: 64
     });
 
