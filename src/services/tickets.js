@@ -220,8 +220,13 @@ function buildTicketEmbed(ticket, user) {
     description += `\n\nℹ️ **Especificações:** ${ticket.especificacoes}`;
   }
 
+  // Título dinâmico
+  const title = isRecruitment
+    ? "🎫 Sistema de Ticket | Portugal Alfa Truckers"
+    : "🎫 Sistema de Ticket | Portugal Alfa Community";
+
   return new EmbedBuilder()
-    .setTitle(`<@&${CONFIG.CARGO_ADMINISTRACAO}>`)
+    .setTitle(title)
     .setDescription(description)
     .setColor(ticket.claimedBy ? 0x00ff00 : 0x2629F1)
     .setTimestamp(openedAt);
@@ -282,8 +287,9 @@ export async function updateTicketEmbed(channel, ticketId) {
       return true;
     }
 
+    // Fallback: enviar nova mensagem (não deveria acontecer)
     const newMessage = await channel.send({
-      content: `<@${ticket.userId}> | ID: \`${ticket.userId}\``,
+      content: `||<@&${CONFIG.CARGO_STAFF}>||`,
       embeds: [embed],
       components: [row],
     });
@@ -473,8 +479,9 @@ export async function createTicket(interaction, type, label, client) {
     const embed = buildTicketEmbed(ticket, user);
     const row = buildTicketButtons(ticketId);
 
+    // Mensagem inicial com menção ao cargo dentro de spoiler
     const panelMessage = await channel.send({
-      content: `<@${user.id}> | ID: \`${user.id}\``,
+      content: `||<@&${CONFIG.CARGO_STAFF}>||`,
       embeds: [embed],
       components: [row],
     });
@@ -656,12 +663,18 @@ export async function handleTruckyVerification(interaction, client) {
       client._tempRecrutamento = {};
     }
 
+    // Normalizar link (adicionar https:// se faltar)
+    let linkNormalizado = linkTrucky;
+    if (linkNormalizado && !/^https?:\/\//i.test(linkNormalizado)) {
+      linkNormalizado = 'https://' + linkNormalizado;
+    }
+
     client._tempRecrutamento[interaction.user.id] = {
       nomeTrucky,
-      linkTrucky,
+      linkTrucky: linkNormalizado,
     };
 
-    await mostrarRegrasRecrutamento(interaction, client, nomeTrucky, linkTrucky);
+    await mostrarRegrasRecrutamento(interaction, client, nomeTrucky, linkNormalizado);
   } catch (error) {
     console.error("[TruckyVerification] Erro:", error);
     await interaction.editReply({
@@ -834,14 +847,6 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky = 
     const ticketId = generateTicketId();
     const openedAt = new Date();
 
-    // ===== CONSTRUIR O TRUCKY COMO LINK (se disponível) =====
-    let truckyLine = '';
-    if (linkTrucky && /^https?:\/\//i.test(linkTrucky)) {
-      truckyLine = `\n🚛 **Trucky:** [${nomeFinal}](${linkTrucky})`;
-    } else {
-      truckyLine = `\n🚛 **Trucky:** \`${nomeFinal}\``;
-    }
-
     const ticket = {
       id: ticketId,
       channelId: channel.id,
@@ -872,27 +877,12 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky = 
     db.tickets[ticketId] = ticket;
     await saveDB();
 
-    const clockEmoji = getClockEmoji(openedAt);
-
-    // ===== EMBED INICIAL COM "Regras aceites: Sim" e Trucky em link =====
-    const embed = new EmbedBuilder()
-      .setTitle(`<@&${CONFIG.CARGO_ADMINISTRACAO}>`)
-      .setDescription(
-        `ℹ️ **Motivo:** 📝 Recrutamento PAT` +
-        truckyLine +
-        `\n📋 **Regras aceites:** Sim` +
-        `\n\n👮 **Responsável:** ${clockEmoji} Aguardando staff...` +
-        `\n👤 **Utilizador:** <@${user.id}> | \`${user.username}\`` +
-        `\n\n${clockEmoji} **Abertura:** ${formatDateSimple(openedAt)}` +
-        `\n\n👤 Olá <@${user.id}>, aguarde até ser atendido por alguém da staff.` +
-        `\n\n⚠️ Lembra-te: qualquer incumprimento das regras levará ao encerramento do ticket sem aviso prévio!`
-      )
-      .setColor(0x2629F1)
-      .setTimestamp(openedAt);
-
+    // Usar buildTicketEmbed para consistência
+    const embed = buildTicketEmbed(ticket, user);
     const row = buildTicketButtons(ticketId);
+
     const panelMessage = await channel.send({
-      content: `<@${user.id}> | ID: \`${user.id}\``,
+      content: `||<@&${CONFIG.CARGO_STAFF}>||`,
       embeds: [embed],
       components: [row],
     });
@@ -901,6 +891,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky = 
 
     await sendLog(ticketId, "open", client).catch(() => {});
 
+    const clockEmoji = getClockEmoji(openedAt);
     const rowIrTicket = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setLabel(`${CONFIG.EMOJI_TICKET || "🎫"} Ir para o Ticket`)
