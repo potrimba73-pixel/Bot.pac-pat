@@ -2,9 +2,6 @@
 import {
   EmbedBuilder,
   AttachmentBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
   Collection,
 } from 'discord.js';
 
@@ -12,14 +9,14 @@ import {
 // CONSTANTES E PRESETS DE IDS
 // ============================================================
 const PRESET_IDS = {
-  '412347553141751808': 'Jockie Music (bot)',
+  '412347553141751808': 'Jockie Music',
   '759343605726052392': 'pt.jp lyaz',
   '770599668710637608': 'Utilizador 7705...',
   '456226577798135808': 'Utilizador 4562...',
 };
 
-const DEFAULT_TARGET_IDS = ['412347553141751808', '759343605726052392'];
-const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID || '';
+// Obtém automaticamente todos os IDs do objeto acima
+const DEFAULT_TARGET_IDS = Object.keys(PRESET_IDS);
 const TIMEZONE = 'Europe/Lisbon';
 
 // ============================================================
@@ -39,6 +36,11 @@ function sanitizeFileName(name) {
   if (!name) return 'canal';
   const cleaned = name.replace(/[^\w\s-]/gi, '').trim().replace(/\s+/g, '_');
   return cleaned.length > 0 ? cleaned : 'canal';
+}
+
+function stripMarkdown(text) {
+  if (!text) return '';
+  return text.replace(/\*\*/g, '').replace(/\*/g, '').replace(/__/g, '').replace(/~~/g, '');
 }
 
 const dateFormatter = new Intl.DateTimeFormat('pt-PT', {
@@ -94,11 +96,13 @@ function renderMessageContentHTML(msg) {
   const spotifyData = extractSpotifyEmbed(msg.content);
 
   if (msg.content) {
-    let contentText = renderMarkdown(msg.content);
+    // Remover o emoji do Spotify e limpar o texto
+    let contentText = msg.content.replace(/<:spotify:[0-9]+>/g, '').trim();
+    contentText = renderMarkdown(contentText);
     html += `<div class="text-content">${contentText}</div>`;
   }
 
-  // Widget Interativo grande para comandos de utilizadores com link do Spotify
+  // Widget Interativo para links diretos de utilizadores
   if (spotifyData && !msg.author.bot) {
     const embedUrl = `https://open.spotify.com/embed/${spotifyData.type}/${spotifyData.id}?utm_source=generator&theme=0`;
     html += `
@@ -121,11 +125,14 @@ function renderMessageContentHTML(msg) {
     for (const embed of msg.embeds) {
       const desc = embed.description || '';
 
-      // Caixa "Started playing" do Jockie Music (igual à imagem 2)
+      // Caixa "Started playing" estilizada
       if (desc.toLowerCase().includes('started playing')) {
         const match = desc.match(/\[(.*?)\]\((.*?)\)/);
-        const songTitle = match ? match[1] : desc.replace(/.*Started playing\s*/i, '');
+        let songTitle = match ? match[1] : desc.replace(/.*Started playing\s*/i, '');
         const songUrl = match ? match[2] : '#';
+
+        // Remover asteriscos (markdown) do título/artista
+        songTitle = stripMarkdown(songTitle);
 
         html += `
         <div class="spotify-started-card">
@@ -163,11 +170,11 @@ function renderMessageContentHTML(msg) {
 
 function getTxtContentRaw(msg) {
   let parts = [];
-  if (msg.content) parts.push(msg.content);
+  if (msg.content) parts.push(stripMarkdown(msg.content));
   if (msg.embeds?.length) {
     for (const embed of msg.embeds) {
-      if (embed.title) parts.push(embed.title);
-      if (embed.description) parts.push(embed.description);
+      if (embed.title) parts.push(stripMarkdown(embed.title));
+      if (embed.description) parts.push(stripMarkdown(embed.description));
     }
   }
   if (msg.attachments?.size) {
@@ -187,10 +194,16 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
   const msgsHtml = sorted.map((msg) => {
     const avatar = msg.author.displayAvatarURL({ extension: 'png', size: 64 });
     const data = dateFormatter.format(msg.createdAt);
-    const authorName = getDisplayName(msg);
+    
+    // Garantir que o nome não venha como a palavra genérica "BOT"
+    let authorName = getDisplayName(msg);
+    if ((authorName.toUpperCase() === 'BOT' || !authorName) && PRESET_IDS[msg.author.id]) {
+      authorName = PRESET_IDS[msg.author.id];
+    }
+
     const isBot = msg.author.bot;
 
-    // Apenas a tag APP com o ícone de verificado
+    // Apenas a tag azul APP
     const appBadge = isBot ? `
       <span class="app-badge">
         <svg class="check-icon" viewBox="0 0 16 16" width="10" height="10" fill="currentColor">
@@ -292,7 +305,6 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
   .author { font-weight: 600; color: #5865f2; font-size: 0.95rem; }
   .bot-author { color: #57F287; }
   
-  /* Tag APP Única */
   .app-badge {
     background-color: #5865f2;
     color: #fff;
@@ -310,8 +322,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
   .text-content { color: #dbdee1; font-size: 0.9rem; word-break: break-word; }
   .text-content a { color: #00a8fc; text-decoration: none; }
   .text-content a:hover { text-decoration: underline; }
-  
-  /* Widget Interativo de Playlist */
+
   .spotify-widget-container {
     margin-top: 8px;
     max-width: 100%;
@@ -320,7 +331,6 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
     background: #000;
   }
 
-  /* Caixa Started Playing estilo Discord */
   .spotify-started-card {
     background: #111214;
     border: 1px solid #2b2d31;
@@ -399,7 +409,10 @@ function generateTxt(messages, channel, staffName, motivo, targetNamesStr) {
 
   for (const msg of sorted) {
     const data = dateFormatter.format(msg.createdAt);
-    const authorName = getDisplayName(msg);
+    let authorName = getDisplayName(msg);
+    if ((authorName.toUpperCase() === 'BOT' || !authorName) && PRESET_IDS[msg.author.id]) {
+      authorName = PRESET_IDS[msg.author.id];
+    }
     lines.push(`[${data}] ${authorName}: ${getTxtContentRaw(msg)}`);
   }
 
@@ -410,13 +423,13 @@ function generateTxt(messages, channel, staffName, motivo, targetNamesStr) {
 // COMANDO PRINCIPAL
 // ============================================================
 export async function execute(interaction, client) {
+  // Prevenção segura do erro 40060 (Interaction has already been acknowledged)
   try {
-    if (!interaction.deferred && !interaction.replied) {
+    if (!interaction.replied && !interaction.deferred) {
       await interaction.deferReply({ flags: 64 });
     }
   } catch (err) {
-    console.error('[Apgrmsgbot] Erro ao diferir interação:', err);
-    return;
+    // Caso a interação já tenha sido respondida pelo framework
   }
 
   try {
@@ -484,7 +497,7 @@ export async function execute(interaction, client) {
     const now = Date.now();
     const bulkable = targetMessages.filter(m => (now - m.createdTimestamp) < 1209600000);
     const rest = targetMessages.filter(m => !bulkable.has(m.id));
-    let deletedCount = 0, failedCount = 0;
+    let deletedCount = 0;
 
     if (bulkable.size > 0) {
       try {
@@ -492,13 +505,13 @@ export async function execute(interaction, client) {
         deletedCount += deleted.size;
       } catch {
         for (const msg of bulkable.values()) {
-          try { await msg.delete(); deletedCount++; } catch { failedCount++; }
+          try { await msg.delete(); deletedCount++; } catch {}
         }
       }
     }
 
     for (const msg of rest.values()) {
-      try { await msg.delete(); deletedCount++; } catch { failedCount++; }
+      try { await msg.delete(); deletedCount++; } catch {}
     }
 
     const msgArray = Array.from(targetMessages.values());
@@ -532,8 +545,6 @@ export async function execute(interaction, client) {
     console.error('[Apgrmsgbot] Erro:', error);
     try {
       await interaction.editReply({ content: `❌ Erro ao executar a operação: ${error.message}` });
-    } catch {
-      console.error('Incapaz de responder à interação.');
-    }
+    } catch {}
   }
 }
