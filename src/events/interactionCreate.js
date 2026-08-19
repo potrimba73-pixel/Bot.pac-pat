@@ -68,14 +68,14 @@ const closingTickets = new Set();
 // FUNÇÕES AUXILIARES (segurança, DB, etc.)
 // ============================================================
 
-function isStaff(member) {
+export function isStaff(member) {
   if (!member) return false;
   if (member.permissions?.has(PermissionFlagsBits.ManageMessages)) return true;
   if (CONFIG.CARGO_STAFF && member.roles?.cache?.has(CONFIG.CARGO_STAFF)) return true;
   return false;
 }
 
-async function safeReply(interaction, content, ephemeral = true) {
+export async function safeReply(interaction, content, ephemeral = true) {
   try {
     if (interaction.deferred && !interaction.replied) {
       return await interaction.editReply({ content });
@@ -89,7 +89,7 @@ async function safeReply(interaction, content, ephemeral = true) {
   }
 }
 
-async function safeDefer(interaction) {
+export async function safeDefer(interaction) {
   try {
     if (!interaction.isRepliable()) {
       console.warn("[safeDefer] Interação não é repliable.");
@@ -106,7 +106,7 @@ async function safeDefer(interaction) {
   }
 }
 
-async function safeEdit(interaction, data) {
+export async function safeEdit(interaction, data) {
   try {
     if (interaction.deferred) return await interaction.editReply(data);
     if (interaction.replied) return await interaction.followUp({ ...data, flags: data.flags ?? 64 });
@@ -116,7 +116,7 @@ async function safeEdit(interaction, data) {
   }
 }
 
-async function persistDB() {
+export async function persistDB() {
   try {
     await saveDB();
     return true;
@@ -413,12 +413,16 @@ export async function handleInteractionCreate(interaction, client) {
 async function handleSlashCommand(interaction, client) {
   const command = interaction.commandName;
 
-  // Deferir a maioria dos comandos para evitar timeout
-  const deferred = await safeDefer(interaction);
-  if (!deferred && interaction.isRepliable()) {
-    // Se não deu para deferir, tenta responder direto (fallback)
-    await interaction.reply({ content: "❌ O bot está ocupado, tenta novamente.", flags: 64 });
-    return;
+  // Lista de comandos que NÃO devem ser deferidos (porque abrem modal ou respondem rápido)
+  const noDeferCommands = ["ajuda"];
+
+  let deferred = false;
+  if (!noDeferCommands.includes(command)) {
+    deferred = await safeDefer(interaction);
+    if (!deferred && interaction.isRepliable()) {
+      await interaction.reply({ content: "❌ O bot está ocupado, tenta novamente.", flags: 64 });
+      return;
+    }
   }
 
   switch (command) {
@@ -1466,3 +1470,5 @@ ${content}
 </body>
 </html>`;
 }
+
+// As funções auxiliares já estão exportadas no topo com `export`.
