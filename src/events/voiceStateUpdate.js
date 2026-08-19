@@ -1,40 +1,42 @@
 import { EmbedBuilder } from "discord.js";
 import { CONFIG } from "../config/index.js";
-import { sendExternalLog } from "../services/externalLogs.js";
 
-export default {
-  name: "voiceStateUpdate",
-  async execute(oldState, newState, client) {
-    if (oldState.guild.id !== CONFIG.GUILD_ID) return;
-    if (oldState.member?.user?.bot) return;
+export async function handleVoiceStateUpdate(oldState, newState, client) {
+  if (!newState.guild) return;
 
-    const member = newState.member || oldState.member;
-    if (!member) return;
+  const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
+  if (!logChannel) return;
 
-    let content = null;
+  const member = newState.member || oldState.member;
+  if (!member || member.user.bot) return;
 
-    // Entrou num canal
-    if (!oldState.channelId && newState.channelId) {
-      content = `👉🎤 <@${member.id}> entrou no canal de voz **${newState.channel.name}**`;
-    }
-    // Saiu de um canal
-    else if (oldState.channelId && !newState.channelId) {
-      content = `👈🎤 <@${member.id}> saiu do canal de voz **${oldState.channel.name}**`;
-    }
-    // Mudou de canal
-    else if (oldState.channelId && newState.channelId && oldState.channelId !== newState.channelId) {
-      content = `↔️🎤 <@${member.id}> mudou de **${oldState.channel.name}** para **${newState.channel.name}**`;
-    }
-
-    if (!content) return;
-
+  // Entrou em Canal de Voz
+  if (!oldState.channelId && newState.channelId) {
     const embed = new EmbedBuilder()
-      .setColor(CONFIG.COLORS.INFO)
-      .setDescription(content)
-      .setThumbnail(member.user.displayAvatarURL())
-      .setFooter({ text: `ID: ${member.id}`, iconURL: member.user.displayAvatarURL() })
+      .setColor(0x2B2D31)
+      .setDescription(`**Entrou em Canal de Voz**\n${member} | \`${member.user.username}\` entrou em **${newState.channel.name}**.`)
+      .addFields(
+        { name: "Utilizador", value: `${member}`, inline: false },
+        { name: "Canal", value: `⁠${newState.guild.name}⁠🔊${newState.channel.name}`, inline: false }
+      )
+      .setFooter({ text: `ID: ${member.id}` })
       .setTimestamp();
 
-    await sendExternalLog(client, embed);
+    return logChannel.send({ embeds: [embed] });
   }
-};
+
+  // Saiu de Canal de Voz
+  if (oldState.channelId && !newState.channelId) {
+    const embed = new EmbedBuilder()
+      .setColor(0x2B2D31)
+      .setDescription(`**Saiu de Canal de Voz**\n${member} | \`${member.user.username}\` saiu de **${oldState.channel.name}**.`)
+      .addFields(
+        { name: "Utilizador", value: `${member}`, inline: false },
+        { name: "Canal", value: `⁠${oldState.guild.name}⁠🔊${oldState.channel.name}`, inline: false }
+      )
+      .setFooter({ text: `ID: ${member.id}` })
+      .setTimestamp();
+
+    return logChannel.send({ embeds: [embed] });
+  }
+}
