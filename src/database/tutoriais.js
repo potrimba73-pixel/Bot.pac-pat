@@ -1,41 +1,30 @@
-// ==================== PAC TUTORIAIS DATABASE ====================
+// src/database/tutoriais.js
 export const PAC_TUTORIAIS = {
     "camera_zero": {
         keywords: ["camara", "camera", "câmara", "zero", "0", "developer", "desenvolvedor", "console", "modo desenvolvedor", "ativar", "como ativar", "usar", "como usar", "teletransportar", "teleportar"],
         titulo: "📹 Como Ativar a Câmara Zero no ETS2",
         resumo: `Para ativar a câmara zero no ETS2, precisas de ativar o Modo Desenvolvedor:
 
-` +
-                `**1.** Vai a: Documentos > Euro Truck Simulator 2
-` +
-                `**2.** Abre o ficheiro **config.cfg** com o Bloco de Notas
-` +
-                `**3.** Procura por:
-` +
-                `\`\`\`
-uset_g_developer "0"
-uset_g_console "0"
+**1.** Vai a: Documentos > Euro Truck Simulator 2
+**2.** Abre o ficheiro **config.cfg** com o Bloco de Notas
+**3.** Procura por:
 \`\`\`
-` +
-                `**4.** Altera para:
-` +
-                `\`\`\`
-uset_g_developer "1"
-uset_g_console "1"
+uset g_developer "0"
+uset g_console "0"
 \`\`\`
-` +
-                `**5.** Guarda e fecha o ficheiro
+**4.** Altera para:
+\`\`\`
+uset g_developer "1"
+uset g_console "1"
+\`\`\`
+**5.** Guarda e fecha o ficheiro
 
-` +
-                `**No jogo:**
-` +
-                `• Pressiona a tecla **0** (acima das letras) para ativar a câmera
-` +
-                `• Usa o **Numpad** para movimentar a câmera
+**No jogo:**
+• Pressiona a tecla **0** (acima das letras) para ativar a câmera
+• Usa o **Numpad** para movimentar a câmera
 
-` +
-                `📖 **Tutorial completo:** Veja o tutorial do Diego gamer na secção TUTORIAIS do Discord`,
-        autor: "Diego gamer",
+📖 **Tutorial completo:** Veja o tutorial do Diego gamer na secção TUTORIAIS do Discord`,
+        autor: "Diego Gamer",
         canal: "TUTORIAIS"
     },
     "servidor_vagas": {
@@ -43,22 +32,15 @@ uset_g_console "1"
         titulo: "🚛 Como Liberar 128 Vagas no Comboio",
         resumo: `Para liberar 128 vagas no servidor da PAC:
 
-` +
-                `**1.** Localiza o ficheiro **config.cfg** nos Documentos > Euro Truck Simulator 2
-` +
-                `**2.** Procura pela linha: \`\`\`uset g_max_convoy_size "8"\`\`\`
-` +
-                `**3.** Altera para: \`\`\`uset g_max_convoy_size "128"\`\`\`
-` +
-                `**4.** Guarda o ficheiro e reinicia o jogo
-` +
-                `**5.** Entra no servidor da PAC e convida os amigos!
+**1.** Localiza o ficheiro **config.cfg** nos Documentos > Euro Truck Simulator 2
+**2.** Procura pela linha: \`uset g_max_convoy_size "8"\`
+**3.** Altera para: \`uset g_max_convoy_size "128"\`
+**4.** Guarda o ficheiro e reinicia o jogo
+**5.** Entra no servidor da PAC e convida os amigos!
 
-` +
-                `📺 **Vídeo tutorial:** Veja o tutorial na secção TUTORIAIS do Discord
-` +
-                `📖 **Autor:** Diego gamer`,
-        autor: "Diego gamer",
+📺 **Vídeo tutorial:** Veja o tutorial na secção TUTORIAIS do Discord
+📖 **Autor:** Diego Gamer`,
+        autor: "Diego Gamer",
         canal: "TUTORIAIS"
     },
     "project_alm": {
@@ -66,20 +48,14 @@ uset_g_console "1"
         titulo: "🎨 Como Instalar o Project ALM + RGB da Scania",
         resumo: `Para instalar o Project ALM e ativar o RGB:
 
-` +
-                `**1.** Faz download do mod no site oficial: https://insanux.com/
-` +
-                `**2.** Coloca o ficheiro na pasta **mod** do ETS2
-` +
-                `**3.** Ativa no gestor de mods antes de entrar no jogo
-` +
-                `**4.** No jogo, configura o RGB através do menu do mod
+**1.** Faz download do mod no site oficial: https://insanux.com/
+**2.** Coloca o ficheiro na pasta **mod** do ETS2
+**3.** Ativa no gestor de mods antes de entrar no jogo
+**4.** No jogo, configura o RGB através do menu do mod
 
-` +
-                `📺 **Vídeo tutorial:** [YouTube](https://youtu.be/E9zk5bFRjYU)
-` +
-                `📖 **Tutorial completo:** Veja o tutorial do Diego gamer na secção TUTORIAIS do Discord`,
-        autor: "Diego gamer",
+📺 **Vídeo tutorial:** [YouTube](https://youtu.be/E9zk5bFRjYU)
+📖 **Tutorial completo:** Veja o tutorial do Diego Gamer na secção TUTORIAIS do Discord`,
+        autor: "Diego Gamer",
         canal: "TUTORIAIS"
     },
     "project_alm_insanux": {
@@ -87,20 +63,14 @@ uset_g_console "1"
         titulo: "🎨 Como Instalar o Project: ALM do Insanux",
         resumo: `Para instalar o Project ALM do Insanux:
 
-` +
-                `**1.** Acede ao site oficial: https://insanux.com/
-` +
-                `**2.** Faz download do mod Project ALM
-` +
-                `**3.** Extrai o ficheiro para a pasta **mod** do ETS2
-` +
-                `**4.** Ativa o mod no gestor de mods antes de iniciar o jogo
+**1.** Acede ao site oficial: https://insanux.com/
+**2.** Faz download do mod Project ALM
+**3.** Extrai o ficheiro para a pasta **mod** do ETS2
+**4.** Ativa o mod no gestor de mods antes de iniciar o jogo
 
-` +
-                `📺 **Vídeo tutorial:** [YouTube](https://youtu.be/59G2ShBJAI1)
-` +
-                `📖 **Tutorial completo:** Veja o tutorial do Diego gamer na secção TUTORIAIS do Discord`,
-        autor: "Diego gamer",
+📺 **Vídeo tutorial:** [YouTube](https://youtu.be/59G2ShBJAI1)
+📖 **Tutorial completo:** Veja o tutorial do Diego Gamer na secção TUTORIAIS do Discord`,
+        autor: "Diego Gamer",
         canal: "TUTORIAIS"
     },
     "trucky": {
@@ -108,17 +78,12 @@ uset_g_console "1"
         titulo: "📲 Como Usar o Trucky App",
         resumo: `O Trucky é essencial para a PAT:
 
-` +
-                `**1.** Faz download em [truckyapp.com](https://truckyapp.com)
-` +
-                `**2.** Liga à tua conta Steam
-` +
-                `**3.** Regista as viagens automaticamente
-` +
-                `**4.** Cumpre os 15.000 KM/mês
+**1.** Faz download em [truckyapp.com](https://truckyapp.com)
+**2.** Liga à tua conta Steam
+**3.** Regista as viagens automaticamente
+**4.** Cumpre os 15.000 KM/mês
 
-` +
-                `💡 Sem o Trucky não é possível fazer parte da Portugal Alfa Truckers!`,
+💡 Sem o Trucky não é possível fazer parte da Portugal Alfa Truckers!`,
         autor: "Staff PAC",
         canal: "RECRUTAMENTO"
     },
@@ -127,18 +92,13 @@ uset_g_console "1"
         titulo: "⚙️ Como Configurar o ETS2LA",
         resumo: `Para configurar o ETS2LA (Lane Assist):
 
-` +
-                `**1.** Verifica se tens a versão mais recente
-` +
-                `**2.** Alguns mods do TruckersMP podem não ser compatíveis
-` +
-                `**3.** Aguarda atualizações após updates do jogo
+**1.** Verifica se tens a versão mais recente
+**2.** Alguns mods do TruckersMP podem não ser compatíveis
+**3.** Aguarda atualizações após updates do jogo
 
-` +
-                `📺 **Tutorial:** [VR Tutoriais Marco Pereira](https://youtu.be/mDBtpdlwGms)
+📺 **Tutorial:** [VR Tutoriais Marco Pereira](https://youtu.be/mDBtpdlwGms)
 
-` +
-                `⚠️ Nota: A configuração base é explicada no vídeo acima.`,
+⚠️ Nota: A configuração base é explicada no vídeo acima.`,
         autor: "Marco Pereira",
         canal: "TUTORIAIS"
     },
@@ -147,19 +107,15 @@ uset_g_console "1"
         titulo: "🥽 VR no ETS2 - Meta Quest",
         resumo: `Para jogar ETS2 em VR com Meta Quest:
 
-` +
-                `**1.** Segue o tutorial: [VR Tutoriais Marco Pereira](https://youtu.be/mDBtpdlwGms)
-` +
-                `**2.** Configura o SteamVR ou Oculus Link
-` +
-                `**3.** Ajusta as definições gráficas para performance
+**1.** Segue o tutorial: [VR Tutoriais Marco Pereira](https://youtu.be/mDBtpdlwGms)
+**2.** Configura o SteamVR ou Oculus Link
+**3.** Ajusta as definições gráficas para performance
 
-` +
-                `💡 A configuração do Diego é baseada neste vídeo!`,
+💡 A configuração do Diego é baseada neste vídeo!`,
         autor: "Marco Pereira",
         canal: "TUTORIAIS"
     },
-    // ===== NOVOS TUTORIAIS =====
+    // ======= NOVOS TUTORIAIS =======
     "consola_developer": {
         keywords: ["consola", "console", "developer", "g_developer", "g_console", "modo desenvolvedor", "ativar consola"],
         titulo: "🛠️ Ativar Consola e Modo Developer - Passo a Passo",
@@ -224,7 +180,7 @@ Testa: Abre o ETS2 > Comboios > Criar sessão e vê se o limite aparece a 128.
         autor: "Diego Gamer",
         canal: "TUTORIAIS"
     },
-    "project_alm_insanux_detalhado": {
+    "project_alm_insanux": {
         keywords: ["project alm", "insanux", "project: alm", "rgb", "scania mod", "instalar project alm"],
         titulo: "🎨 Instalar o Project ALM do Insanux (RGB)",
         resumo: `Como instalar o Project ALM:
@@ -278,6 +234,11 @@ export function encontrarTutorialPAC(pergunta) {
         let score = 0;
         data.keywords.forEach(kw => {
             if (p.includes(kw.toLowerCase())) score += 10;
+        });
+        // bónus para palavras específicas
+        const specific = ["camara", "camera", "console", "developer", "numpad", "0", "teletransportar", "ctrl f9", "project alm", "insanux"];
+        specific.forEach(word => {
+            if (p.includes(word)) score += 5;
         });
         if (score > melhorScore) {
             melhorScore = score;
