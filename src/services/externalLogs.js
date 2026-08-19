@@ -464,49 +464,55 @@ export async function logExternalMessageDelete(message) {
       return;
     }
 
+    // Tenta obter entrada do Audit Log
     const entry = await findAuditExecutor(
       guild,
       AuditLogEvent.MessageDelete,
       {
-        targetId:
-          message?.author?.id ?? null,
-
-        channelId:
-          message?.channel?.id ?? null,
+        targetId: message?.author?.id ?? null,
+        channelId: message?.channel?.id ?? null,
       }
     );
 
-    const isSelfDelete =
-      Boolean(entry?.executor) &&
-      entry.executor.id === message?.author?.id;
+    let deletedBy = "❓ Não identificado";
+    let actionText = "teve uma mensagem apagada";
 
-    const deletedBy = entry
-      ? executorLabel(entry)
-      : "❓ Não identificado";
+    if (entry?.executor) {
+      const executorId = entry.executor.id;
+      const authorId = message?.author?.id;
 
-    const actionText = entry
-      ? isSelfDelete
-        ? "apagou a própria mensagem"
-        : "apagou uma mensagem"
-      : "teve uma mensagem apagada";
+      if (executorId === authorId) {
+        // Moderador ou o próprio autor (caso raro em que o Audit Log regista)
+        deletedBy = `${userLabel(message.author)}\n\`Próprio autor\``;
+        actionText = "apagou a própria mensagem";
+      } else {
+        // Executor é um moderador (ou outro utilizador)
+        deletedBy = executorLabel(entry);
+        actionText = "teve uma mensagem apagada por um moderador";
+      }
+    } else {
+      // Sem entrada no Audit Log → muito provavelmente o próprio autor apagou
+      if (message?.author) {
+        deletedBy = `${userLabel(message.author)}\n\`Próprio autor\``;
+        actionText = "apagou a própria mensagem";
+      } else {
+        // Caso extremo: mensagem sem autor (ex.: sistema)
+        deletedBy = "❓ Não identificado";
+        actionText = "teve uma mensagem apagada";
+      }
+    }
 
     const embed = createBaseEmbed(
       "🗑️ Mensagem Apagada",
       COLORS.DANGER
     ).setDescription(
-      `${
-        message?.author
-          ? userLabel(message.author)
-          : "❓ Utilizador desconhecido"
-      } **${actionText}**`
+      `${message?.author ? userLabel(message.author) : "❓ Utilizador desconhecido"} **${actionText}**`
     );
 
     embed.addFields(
       {
         name: "👤 Utilizador",
-        value: message?.author
-          ? userLabel(message.author)
-          : "❓ Desconhecido",
+        value: message?.author ? userLabel(message.author) : "❓ Desconhecido",
         inline: true,
       },
       {
@@ -521,16 +527,12 @@ export async function logExternalMessageDelete(message) {
       },
       {
         name: "📝 Mensagem",
-        value: formatMessageContent(
-          message?.content
-        ),
+        value: formatMessageContent(message?.content),
         inline: false,
       },
       {
         name: "📎 Anexos",
-        value: formatAttachments(
-          message?.attachments
-        ),
+        value: formatAttachments(message?.attachments),
         inline: false,
       }
     );
@@ -539,9 +541,7 @@ export async function logExternalMessageDelete(message) {
       embed.addFields({
         name: "🎨 Stickers",
         value: truncate(
-          [...message.stickers.values()]
-            .map(sticker => sticker.name)
-            .join(", ")
+          [...message.stickers.values()].map(sticker => sticker.name).join(", ")
         ),
         inline: false,
       });
@@ -565,20 +565,11 @@ export async function logExternalMessageDelete(message) {
       }
     );
 
-    setFooter(
-      embed,
-      message?.id,
-      "Mensagem ID"
-    );
+    setFooter(embed, message?.id, "Mensagem ID");
 
-    await channel.send(
-      messagePayload(embed)
-    );
+    await channel.send(messagePayload(embed));
   } catch (error) {
-    console.error(
-      "[ExternalLogs] Erro ao logar delete:",
-      error?.message
-    );
+    console.error("[ExternalLogs] Erro ao logar delete:", error?.message);
   }
 }
 
