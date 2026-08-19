@@ -226,7 +226,8 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
   const sorted = [...messages].sort((a, b) => a.createdAt - b.createdAt);
 
   const msgsHtml = sorted.map((msg) => {
-    const avatar = msg.author.displayAvatarURL({ extension: 'png', size: 80 });
+    // CORRIGIDO: tamanho alterado de 80 para 64 (tamanho válido no discord.js)
+    const avatar = msg.author.displayAvatarURL({ extension: 'png', size: 64 });
     const data = dateFormatter.format(msg.createdAt);
     const authorName = getDisplayName(msg);
     const isBot = msg.author.bot;
