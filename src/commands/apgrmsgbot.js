@@ -18,7 +18,6 @@ const PRESET_IDS = {
   '456226577798135808': 'Utilizador 4562...',
 };
 
-// IDs predefinidos para apagar se nenhum for especificado (Jockie + pt.jp lyaz)
 const DEFAULT_TARGET_IDS = ['412347553141751808', '759343605726052392'];
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID || '';
 const TIMEZONE = 'Europe/Lisbon';
@@ -37,7 +36,10 @@ function escapeHtml(text) {
 }
 
 function sanitizeFileName(name) {
-  return name.replace(/[^a-zA-Z0-9\-_]/g, '_');
+  if (!name) return 'canal';
+  // Remove emojis e caracteres especiais mantendo apenas letras/números
+  const cleaned = name.replace(/[^\w\s-]/gi, '').trim().replace(/\s+/g, '_');
+  return cleaned.length > 0 ? cleaned : 'canal';
 }
 
 const dateFormatter = new Intl.DateTimeFormat('pt-PT', {
@@ -60,28 +62,23 @@ function getDisplayName(msg) {
   return msg.author.globalName || msg.author.username;
 }
 
-function getDiscriminator(author) {
-  const disc = author.discriminator || '0';
-  return parseInt(disc) || 0;
-}
-
 // ============================================================
-// PARSER DE MARKDOWN & LINKS SPOTIFY
+// PARSER DE MARKDOWN & WIDGET INTERATIVO SPOTIFY
 // ============================================================
 function renderMarkdown(text) {
   if (!text) return '';
   let processed = escapeHtml(text);
 
-  // Emojis customizados
+  // Emojis do Discord
   processed = processed.replace(/&lt;a?:([a-zA-Z0-9_]+):[0-9]+&gt;/g, ':$1:');
 
-  // Links Markdown [Texto](URL)
+  // Links em Markdown [Texto](URL)
   processed = processed.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 
   // Links simples
   processed = processed.replace(/(^|[^"])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
 
-  // Formatação
+  // Estilos de texto
   processed = processed.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
   processed = processed.replace(/\*([^*]+?)\*/g, '<em>$1</em>');
   processed = processed.replace(/__([^_]+?)__/g, '<u>$1</u>');
@@ -91,38 +88,84 @@ function renderMarkdown(text) {
   return processed;
 }
 
+function extractSpotifyEmbed(text) {
+  if (!text) return null;
+  const spotifyRegex = /https:\/\/open\.spotify\.com\/(playlist|track|album|artist)\/([a-zA-Z0-9]+)/;
+  const match = text.match(spotifyRegex);
+  if (!match) return null;
+  
+  const type = match[1]; // playlist, track, album, etc.
+  const id = match[2];
+  return { type, id, fullUrl: match[0] };
+}
+
 function renderMessageContentHTML(msg) {
   let html = '';
+  const spotifyData = extractSpotifyEmbed(msg.content);
 
   if (msg.content) {
-    // Adiciona ícone de nota musical se for comando de música ou link do Spotify
     let contentText = renderMarkdown(msg.content);
-    if (msg.content.includes('spotify.com') || msg.content.startsWith('m!p')) {
-      contentText = `🎵 ${contentText}`;
-    }
     html += `<div class="text-content">${contentText}</div>`;
   }
 
+  // WIDGET INTERATIVO SPOTIFY
+  if (spotifyData) {
+    const embedUrl = `https://open.spotify.com/embed/${spotifyData.type}/${spotifyData.id}?utm_source=generator&theme=0`;
+    html += `
+    <div class="spotify-widget-container">
+      <iframe 
+        style="border-radius:12px;" 
+        src="${embedUrl}" 
+        width="100%" 
+        height="152" 
+        frameBorder="0" 
+        allowfullscreen="" 
+        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" 
+        loading="lazy">
+      </iframe>
+    </div>`;
+  }
+
+  // EMBEDS DO DISCORD (Ex: Jockie Music)
   if (msg.embeds?.length) {
     for (const embed of msg.embeds) {
       const desc = embed.description || '';
 
-      // Card de música jogada
       if (desc.toLowerCase().includes('started playing')) {
         const match = desc.match(/\[(.*?)\]\((.*?)\)/);
         const songTitle = match ? match[1] : desc.replace(/.*Started playing\s*/i, '');
         const songUrl = match ? match[2] : '#';
 
+        const embedSpotify = extractSpotifyEmbed(songUrl);
+        if (embedSpotify) {
+          const embedUrl = `https://open.spotify.com/embed/${embedSpotify.type}/${embedSpotify.id}?utm_source=generator&theme=0`;
+          html += `
+          <div class="spotify-widget-container">
+            <iframe style="border-radius:12px;" src="${embedUrl}" width="100%" height="80" frameBorder="0" allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
+          </div>`;
+        } else {
+          html += `
+          <div class="music-card">
+            <span class="music-icon">🎵</span>
+            <span class="music-label">Started playing:</span>
+            <a href="${escapeHtml(songUrl)}" target="_blank" class="music-title">${escapeHtml(songTitle)}</a>
+          </div>`;
+        }
+        continue;
+      }
+
+      // Se o embed contiver link do Spotify mas não tiver acionado o iframe acima
+      if (!spotifyData && embed.url && extractSpotifyEmbed(embed.url)) {
+        const sp = extractSpotifyEmbed(embed.url);
+        const embedUrl = `https://open.spotify.com/embed/${sp.type}/${sp.id}?utm_source=generator&theme=0`;
         html += `
-        <div class="music-card">
-          <span class="music-icon">🎵</span>
-          <span class="music-label">Started playing</span>
-          <a href="${escapeHtml(songUrl)}" target="_blank" class="music-title">${escapeHtml(songTitle)}</a>
+        <div class="spotify-widget-container">
+          <iframe style="border-radius:12px;" src="${embedUrl}" width="100%" height="152" frameBorder="0" allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
         </div>`;
         continue;
       }
 
-      // Embed genérico
+      // Embed Padrão
       const color = embed.color ? `#${embed.color.toString(16).padStart(6, '0')}` : '#2f3136';
       html += `
       <div class="embed-box" style="border-left: 4px solid ${color};">
@@ -161,7 +204,7 @@ function getTxtContentRaw(msg) {
 }
 
 // ============================================================
-// GERADOR HTML ESTILO PRO / CARD DISCORD
+// GERADOR HTML ESTILO DISCORD PRO
 // ============================================================
 function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, targetNamesStr) {
   const sorted = [...messages].sort((a, b) => a.createdAt - b.createdAt);
@@ -213,7 +256,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
     max-width: 850px;
     background-color: #1e1f22;
     border-radius: 12px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
     overflow: hidden;
     border: 1px solid #2b2d31;
   }
@@ -235,6 +278,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
     justify-content: center;
     font-weight: bold;
     color: #fff;
+    object-fit: cover;
   }
   .top-info h1 {
     font-size: 1.1rem;
@@ -250,7 +294,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
     padding: 20px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 14px;
   }
   .message-card {
     background-color: #2b2d31;
@@ -266,7 +310,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
     flex-shrink: 0;
   }
   .content { flex: 1; overflow: hidden; }
-  .header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .header { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
   .author { font-weight: 600; color: #5865f2; font-size: 0.95rem; }
   .bot-badge {
     background-color: #5865f2;
@@ -288,6 +332,15 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
   .text-content { color: #dbdee1; font-size: 0.9rem; word-break: break-word; }
   .text-content a { color: #00a8fc; text-decoration: none; }
   .text-content a:hover { text-decoration: underline; }
+  
+  .spotify-widget-container {
+    margin-top: 8px;
+    max-width: 100%;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #000;
+  }
+
   .music-card {
     background: #1e1f22;
     padding: 8px 12px;
@@ -299,6 +352,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
   }
   .music-title { color: #00a8fc; font-weight: 600; text-decoration: none; font-size: 0.85rem; }
   .embed-box { background: #1e1f22; padding: 10px; margin-top: 6px; border-radius: 4px; }
+  
   .footer-bar {
     background-color: #2b2d31;
     padding: 12px 20px;
@@ -334,7 +388,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
     </div>
     <div class="footer-bar">
       <div class="badges">
-        <div class="badge">📊 ${sorted.length} mensagens</div>
+        <div class="badge">📊 ${sorted.length} mensagem(ns)</div>
         <div class="badge">👤 Alvo: &lt;@${escapeHtml(targetIdsStr)}&gt;</div>
       </div>
       <div>Transcript gerado automaticamente • ${dateFormatterShort.format(new Date())}</div>
@@ -394,7 +448,6 @@ export async function execute(interaction, client) {
       targetIds.push(targetUser.id);
       targetNames.push(targetUser.username);
     } else if (targetIdRaw) {
-      // Aceita IDs separados por vírgula ou espaço
       const parsedIds = targetIdRaw.split(/[, ]+/).filter(id => /^\d{17,19}$/.test(id));
       if (parsedIds.length === 0) {
         return interaction.editReply({ content: '❌ O(s) ID(s) deve(m) ser numérico(s) com 17-19 dígitos.' });
@@ -413,7 +466,6 @@ export async function execute(interaction, client) {
         }
       }
     } else {
-      // Por padrão sem opções, apaga tanto o Jockie Music como o pt.jp lyaz
       targetIds = DEFAULT_TARGET_IDS;
       targetNames = DEFAULT_TARGET_IDS.map(id => PRESET_IDS[id] || id);
     }
@@ -435,7 +487,6 @@ export async function execute(interaction, client) {
       lastId = batch.last().id;
     }
 
-    // Filtra as mensagens pelos IDs selecionados (Jockie Music, pt.jp lyaz, etc.)
     const targetMessages = collected.filter(msg => targetIds.includes(msg.author.id));
     const totalFound = targetMessages.size;
 
