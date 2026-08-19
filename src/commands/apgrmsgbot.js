@@ -470,29 +470,48 @@ export async function execute(interaction, client) {
       targetNames = DEFAULT_TARGET_IDS.map(id => PRESET_IDS[id] || id);
     }
 
-    const quantidade = interaction.options.getInteger('quantidade') || 50;
-    const motivo = interaction.options.getString('motivo') || 'Limpeza de mensagens';
-    const formato = interaction.options.getString('formato') || 'ambos';
+// ============================================================
+// BUSCA E FILTRAGEM CORRIGIDA
+// ============================================================
+const quantidadeDesejada = interaction.options.getInteger('quantidade') || 50;
+const motivo = interaction.options.getString('motivo') || 'Limpeza de mensagens';
+const formato = interaction.options.getString('formato') || 'ambos';
 
-    let collected = new Collection();
-    let lastId = null;
-    const maxFetch = Math.min(quantidade, 1000);
+let targetMessages = new Collection();
+let lastId = null;
+let totalLidas = 0;
+const MAX_MENSAGENS_PARA_LER = 1000; // Limite de segurança para não bloquear o bot em canais gigantes
 
-    while (collected.size < maxFetch) {
-      const opts = { limit: Math.min(100, maxFetch - collected.size) };
-      if (lastId) opts.before = lastId;
-      const batch = await channel.messages.fetch(opts);
-      if (batch.size === 0) break;
-      collected = collected.concat(batch);
-      lastId = batch.last().id;
+// Procura mensagens no histórico ATÉ atingir a quantidade desejada do alvo
+while (targetMessages.size < quantidadeDesejada && totalLidas < MAX_MENSAGENS_PARA_LER) {
+  const opts = { limit: 100 };
+  if (lastId) opts.before = lastId;
+
+  const batch = await channel.messages.fetch(opts);
+  if (batch.size === 0) break; // Chegou ao fim do histórico do canal
+
+  totalLidas += batch.size;
+  lastId = batch.last().id;
+
+  // Filtra apenas as mensagens dos alvos
+  const filtradas = batch.filter(msg => targetIds.includes(msg.author.id));
+
+  for (const [id, msg] of filtradas) {
+    if (targetMessages.size < quantidadeDesejada) {
+      targetMessages.set(id, msg);
+    } else {
+      break;
     }
+  }
+}
 
-    const targetMessages = collected.filter(msg => targetIds.includes(msg.author.id));
-    const totalFound = targetMessages.size;
+const totalFound = targetMessages.size;
 
-    if (totalFound === 0) {
-      return interaction.editReply({ content: `ℹ️ Nenhuma mensagem dos alvos selecionados (${targetNames.join(', ')}) encontrada nas últimas ${collected.size} mensagens.` });
-    }
+if (totalFound === 0) {
+  return interaction.editReply({ 
+    content: `ℹ️ Nenhuma mensagem dos alvos selecionados (${targetNames.join(', ')}) foi encontrada nas últimas ${totalLidas} mensagens lidas.` 
+  });
+}
 
     const now = Date.now();
     const bulkable = targetMessages.filter(m => (now - m.createdTimestamp) < 1209600000);
