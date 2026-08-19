@@ -69,7 +69,6 @@ export async function handleAjudaCommand(interaction, client) {
     return;
   }
 
-  // Menu principal
   const embed = new EmbedBuilder()
     .setTitle(`${CONFIG.EMOJI_AJUDA || "❓"} Central de Ajuda | Portugal Alfa Community`)
     .setDescription([
@@ -188,11 +187,11 @@ export async function handleAjudaModal(interaction, client) {
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(`smart_helpful_${interaction.user.id}`)
+        .setCustomId(`smart_helpful_${interaction.user.id}_${interaction.id}`)
         .setLabel("✅ Sim, resolveu!")
         .setStyle(ButtonStyle.Success),
       new ButtonBuilder()
-        .setCustomId(`smart_not_helpful_${interaction.user.id}`)
+        .setCustomId(`smart_not_helpful_${interaction.user.id}_${interaction.id}`)
         .setLabel("❌ Não, preciso de mais ajuda")
         .setStyle(ButtonStyle.Danger),
       new ButtonBuilder()
@@ -200,6 +199,15 @@ export async function handleAjudaModal(interaction, client) {
         .setLabel("🎫 Abrir Ticket")
         .setStyle(ButtonStyle.Primary)
     );
+
+    // Guardar no pendingSearches usando o ID da interação como chave
+    if (!assistantMemory.pendingSearches) assistantMemory.pendingSearches = new Map();
+    assistantMemory.pendingSearches.set(interaction.id, {
+      question: pergunta,
+      answer: resposta,
+      messageId: interaction.id, // será usado para referência
+      channelId: interaction.channelId
+    });
 
     await interaction.editReply({ 
       embeds: [embed], 
@@ -241,7 +249,8 @@ async function gerarRespostaPersonalizada(pergunta, client) {
 // ============================================================
 export async function handleAjudaFeedback(interaction) {
   const customId = interaction.customId;
-  
+
+  // --- Outros casos ---
   if (customId === "ajuda_ticket" || customId.startsWith("ajuda_ticket_direct_")) {
     await interaction.reply({
       content: `🎫 Para abrir um ticket, vai ao canal <#${CONFIG.CANAL_TICKETS_GERAL}> e seleciona a opção adequada.`,
@@ -276,14 +285,14 @@ export async function handleAjudaFeedback(interaction) {
     return handleAjudaProcurar(interaction);
   }
 
-  // Feedback dos botões smart_helpful / smart_not_helpful
+  // --- Feedback dos botões smart_helpful / smart_not_helpful ---
   if (customId.startsWith("smart_helpful_") || customId.startsWith("smart_not_helpful_")) {
     const parts = customId.split("_");
-    // Formato: smart_helpful_USERID_MESSAGEID (quando vem do smartResponse)
-    // Ou smart_helpful_USERID (quando vem do modal)
+    // Formato: smart_helpful_USERID_MESSAGEID
     const userId = parts[2];
-    const messageId = parts[3] || null; // pode não existir no modal
+    const messageId = parts[3]; // ID da mensagem ou da interação
 
+    // Verifica se é o mesmo utilizador
     if (interaction.user.id !== userId) {
       return interaction.reply({
         content: `⚠️ Este feedback não é para ti!`,
@@ -293,22 +302,23 @@ export async function handleAjudaFeedback(interaction) {
 
     const isHelpful = customId.startsWith("smart_helpful_");
     const feedback = isHelpful ? "✅ Positivo" : "❌ Negativo";
-    
-    await interaction.reply({
-      content: `📝 Obrigado pelo feedback! (${feedback})\n\n${isHelpful ? '🎉 Ainda bem que conseguimos ajudar!' : '😔 Vamos melhorar! Se precisares, abre um ticket para ajuda personalizada.'}`,
-      flags: 64
-    });
 
-    // Buscar pergunta/resposta se tivermos messageId
+    // Buscar pergunta e resposta da memória
     let question = "N/A";
     let answer = "N/A";
-    if (messageId && assistantMemory.pendingSearches?.has(messageId)) {
+    if (assistantMemory.pendingSearches?.has(messageId)) {
       const data = assistantMemory.pendingSearches.get(messageId);
       question = data.question || "N/A";
       answer = data.answer || "N/A";
     }
 
-    // Log do feedback (com hora no formato <t:...:t>)
+    // Resposta ao utilizador
+    await interaction.reply({
+      content: `📝 Obrigado pelo feedback! (${feedback})\n\n${isHelpful ? '🎉 Ainda bem que conseguimos ajudar!' : '😔 Vamos melhorar! Se precisares, abre um ticket para ajuda personalizada.'}`,
+      flags: 64
+    });
+
+    // --- LOG no canal de logs com a hora curta e pergunta/resposta ---
     try {
       const logChannel = await interaction.client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
       if (logChannel) {
@@ -319,7 +329,7 @@ export async function handleAjudaFeedback(interaction) {
             `👤 Utilizador: <@${interaction.user.id}> | \`${interaction.user.tag}\``,
             `📝 Avaliação: ${feedback}`,
             `💬 Comentário: ${question} → ${answer}`,
-            `🕐 Hora: <t:${now}:t>`
+            `🕐 Hora: <t:${now}:t>`  // mostra apenas a hora, ex: 18:58
           ].join("\n"))
           .setColor(isHelpful ? 0x00ff00 : 0xff0000)
           .setTimestamp();
