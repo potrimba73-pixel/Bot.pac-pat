@@ -1,5 +1,5 @@
 // ============================================================
-// services/ajuda.js - Sistema de Ajuda Inteligente
+// services/ajuda.js - Sistema de Ajuda Inteligente (CORRIGIDO)
 // ============================================================
 
 import {
@@ -13,40 +13,21 @@ import {
 } from "discord.js";
 import { CONFIG } from "../config/index.js";
 import logger from "../utils/logger.js";
-
-// ✅ CORREÇÃO: importar do ficheiro correto
-import { safeDeferReply, safeEditReply } from "../utils/safeReply.js";
+import { safeEditReply } from "../utils/safeReply.js"; // apenas para feedback
 
 export const assistantMemory = new Map();
 
+// ============================================================
+// COMANDO /ajuda – ABRE MODAL (NÃO DEFERIR)
+// ============================================================
 export async function handleAjudaCommand(interaction, client) {
   if (!interaction.isRepliable()) return;
 
-  // ✅ Usar safeDeferReply em vez de safeDefer
-  const deferred = await safeDeferReply(interaction);
-  if (!deferred) {
-    if (interaction.isRepliable()) {
-      await interaction.reply({ content: "❌ O bot está ocupado, tenta novamente.", flags: 64 });
-    }
-    return;
-  }
-
+  // NUNCA deferir aqui! O modal é a resposta.
   try {
-    const embed = new EmbedBuilder()
-      .setTitle("❓ Como posso ajudar?")
-      .setDescription(
-        "👋 Olá! Eu posso ajudar-te com:\n" +
-        "• Dúvidas sobre o servidor\n" +
-        "• Configuração do Trucky App\n" +
-        "• Regras e recrutamento\n\n" +
-        "**Escreve a tua pergunta abaixo:**"
-      )
-      .setColor(0x00ff88)
-      .setTimestamp();
-
     const modal = new ModalBuilder()
       .setCustomId(`modal_ajuda_${interaction.user.id}_${Date.now()}`)
-      .setTitle("Nova Pergunta de Ajuda");
+      .setTitle("❓ Nova Pergunta de Ajuda");
 
     const inputPergunta = new TextInputBuilder()
       .setCustomId("pergunta_ajuda")
@@ -67,45 +48,52 @@ export async function handleAjudaCommand(interaction, client) {
       new ActionRowBuilder().addComponents(inputDetalhes)
     );
 
-    // Nota: Para comandos que abrem modal, NÃO se deve deferir.
-    // Por isso, esta função deve ser chamada sem defer (apenas no comando /ajuda).
-    // Se já deferiste, não podes usar showModal.
-    // Vou responder com um aviso, mas o ideal é ajustar no interactionCreate para não deferir o /ajuda.
-    await safeEditReply(interaction, {
-      content: "ℹ️ Por favor, usa o comando `/ajuda` novamente para abrir o formulário.",
-      flags: 64,
-    });
+    await interaction.showModal(modal);
   } catch (error) {
-    console.error("[handleAjudaCommand] Erro:", error);
-    await safeEditReply(interaction, { content: "❌ Erro ao processar o comando.", flags: 64 });
-  }
-}
-
-export async function handleAjudaProcurar(interaction) {
-  const deferred = await safeDeferReply(interaction);
-  if (!deferred) return;
-
-  try {
-    await safeEditReply(interaction, {
-      content: "🔍 Para pesquisar, usa o comando `/ajuda` e escreve a tua pergunta no modal.",
-      flags: 64,
-    });
-  } catch (error) {
-    console.error("[handleAjudaProcurar] Erro:", error);
-    await safeEditReply(interaction, { content: "❌ Erro ao pesquisar.", flags: 64 });
-  }
-}
-
-export async function handleAjudaModal(interaction, client) {
-  const deferred = await safeDeferReply(interaction);
-  if (!deferred) {
-    if (interaction.isRepliable()) {
-      await interaction.reply({ content: "❌ O bot está ocupado, tenta novamente.", flags: 64 });
+    console.error("[handleAjudaCommand] Erro ao mostrar modal:", error);
+    // Fallback: se o modal falhar, responde com uma mensagem
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: "❌ Ocorreu um erro ao abrir o formulário. Tenta novamente.",
+        flags: 64,
+      });
     }
-    return;
   }
+}
+
+// ============================================================
+// BOTÃO "Procurar Ajuda" – redireciona para o comando
+// ============================================================
+export async function handleAjudaProcurar(interaction) {
+  if (!interaction.isRepliable()) return;
+
+  // Se já estiver deferida, usa editReply; senão, responde
+  if (interaction.deferred || interaction.replied) {
+    await safeEditReply(interaction, {
+      content: "🔍 Para fazer uma pergunta, usa o comando `/ajuda`.",
+      flags: 64,
+    });
+  } else {
+    await interaction.reply({
+      content: "🔍 Para fazer uma pergunta, usa o comando `/ajuda`.",
+      flags: 64,
+    });
+  }
+}
+
+// ============================================================
+// MODAL SUBMIT – processa a pergunta
+// ============================================================
+export async function handleAjudaModal(interaction, client) {
+  // O modal já é uma resposta, mas podemos deferir para dar tempo
+  if (!interaction.isRepliable()) return;
 
   try {
+    // Se a interação ainda não foi deferida, deferir (opcional, mas seguro)
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferReply({ flags: 64 });
+    }
+
     const pergunta = interaction.fields.getTextInputValue("pergunta_ajuda");
     const detalhes = interaction.fields.getTextInputValue("detalhes_ajuda") || "";
 
@@ -157,7 +145,7 @@ export async function handleAjudaModal(interaction, client) {
         .setStyle(ButtonStyle.Primary)
     );
 
-    await safeEditReply(interaction, { embeds: [embed], components: [row], flags: 64 });
+    await interaction.editReply({ embeds: [embed], components: [row], flags: 64 });
 
     if (logThread) {
       await logger.logToThread(
@@ -169,10 +157,17 @@ export async function handleAjudaModal(interaction, client) {
     }
   } catch (error) {
     console.error("[AjudaModal] Erro:", error);
-    await safeEditReply(interaction, { content: "❌ Ocorreu um erro ao processar a tua pergunta.", flags: 64 });
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({ content: "❌ Ocorreu um erro ao processar a tua pergunta.", flags: 64 });
+    } else {
+      await interaction.editReply({ content: "❌ Ocorreu um erro ao processar a tua pergunta.", flags: 64 });
+    }
   }
 }
 
+// ============================================================
+// GERADOR DE RESPOSTAS (igual ao teu, mantido)
+// ============================================================
 async function gerarRespostaInteligente(pergunta, interaction, client) {
   // 1. Histórico do Diego
   try {
@@ -223,6 +218,9 @@ async function gerarRespostaInteligente(pergunta, interaction, client) {
   );
 }
 
+// ============================================================
+// FEEDBACK DOS BOTÕES
+// ============================================================
 export async function handleAjudaFeedback(interaction) {
   if (!interaction.isRepliable()) return;
 
