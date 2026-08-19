@@ -6,9 +6,9 @@ import {
 } from "discord.js";
 import { ASSISTANT_CONFIG } from "../config/index.js";
 import { encontrarRespostaFAQ } from "../database/faq.js";
+import { encontrarTutorialPAC } from "../database/tutoriais.js";
 import { assistantMemory } from "../services/ajuda.js";
 import { MessageAnalyzer } from "./analyzer.js";
-import { callPollinationsAI, callGeminiAI } from "./ets2AI.js";
 
 // Helper para gerar Custom IDs seguros (max 100 chars)
 function safeCustomId(prefix, messageId, extra = "") {
@@ -56,26 +56,24 @@ export async function handleSmartResponse(message, client) {
 
   const question = message.content.replace(/<@!?\d+>/g, "").trim();
 
-  // ===== 1. TENTAR FAQ PRIMEIRO (com prioridade máxima) =====
-  const faqResposta = encontrarRespostaFAQ(question);
-  
-  // ✅ Se o FAQ encontrou uma resposta com score >= 5 (ou se for uma pergunta específica)
-  if (faqResposta.found) {
+  // ===== 1. TENTAR TUTORIAIS PRIMEIRO =====
+  const tutorial = encontrarTutorialPAC(question);
+  if (tutorial) {
     const embed = new EmbedBuilder()
-      .setTitle(faqResposta.titulo)
-      .setDescription(faqResposta.texto)
-      .setColor(0x00ff00)
-      .setFooter({ text: "Resposta automatica — Info pode nao estar 100% atualizada" })
+      .setTitle(tutorial.titulo)
+      .setDescription(tutorial.resumo)
+      .setColor(0x00aaff)
+      .setFooter({ text: "Tutorial PAC — Resposta automática" })
       .setTimestamp();
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(safeCustomId("smart_helpful", message.author.id))
+        .setCustomId(safeCustomId("smart_helpful", message.id))
         .setLabel("Resolveu!")
         .setStyle(ButtonStyle.Success),
       new ButtonBuilder()
-        .setCustomId(safeCustomId("smart_not_helpful", message.author.id))
-        .setLabel("Nao e isto")
+        .setCustomId(safeCustomId("smart_not_helpful", message.id))
+        .setLabel("Não é isto")
         .setStyle(ButtonStyle.Danger),
       new ButtonBuilder()
         .setCustomId(safeCustomId("smart_search", message.id, question))
@@ -88,7 +86,47 @@ export async function handleSmartResponse(message, client) {
         embeds: [embed],
         components: [row]
       });
+      assistantMemory.pendingSearches.set(message.id, {
+        question: question,
+        messageId: sent.id,
+        channelId: message.channel.id
+      });
+    } catch (err) {
+      console.error("[SmartResponse] Erro ao enviar tutorial:", err.message);
+    }
+    return;
+  }
 
+  // ===== 2. TENTAR FAQ =====
+  const faqResposta = encontrarRespostaFAQ(question);
+  if (faqResposta.found) {
+    const embed = new EmbedBuilder()
+      .setTitle(faqResposta.titulo)
+      .setDescription(faqResposta.texto)
+      .setColor(0x00ff00)
+      .setFooter({ text: "Resposta automática — Info pode não estar 100% atualizada" })
+      .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(safeCustomId("smart_helpful", message.id))
+        .setLabel("Resolveu!")
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(safeCustomId("smart_not_helpful", message.id))
+        .setLabel("Não é isto")
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId(safeCustomId("smart_search", message.id, question))
+        .setLabel("Pesquisar na net")
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    try {
+      const sent = await message.reply({
+        embeds: [embed],
+        components: [row]
+      });
       assistantMemory.pendingSearches.set(message.id, {
         question: question,
         messageId: sent.id,
@@ -97,17 +135,17 @@ export async function handleSmartResponse(message, client) {
     } catch (err) {
       console.error("[SmartResponse] Erro ao enviar FAQ:", err.message);
     }
-    return; // ✅ SAI AQUI – NÃO USA O HISTÓRICO
+    return;
   }
 
-  // ===== 2. SE FAQ NÃO ENCONTROU, TENTAR HISTÓRICO DO DIEGO =====
+  // ===== 3. TENTAR HISTÓRICO DO DIEGO =====
   try {
-    const analyzer = client.messageAnalyzer || new MessageAnalyzer(client);
+    const analyzer = new MessageAnalyzer(client);
     const similar = analyzer.findSimilarResponses(question);
 
     if (similar.length > 0) {
       const best = similar[0];
-      let texto = "**Baseado no que o <@" + ASSISTANT_CONFIG.EXPERT_USER_ID + "> ja respondeu:**\n\n";
+      let texto = "**Baseado no que o <@" + ASSISTANT_CONFIG.EXPERT_USER_ID + "> já respondeu:**\n\n";
       texto += "> " + best.content + "\n\n";
 
       if (best.hasLinks.length > 0) {
@@ -118,16 +156,16 @@ export async function handleSmartResponse(message, client) {
         texto += "\n";
       }
 
-      texto += "*Esta resposta foi baseada no historico de mensagens. Pode nao estar 100% atualizada.*";
+      texto += "*Esta resposta foi baseada no histórico de mensagens. Pode não estar 100% atualizada.*";
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId(safeCustomId("smart_helpful", message.author.id))
+          .setCustomId(safeCustomId("smart_helpful", message.id))
           .setLabel("Resolveu!")
           .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
-          .setCustomId(safeCustomId("smart_not_helpful", message.author.id))
-          .setLabel("Nao e isto")
+          .setCustomId(safeCustomId("smart_not_helpful", message.id))
+          .setLabel("Não é isto")
           .setStyle(ButtonStyle.Danger),
         new ButtonBuilder()
           .setCustomId(safeCustomId("smart_search", message.id, question))
@@ -136,7 +174,6 @@ export async function handleSmartResponse(message, client) {
       );
 
       const sent = await message.reply({ content: texto, components: [row] });
-
       assistantMemory.pendingSearches.set(message.id, {
         question: question,
         messageId: sent.id,
@@ -148,67 +185,11 @@ export async function handleSmartResponse(message, client) {
     console.error("[SmartResponse] Erro no analyzer:", err.message);
   }
 
-  // ===== 3. TENTAR IA EXTERNA =====
-  let iaAnswer = null;
-  let source = "";
-
-  try {
-    iaAnswer = await callPollinationsAI(question);
-    source = "Pollinations AI";
-  } catch (e) {
-    console.error("[SmartResponse] Pollinations falhou:", e.message);
-  }
-
-  if (!iaAnswer) {
-    try {
-      iaAnswer = await callGeminiAI(question);
-      source = "Gemini AI";
-    } catch (e) {
-      console.error("[SmartResponse] Gemini falhou:", e.message);
-    }
-  }
-
-  if (iaAnswer) {
-    const embed = new EmbedBuilder()
-      .setTitle("🤖 Assistente Portugal Alfa")
-      .setDescription(iaAnswer)
-      .setColor(0x3498db)
-      .setFooter({ text: `Fonte: ${source} | Clique nos botões para dar feedback` })
-      .setTimestamp();
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(safeCustomId("smart_helpful", message.author.id))
-        .setLabel("👍 Ajudou")
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId(safeCustomId("smart_not_helpful", message.author.id))
-        .setLabel("👎 Não ajudou")
-        .setStyle(ButtonStyle.Danger),
-      new ButtonBuilder()
-        .setCustomId(safeCustomId("smart_search", message.id, question))
-        .setLabel("🔍 Pesquisar na net")
-        .setStyle(ButtonStyle.Primary)
-    );
-
-    try {
-      const sent = await message.reply({ embeds: [embed], components: [row] });
-      assistantMemory.pendingSearches.set(message.id, {
-        question: question,
-        messageId: sent.id,
-        channelId: message.channel.id
-      });
-    } catch (err) {
-      console.error("[SmartResponse] Erro ao enviar resposta IA:", err.message);
-    }
-    return;
-  }
-
   // ===== 4. SUGERIR PESQUISA =====
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(safeCustomId("smart_do_search", message.id, question))
-      .setLabel("🔍 Pesquisar na internet")
+      .setLabel("Pesquisar na internet")
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId("smart_cancel")
@@ -218,10 +199,9 @@ export async function handleSmartResponse(message, client) {
 
   try {
     const sent = await message.reply({
-      content: `**Não encontrei nenhuma resposta no histórico, no FAQ nem na IA.**\n\nQueres que eu **pesquise na internet** por: "${question}"?`,
+      content: `**Não encontrei nenhuma resposta no histórico nem no FAQ.**\n\nQueres que eu **pesquise na internet** por: "${question}"?`,
       components: [row]
     });
-
     assistantMemory.pendingSearches.set(message.id, {
       question: question,
       messageId: sent.id,
