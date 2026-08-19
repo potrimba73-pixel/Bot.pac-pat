@@ -3,6 +3,7 @@ import {
   EmbedBuilder,
   AttachmentBuilder,
   Collection,
+  MessageFlags
 } from 'discord.js';
 
 // ============================================================
@@ -53,7 +54,6 @@ const dateFormatterShort = new Intl.DateTimeFormat('pt-PT', {
   timeZone: TIMEZONE,
 });
 
-// Função otimizada para obter sem falhas o nome do utilizador/bot
 function getDisplayName(msg) {
   if (PRESET_IDS[msg.author.id]) return PRESET_IDS[msg.author.id];
   if (msg.member && msg.member.displayName && msg.member.displayName.toUpperCase() !== 'BOT') {
@@ -107,7 +107,6 @@ function renderMessageContentHTML(msg) {
     }
   }
 
-  // Widget Interativo para links de utilizadores
   if (spotifyData && !msg.author.bot) {
     const embedUrl = `https://open.spotify.com/embed/${spotifyData.type}/${spotifyData.id}?utm_source=generator&theme=0`;
     html += `
@@ -125,12 +124,10 @@ function renderMessageContentHTML(msg) {
     </div>`;
   }
 
-  // Embeds do Bot (Jockie Music, etc.)
   if (msg.embeds?.length) {
     for (const embed of msg.embeds) {
       const desc = embed.description || '';
 
-      // Caixa "Started playing" fiel ao Discord
       if (desc.toLowerCase().includes('started playing')) {
         const match = desc.match(/\[(.*?)\]\((.*?)\)/);
         let songTitle = match ? match[1] : desc.replace(/.*Started playing\s*/i, '');
@@ -148,7 +145,6 @@ function renderMessageContentHTML(msg) {
         continue;
       }
 
-      // Embed genérico
       const color = embed.color ? `#${embed.color.toString(16).padStart(6, '0')}` : '#2f3136';
       html += `
       <div class="embed-box" style="border-left: 4px solid ${color};">
@@ -404,11 +400,14 @@ function generateTxt(messages, channel, staffName, motivo, targetNamesStr) {
 // COMANDO PRINCIPAL
 // ============================================================
 export async function execute(interaction, client) {
+  // 1. Responder de imediato (Ephemeral) para garantir que a interação não expira (Error 10062)
   try {
     if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferReply({ flags: 64 });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     }
-  } catch (err) {}
+  } catch (err) {
+    return;
+  }
 
   try {
     if (!interaction.member.permissions.has('ManageMessages')) {
@@ -457,7 +456,7 @@ export async function execute(interaction, client) {
     let totalLidas = 0;
     const MAX_MENSAGENS_PARA_LER = 1000;
 
-    // Busca no histórico até encontrar o total de mensagens pretendido dos alvos
+    // 2. Busca no histórico filtrando mensagens válidas
     while (targetMessages.size < quantidadeDesejada && totalLidas < MAX_MENSAGENS_PARA_LER) {
       const opts = { limit: 100 };
       if (lastId) opts.before = lastId;
@@ -468,7 +467,8 @@ export async function execute(interaction, client) {
       totalLidas += batch.size;
       lastId = batch.last().id;
 
-      const filtradas = batch.filter(msg => targetIds.includes(msg.author.id));
+      // Filtra mensagens dos alvos, EXCLUINDO mensagens do sistema ou do próprio bot enviadas na mesma interação
+      const filtradas = batch.filter(msg => targetIds.includes(msg.author.id) && !msg.system);
 
       for (const [id, msg] of filtradas) {
         if (targetMessages.size < quantidadeDesejada) {
@@ -485,7 +485,7 @@ export async function execute(interaction, client) {
       });
     }
 
-    // Apagar mensagens (Bulk delete para mensagens recentes, apagar individual para antigas)
+    // 3. Eliminação das mensagens
     const now = Date.now();
     const bulkable = targetMessages.filter(m => (now - m.createdTimestamp) < 1209600000);
     const rest = targetMessages.filter(m => !bulkable.has(m.id));
@@ -497,15 +497,22 @@ export async function execute(interaction, client) {
         deletedCount += deleted.size;
       } catch {
         for (const msg of bulkable.values()) {
-          try { await msg.delete(); deletedCount++; } catch {}
+          try { 
+            await msg.delete(); 
+            deletedCount++; 
+          } catch {}
         }
       }
     }
 
     for (const msg of rest.values()) {
-      try { await msg.delete(); deletedCount++; } catch {}
+      try { 
+        await msg.delete(); 
+        deletedCount++; 
+      } catch {}
     }
 
+    // 4. Criação dos Ficheiros de Transcript
     const msgArray = Array.from(targetMessages.values());
     const timestamp = Date.now();
     const safeChannelName = sanitizeFileName(channel.name);
@@ -530,11 +537,12 @@ export async function execute(interaction, client) {
       .setColor(0x5865F2)
       .setTimestamp();
 
-    // Envia o transcript no canal publicamente
-    await channel.send({ embeds: [embed], files });
-    
-    // Confirma a ação ao utilizador que executou o comando
-    await interaction.editReply({ content: `✅ ${deletedCount} mensagens apagadas com sucesso.` });
+    // 5. Enviar o resultado APENAS UMA VEZ na resposta do comando
+    await interaction.editReply({
+      content: `✅ **${deletedCount}** mensagem(ns) apagada(s) com sucesso.`,
+      embeds: [embed],
+      files: files
+    });
 
   } catch (error) {
     console.error('[Apgrmsgbot] Erro:', error);
