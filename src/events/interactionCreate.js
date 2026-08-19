@@ -45,7 +45,6 @@ import {
   handleRemoveUserModal,
 } from "../services/calls.js";
 
-
 import { gerarTranscript } from "../utils/transcript.js";
 import { salvarTranscriptSupabase } from "../utils/supabase.js";
 
@@ -883,56 +882,59 @@ export async function handleInteractionCreate(
         "⚠️ Comando não reconhecido."
       );
     } // <-- FIM DO if (interaction.isChatInputCommand())
+
     // ========================================================
     // MODALS
     // ========================================================
 
-// ========================================================
-// MODALS
-// ========================================================
+    if (interaction.isModalSubmit()) {
+      // Modal de verificação Trucky (recrutamento)
+      if (interaction.customId.startsWith("modal_trucky_")) {
+        return handleTruckyVerification(interaction, client);
+      }
 
-if (interaction.isModalSubmit()) {
-  // Modal de verificação Trucky (recrutamento)
-  if (interaction.customId.startsWith("modal_trucky_")) {
-    return handleTruckyVerification(interaction, client);
-  }
+      // Modal de ajuda (abrir ticket)
+      if (interaction.customId.startsWith("modal_ajuda_")) {
+        const especificacoes = interaction.fields
+          .getTextInputValue("ajuda_especificacoes")
+          ?.trim();
 
-  // Modal de ajuda (abrir ticket)
-  if (interaction.customId.startsWith("modal_ajuda_")) {
-    const especificacoes = interaction.fields
-      .getTextInputValue("ajuda_especificacoes")
-      ?.trim();
+        interaction._ajudaEspecificacoes = especificacoes;
 
-    interaction._ajudaEspecificacoes = especificacoes;
+        return createTicket(
+          interaction,
+          "ajuda",
+          "❓ Pedir ajuda",
+          client
+        );
+      }
 
-    return createTicket(
-      interaction,
-      "ajuda",
-      "❓ Pedir ajuda",
-      client
-    );
-  }
+      // Modal de foto Trucky (recrutamento concluído)
+      if (interaction.customId.startsWith("modal_foto_trucky_")) {
+        if (!(await safeDefer(interaction))) {
+          return;
+        }
+        return handleFotoTruckyModal(interaction, client);
+      }
 
-  // Modal de foto Trucky (recrutamento concluído)
-  if (interaction.customId.startsWith("modal_foto_trucky_")) {
-    if (!(await safeDefer(interaction))) {
+      // ===== NOVOS: Adicionar/Remover utilizador da call =====
+      if (interaction.customId.startsWith("modal_add_user_")) {
+        return handleAddUserModal(interaction, client);
+      }
+
+      if (interaction.customId.startsWith("modal_remove_user_")) {
+        return handleRemoveUserModal(interaction, client);
+      }
+
+      // ===== NOVO: Modal de avaliação com comentário =====
+      if (interaction.customId.startsWith("modal_avaliacao_")) {
+        return handleAvaliacaoModal(interaction, client);
+      }
+
+      // Se nenhum dos anteriores, apenas retorna
       return;
     }
-    return handleFotoTruckyModal(interaction, client);
-  }
 
-  // ===== NOVOS: Adicionar/Remover utilizador da call =====
-  if (interaction.customId.startsWith("modal_add_user_")) {
-    return handleAddUserModal(interaction, client);
-  }
-
-  if (interaction.customId.startsWith("modal_remove_user_")) {
-    return handleRemoveUserModal(interaction, client);
-  }
-
-  // Se nenhum dos anteriores, apenas retorna
-  return;
-}
     // ========================================================
     // SELECT MENUS
     // ========================================================
@@ -1813,7 +1815,7 @@ if (interaction.isModalSubmit()) {
       }
 
       // ======================================================
-      // AVALIAÇÃO
+      // AVALIAÇÃO - MODIFICADO PARA ABRIR MODAL
       // ======================================================
 
       if (
@@ -1865,51 +1867,28 @@ if (interaction.isModalSubmit()) {
           );
         }
 
-        ticket.rating =
-          estrelas;
+        // ===== ABRIR MODAL PARA COMENTÁRIO =====
+        const modal = new ModalBuilder()
+          .setCustomId(`modal_avaliacao_${ticketId}_${estrelas}`)
+          .setTitle(`Avaliação - ${estrelas} ⭐`);
 
-        await persistDB();
+        const input = new TextInputBuilder()
+          .setCustomId('avaliacao_comentario')
+          .setLabel('Escreve a tua opinião (opcional)')
+          .setPlaceholder('Ex: Atendimento excelente!')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(false)
+          .setMaxLength(500);
 
-        const stars =
-          "⭐".repeat(
-            estrelas
-          ) +
-          "☆".repeat(
-            5 - estrelas
-          );
-
-        // ===== LOG DA AVALIAÇÃO =====
-        try {
-          const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS || CONFIG.CANAL_AVALIACOES).catch(() => null);
-          if (logChannel) {
-            const logEmbed = new EmbedBuilder()
-              .setTitle("📝 Nova Avaliação")
-              .setDescription(
-                `👤 **Utilizador:** <@${interaction.user.id}> | \`${interaction.user.tag}\`\n` +
-                `🎫 **Ticket:** #${ticket.id} (${ticket.label})\n` +
-                `⭐ **Avaliação:** ${stars} (${estrelas}/5)`
-              )
-              .setColor(0x00ff00)
-              .setTimestamp();
-            await logChannel.send({ embeds: [logEmbed] });
-          }
-        } catch (e) {
-          console.error("[Avaliação] Erro ao enviar log:", e.message);
-        }
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(input)
+        );
 
         try {
-          return await interaction.update(
-            {
-              content: [
-                "✅ **Obrigado pela tua avaliação!**",
-                "",
-                `Avaliação: ${stars} (${estrelas}/5)`,
-              ].join("\n"),
-              components: [],
-            }
-          );
-        } catch {
-          return null;
+          return await interaction.showModal(modal);
+        } catch (error) {
+          console.error("[Avaliação Modal] Erro:", error);
+          return safeReply(interaction, "❌ Não foi possível abrir o formulário de avaliação.");
         }
       }
 
@@ -2021,6 +2000,83 @@ if (interaction.isModalSubmit()) {
         "❌ Ocorreu um erro ao processar esta ação."
       );
     } catch {}
+  }
+}
+
+// ============================================================
+// HANDLER DO MODAL DE AVALIAÇÃO (NOVO)
+// ============================================================
+
+async function handleAvaliacaoModal(interaction, client) {
+  // Extrair ticketId e estrelas do customId
+  const parts = interaction.customId.split('_');
+  // customId: modal_avaliacao_<ticketId>_<estrelas>
+  const ticketId = parts[2];
+  const estrelas = parseInt(parts[3]);
+
+  const comentario = interaction.fields
+    .getTextInputValue('avaliacao_comentario')
+    ?.trim() || 'Sem comentário';
+
+  const ticket = db.tickets?.[String(ticketId)];
+  if (!ticket) {
+    return safeReply(interaction, '⚠️ Ticket não encontrado.');
+  }
+
+  if (ticket.rating !== null && ticket.rating !== undefined) {
+    return safeReply(interaction, `⚠️ Já avaliaste este ticket com ${"⭐".repeat(ticket.rating)} (${ticket.rating}/5).`);
+  }
+
+  // Guardar avaliação
+  ticket.rating = estrelas;
+  ticket.ratingComment = comentario; // novo campo
+  await persistDB();
+
+  // ===== ENVIAR LOG PARA O CANAL DE LOGS =====
+  try {
+    const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch((e) => {
+      console.error(`[Logs] Canal ${CONFIG.CANAL_LOGS} não encontrado:`, e.message);
+      return null;
+    });
+
+    if (logChannel) {
+      const stars = '⭐'.repeat(estrelas) + '☆'.repeat(5 - estrelas);
+      const embed = new EmbedBuilder()
+        .setTitle('📝 Nova Avaliação')
+        .setDescription(
+          `👤 **Utilizador:** <@${interaction.user.id}> | \`${interaction.user.tag}\`\n` +
+          `🎫 **Ticket:** #${ticket.id} (${ticket.label})\n` +
+          `⭐ **Avaliação:** ${stars} (${estrelas}/5)\n` +
+          `✏️ **Comentário:** ${comentario}`
+        )
+        .setColor(0x00ff00)
+        .setTimestamp();
+      await logChannel.send({ embeds: [embed] });
+    } else {
+      console.warn('[Logs] Canal de logs não configurado ou inacessível.');
+    }
+  } catch (e) {
+    console.error('[Avaliação] Erro ao enviar log:', e.message);
+  }
+
+  // Atualizar a mensagem original (que tinha os botões)
+  const stars = '⭐'.repeat(estrelas) + '☆'.repeat(5 - estrelas);
+  try {
+    await interaction.update({
+      content: [
+        '✅ **Obrigado pela tua avaliação!**',
+        '',
+        `Avaliação: ${stars} (${estrelas}/5)`,
+        `✏️ Comentário: ${comentario}`
+      ].join('\n'),
+      components: [],
+    });
+  } catch (e) {
+    // Se falhar, tenta reply
+    await safeReply(interaction, {
+      content: `✅ Avaliação registada: ${stars} (${estrelas}/5)\n✏️ Comentário: ${comentario}`,
+      ephemeral: true
+    });
   }
 }
 
@@ -2172,7 +2228,6 @@ async function fecharTicket(
 
       if (htmlAttachment) {
         // htmlAttachment já é um objeto com { attachment: AttachmentBuilder, fileName: string }
-        // Adicionar o AttachmentBuilder diretamente
         files.push(htmlAttachment.attachment);
       }
 
@@ -2225,11 +2280,18 @@ async function fecharTicket(
     }
 
     // ------------------------------------------------------
-    // DM DE AVALIAÇÃO
+    // DM DE AVALIAÇÃO (com fuso horário corrigido)
     // ------------------------------------------------------
     try {
       const user = await client.users.fetch(ticket.userId);
-      const clockEmojiDM = getClockEmoji(new Date());
+      const now = new Date();
+      const options = { timeZone: 'Europe/Lisbon', hour12: false };
+      const dataHora = now.toLocaleString('pt-PT', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        ...options
+      });
+
       let staffDisplayName = interaction.user.username;
       try {
         const guildMember = await interaction.guild.members.fetch(interaction.user.id);
@@ -2243,7 +2305,7 @@ async function fecharTicket(
           `\n\n🎫 **Ticket:** #${ticket.id}` +
           `\n📝 **Tipo:** ${ticket.label}` +
           `\n\n⚒️ **Fechado por:** ${staffDisplayName}` +
-          `\n${clockEmojiDM} **Fechado em:** ${formatDateShort(new Date())}` +
+          `\n🕚 **Fechado em:** ${dataHora}` +
           `\n\n🎫 Caso seja necessário, não hesite em abrir um novo ticket!`
         )
         .setColor(0xFF0000)
