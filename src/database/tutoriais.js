@@ -158,6 +158,114 @@ uset_g_console "1"
                 `💡 A configuração do Diego é baseada neste vídeo!`,
         autor: "Marco Pereira",
         canal: "TUTORIAIS"
+    },
+    // ===== NOVOS TUTORIAIS =====
+    "consola_developer": {
+        keywords: ["consola", "console", "developer", "g_developer", "g_console", "modo desenvolvedor", "ativar consola"],
+        titulo: "🛠️ Ativar Consola e Modo Developer - Passo a Passo",
+        resumo: `Para ativar a consola e o modo developer:
+
+1. Vai a Documentos > Euro Truck Simulator 2
+2. Abre config.cfg com o Bloco de Notas
+3. Altera:
+   uset g_developer "0" → "1"
+   uset g_console "0" → "1"
+4. Guarda e fecha.
+
+📺 Vídeo: https://youtu.be/DCavvlEYXmc`,
+        autor: "Diego Gamer",
+        canal: "TUTORIAIS"
+    },
+    "camara_zero_sem_numpad": {
+        keywords: ["camara zero sem numpad", "câmera zero notebook", "teclas wasd câmara", "mudar controlos câmara", "controls.sii"],
+        titulo: "⌨️ Câmara Zero sem Teclado Numérico (WASD)",
+        resumo: `Para usar a câmara zero com teclas WASD (portáteis):
+
+1. Vai a Documentos > Euro Truck Simulator 2 > profiles
+2. Abre a pasta do teu perfil ativo
+3. Abre controls.sii com o Bloco de Notas
+4. Procura por dbgfwd e substitui:
+   keyboard.num8 → keyboard.w
+   keyboard.num5 → keyboard.s
+   keyboard.num4 → keyboard.a
+   keyboard.num6 → keyboard.d
+   keyboard.num9 → keyboard.q
+   keyboard.num3 → keyboard.e
+
+Fica assim:
+config_lines[93]: "mix dbgfwd keyboard.w?0"
+config_lines[94]: "mix dbgback keyboard.s?0"
+config_lines[95]: "mix dbgleft keyboard.a?0"
+config_lines[96]: "mix dbgright keyboard.d?0"
+config_lines[97]: "mix dbgup keyboard.q?0"
+config_lines[98]: "mix dbgdown keyboard.e?0"
+
+5. Guarda e fecha.
+
+📺 Vídeo: https://youtu.be/DCavvlEYXmc`,
+        autor: "Diego Gamer",
+        canal: "TUTORIAIS"
+    },
+    "limite_128": {
+        keywords: ["128 jogadores", "aumentar limite comboio", "g_max_convoy_size", "max convoy", "128 vagas"],
+        titulo: "📊 Como Aumentar o Limite do Comboio para 128",
+        resumo: `Para permitir 128 jogadores no comboio:
+
+1. Fecha o jogo
+2. Vai a Documentos > Euro Truck Simulator 2
+3. Abre config.cfg
+4. Altera:
+   uset g_max_convoy_size "128"
+5. Guarda e inicia o jogo.
+
+Testa: Abre o ETS2 > Comboios > Criar sessão e vê se o limite aparece a 128.
+
+📺 Vídeo: https://youtu.be/DCavvlEYXmc`,
+        autor: "Diego Gamer",
+        canal: "TUTORIAIS"
+    },
+    "project_alm_insanux_detalhado": {
+        keywords: ["project alm", "insanux", "project: alm", "rgb", "scania mod", "instalar project alm"],
+        titulo: "🎨 Instalar o Project ALM do Insanux (RGB)",
+        resumo: `Como instalar o Project ALM:
+
+1. Acede a https://insanux.com/
+2. Faz download do mod Project ALM
+3. Coloca na pasta mod do ETS2
+4. Ativa no gestor de mods
+5. Configura o RGB no menu do mod.
+
+📺 Vídeos tutoriais:
+• https://youtu.be/E9zk5bFRjYU
+• https://www.youtube.com/watch?v=jyB2Y88XTho
+• https://youtu.be/59G2ShBJAI1
+
+🔗 Site oficial: https://insanux.com/`,
+        autor: "Diego Gamer",
+        canal: "TUTORIAIS"
+    },
+    "recrutamento_pat": {
+        keywords: ["recrutamento pat", "requisitos pat", "como entrar pat", "vtc portugal alfa", "trucky", "15.000 km"],
+        titulo: "🚛 Recrutamento - Portugal Alfa Truckers",
+        resumo: `**Requisitos:**
+• Máx. 100 km/h (simulação real)
+• Respeito total entre membros
+• Disciplina e pontualidade nos comboios
+• 15.000 KM/mês (≈ 500 km/dia)
+• Foco no ranking nacional
+• Trucky App instalado e configurado
+• Discord para comunicação
+
+**Processo:**
+1. Instala o Trucky: https://hub.truckyapp.com/
+2. Solicita vaga no Trucky (vídeo: https://youtu.be/5Te6tmE2tWM)
+3. Abre ticket de recrutamento no Discord
+
+⏳ Não cumprimento dos requisitos em 60 dias pode resultar em desligamento da VTC.
+
+📺 Como instalar o Trucky: https://youtu.be/jiGT1pBiLWs`,
+        autor: "Diego Gamer",
+        canal: "RECRUTAMENTO"
     }
 };
 
