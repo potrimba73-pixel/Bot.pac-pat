@@ -1,3 +1,4 @@
+// src/assistant/ets2AI.js
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import { CONFIG } from "../config/index.js";
 
@@ -35,7 +36,6 @@ function matchesAjudaKeywords(content) {
   return AJUDA_KEYWORDS.some(kw => lower.includes(kw));
 }
 
-// ✅ EXPORTADO
 export async function callPollinationsAI(question) {
   try {
     const prompt = `Responde em portugues de Portugal de forma curta e direta (max 500 caracteres) a esta pergunta sobre Euro Truck Simulator 2, American Truck Simulator, ou a comunidade Portugal Alfa Truckers: "${question}"`;
@@ -52,7 +52,6 @@ export async function callPollinationsAI(question) {
   }
 }
 
-// ✅ EXPORTADO
 export async function callGeminiAI(question) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return null;
@@ -133,14 +132,10 @@ export async function processarPerguntaETS2(message, client) {
     answer = await callPollinationsAI(question);
     source = "Pollinations AI";
   }
-
-  // 3. Se Pollinations falhar, tentar Gemini
   if (!answer) {
     answer = await callGeminiAI(question);
     source = "Gemini AI";
   }
-
-  // 4. Se tudo falhar, resposta generica
   if (!answer) {
     answer = "Nao consegui encontrar uma resposta especifica. Tenta reformular a pergunta ou abre um ticket para ajuda personalizada.";
     source = "Padrao";
@@ -156,7 +151,6 @@ export async function processarPerguntaETS2(message, client) {
       allowedMentions: { repliedUser: false }
     });
 
-    // Log em topico (se CONFIG.IA_LOG_FORUM_ID estiver definido)
     if (CONFIG.IA_LOG_FORUM_ID && client) {
       try {
         const { logIALog } = await import("../services/iaLogs.js");
@@ -191,7 +185,6 @@ export async function handleIAFeedback(interaction, client) {
     ephemeral: true
   });
 
-  // Atualizar log com feedback
   if (CONFIG.IA_LOG_FORUM_ID && client) {
     try {
       const { updateIALogFeedback } = await import("../services/iaLogs.js");
