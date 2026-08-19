@@ -8,7 +8,7 @@ import { ASSISTANT_CONFIG } from "../config/index.js";
 import { encontrarRespostaFAQ } from "../database/faq.js";
 import { assistantMemory } from "../services/ajuda.js";
 import { MessageAnalyzer } from "./analyzer.js";
-import { callPollinationsAI, callGeminiAI } from "./ets2AI.js"; // ✅ Importação adicionada
+import { callPollinationsAI, callGeminiAI } from "./ets2AI.js";
 
 // Helper para gerar Custom IDs seguros (max 100 chars)
 function safeCustomId(prefix, messageId, extra = "") {
@@ -66,13 +66,14 @@ export async function handleSmartResponse(message, client) {
       .setFooter({ text: "Resposta automatica — Info pode nao estar 100% atualizada" })
       .setTimestamp();
 
+    // ✅ CORREÇÃO: usar message.author.id para os botões de feedback
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(safeCustomId("smart_helpful", message.id))
+        .setCustomId(safeCustomId("smart_helpful", message.author.id))
         .setLabel("Resolveu!")
         .setStyle(ButtonStyle.Success),
       new ButtonBuilder()
-        .setCustomId(safeCustomId("smart_not_helpful", message.id))
+        .setCustomId(safeCustomId("smart_not_helpful", message.author.id))
         .setLabel("Nao e isto")
         .setStyle(ButtonStyle.Danger),
       new ButtonBuilder()
@@ -100,7 +101,6 @@ export async function handleSmartResponse(message, client) {
 
   // 2. Tentar historico do Diego
   try {
-    // ✅ Usar analyzer do client se existir, senão criar um novo (fallback)
     const analyzer = client.messageAnalyzer || new MessageAnalyzer(client);
     const similar = analyzer.findSimilarResponses(question);
 
@@ -119,13 +119,14 @@ export async function handleSmartResponse(message, client) {
 
       texto += "*Esta resposta foi baseada no historico de mensagens. Pode nao estar 100% atualizada.*";
 
+      // ✅ CORREÇÃO: usar message.author.id para os botões de feedback
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId(safeCustomId("smart_helpful", message.id))
+          .setCustomId(safeCustomId("smart_helpful", message.author.id))
           .setLabel("Resolveu!")
           .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
-          .setCustomId(safeCustomId("smart_not_helpful", message.id))
+          .setCustomId(safeCustomId("smart_not_helpful", message.author.id))
           .setLabel("Nao e isto")
           .setStyle(ButtonStyle.Danger),
         new ButtonBuilder()
@@ -147,7 +148,7 @@ export async function handleSmartResponse(message, client) {
     console.error("[SmartResponse] Erro no analyzer:", err.message);
   }
 
-  // 3. ✅ NOVO: Tentar IA externa (Pollinations ou Gemini)
+  // 3. Tentar IA externa (Pollinations ou Gemini)
   let iaAnswer = null;
   let source = "";
 
@@ -175,13 +176,14 @@ export async function handleSmartResponse(message, client) {
       .setFooter({ text: `Fonte: ${source} | Clique nos botões para dar feedback` })
       .setTimestamp();
 
+    // ✅ CORREÇÃO: usar message.author.id para os botões de feedback
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(safeCustomId("smart_helpful", message.id))
+        .setCustomId(safeCustomId("smart_helpful", message.author.id))
         .setLabel("👍 Ajudou")
         .setStyle(ButtonStyle.Success),
       new ButtonBuilder()
-        .setCustomId(safeCustomId("smart_not_helpful", message.id))
+        .setCustomId(safeCustomId("smart_not_helpful", message.author.id))
         .setLabel("👎 Não ajudou")
         .setStyle(ButtonStyle.Danger),
       new ButtonBuilder()
