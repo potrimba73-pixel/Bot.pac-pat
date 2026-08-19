@@ -8,28 +8,14 @@ import {
 import { ASSISTANT_CONFIG } from "../config/index.js";
 import { encontrarRespostaFAQ } from "../database/faq.js";
 import { encontrarTutorialPAC } from "../database/tutoriais.js";
+import { isTopicoPermitido } from "../database/topicos.js";
 import { assistantMemory } from "../services/ajuda.js";
 import { MessageAnalyzer } from "./analyzer.js";
 import { callPollinationsAI, callGeminiAI } from "./ets2AI.js";
 
-// Helper para gerar Custom IDs seguros (max 100 chars)
-function safeCustomId(prefix, messageId, extra = "") {
-  const base = `${prefix}_${messageId}`;
-  if (extra) {
-    const hash = simpleHash(extra).toString(36).substring(0, 8);
-    return `${base}_${hash}`.substring(0, 100);
-  }
-  return base.substring(0, 100);
-}
-
-function simpleHash(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return Math.abs(hash);
+// Helper para gerar Custom IDs (inclui userId e messageId)
+function safeCustomId(prefix, userId, messageId) {
+  return `${prefix}_${userId}_${messageId}`.substring(0, 100);
 }
 
 // ============================================================
@@ -41,6 +27,14 @@ export async function handleSmartResponse(message, client) {
   if (assistantMemory.isOnCooldown?.(message.author.id) ?? false) return;
 
   const contentLower = message.content.toLowerCase();
+
+  // ===== BLOQUEAR PERGUNTAS FORA DE ÂMBITO =====
+  if (!isTopicoPermitido(message.content)) {
+    return message.reply({
+      content: "🤖 **Apenas respondo a perguntas sobre Euro Truck Simulator 2, American Truck Simulator, Trucky, recrutamento ou a Portugal Alfa Community.**\n\nSe precisares de ajuda sobre outro assunto, abre um ticket em <#1465865626286428355>.",
+      allowedMentions: { repliedUser: false }
+    }).catch(() => {});
+  }
 
   // Filtro inteligente: só responde a perguntas ou menções ao especialista
   const questionWords = ["como", "onde", "quando", "porque", "pq", "?", "ajuda", "help", "duvida", "sabe", "sabes", "consegues", "podes", "posso", "qual", "quais"];
@@ -65,7 +59,7 @@ export async function handleSmartResponse(message, client) {
   const question = message.content.replace(/<@!?\d+>/g, "").trim();
 
   // ----------------------------------------------------------
-  // 1. TENTAR TUTORIAIS (mais detalhados) primeiro
+  // 1. TENTAR TUTORIAIS
   // ----------------------------------------------------------
   const tutorial = encontrarTutorialPAC(question);
   if (tutorial) {
@@ -78,15 +72,15 @@ export async function handleSmartResponse(message, client) {
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(safeCustomId("smart_helpful", message.id))
+        .setCustomId(safeCustomId("smart_helpful", message.author.id, message.id))
         .setLabel("✅ Resolveu!")
         .setStyle(ButtonStyle.Success),
       new ButtonBuilder()
-        .setCustomId(safeCustomId("smart_not_helpful", message.id))
+        .setCustomId(safeCustomId("smart_not_helpful", message.author.id, message.id))
         .setLabel("❌ Não é isto")
         .setStyle(ButtonStyle.Danger),
       new ButtonBuilder()
-        .setCustomId(safeCustomId("smart_search", message.id, question))
+        .setCustomId(safeCustomId("smart_search", message.author.id, message.id))
         .setLabel("🔍 Pesquisar na net")
         .setStyle(ButtonStyle.Primary)
     );
@@ -97,10 +91,10 @@ export async function handleSmartResponse(message, client) {
         components: [row],
         allowedMentions: { repliedUser: false }
       });
-      // Guardar para possível feedback
       if (!assistantMemory.pendingSearches) assistantMemory.pendingSearches = new Map();
       assistantMemory.pendingSearches.set(message.id, {
         question: question,
+        answer: tutorial.resumo,
         messageId: sent.id,
         channelId: message.channel.id
       });
@@ -111,7 +105,7 @@ export async function handleSmartResponse(message, client) {
   }
 
   // ----------------------------------------------------------
-  // 2. TENTAR FAQ (respostas rápidas)
+  // 2. TENTAR FAQ
   // ----------------------------------------------------------
   const faqResposta = encontrarRespostaFAQ(question);
   if (faqResposta.found) {
@@ -124,15 +118,15 @@ export async function handleSmartResponse(message, client) {
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(safeCustomId("smart_helpful", message.id))
+        .setCustomId(safeCustomId("smart_helpful", message.author.id, message.id))
         .setLabel("✅ Resolveu!")
         .setStyle(ButtonStyle.Success),
       new ButtonBuilder()
-        .setCustomId(safeCustomId("smart_not_helpful", message.id))
+        .setCustomId(safeCustomId("smart_not_helpful", message.author.id, message.id))
         .setLabel("❌ Não é isto")
         .setStyle(ButtonStyle.Danger),
       new ButtonBuilder()
-        .setCustomId(safeCustomId("smart_search", message.id, question))
+        .setCustomId(safeCustomId("smart_search", message.author.id, message.id))
         .setLabel("🔍 Pesquisar na net")
         .setStyle(ButtonStyle.Primary)
     );
@@ -146,6 +140,7 @@ export async function handleSmartResponse(message, client) {
       if (!assistantMemory.pendingSearches) assistantMemory.pendingSearches = new Map();
       assistantMemory.pendingSearches.set(message.id, {
         question: question,
+        answer: faqResposta.texto,
         messageId: sent.id,
         channelId: message.channel.id
       });
@@ -156,7 +151,7 @@ export async function handleSmartResponse(message, client) {
   }
 
   // ----------------------------------------------------------
-  // 3. TENTAR HISTÓRICO DO ESPECIALISTA (Diego)
+  // 3. TENTAR HISTÓRICO DO ESPECIALISTA
   // ----------------------------------------------------------
   try {
     const analyzer = new MessageAnalyzer(client);
@@ -179,15 +174,15 @@ export async function handleSmartResponse(message, client) {
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId(safeCustomId("smart_helpful", message.id))
+          .setCustomId(safeCustomId("smart_helpful", message.author.id, message.id))
           .setLabel("✅ Resolveu!")
           .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
-          .setCustomId(safeCustomId("smart_not_helpful", message.id))
+          .setCustomId(safeCustomId("smart_not_helpful", message.author.id, message.id))
           .setLabel("❌ Não é isto")
           .setStyle(ButtonStyle.Danger),
         new ButtonBuilder()
-          .setCustomId(safeCustomId("smart_search", message.id, question))
+          .setCustomId(safeCustomId("smart_search", message.author.id, message.id))
           .setLabel("🔍 Pesquisar na net")
           .setStyle(ButtonStyle.Primary)
       );
@@ -200,6 +195,7 @@ export async function handleSmartResponse(message, client) {
       if (!assistantMemory.pendingSearches) assistantMemory.pendingSearches = new Map();
       assistantMemory.pendingSearches.set(message.id, {
         question: question,
+        answer: best.content,
         messageId: sent.id,
         channelId: message.channel.id
       });
@@ -229,15 +225,15 @@ export async function handleSmartResponse(message, client) {
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(safeCustomId("smart_helpful", message.id))
+        .setCustomId(safeCustomId("smart_helpful", message.author.id, message.id))
         .setLabel("✅ Resolveu!")
         .setStyle(ButtonStyle.Success),
       new ButtonBuilder()
-        .setCustomId(safeCustomId("smart_not_helpful", message.id))
+        .setCustomId(safeCustomId("smart_not_helpful", message.author.id, message.id))
         .setLabel("❌ Não ajudou")
         .setStyle(ButtonStyle.Danger),
       new ButtonBuilder()
-        .setCustomId(safeCustomId("smart_search", message.id, question))
+        .setCustomId(safeCustomId("smart_search", message.author.id, message.id))
         .setLabel("🔍 Pesquisar na net")
         .setStyle(ButtonStyle.Primary)
     );
@@ -251,6 +247,7 @@ export async function handleSmartResponse(message, client) {
       if (!assistantMemory.pendingSearches) assistantMemory.pendingSearches = new Map();
       assistantMemory.pendingSearches.set(message.id, {
         question: question,
+        answer: answer,
         messageId: sent.id,
         channelId: message.channel.id
       });
@@ -265,7 +262,7 @@ export async function handleSmartResponse(message, client) {
   // ----------------------------------------------------------
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(safeCustomId("smart_do_search", message.id, question))
+      .setCustomId(safeCustomId("smart_do_search", message.author.id, message.id))
       .setLabel("🔍 Pesquisar na internet")
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
@@ -283,6 +280,7 @@ export async function handleSmartResponse(message, client) {
     if (!assistantMemory.pendingSearches) assistantMemory.pendingSearches = new Map();
     assistantMemory.pendingSearches.set(message.id, {
       question: question,
+      answer: "Sem resposta",
       messageId: sent.id,
       channelId: message.channel.id
     });
