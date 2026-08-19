@@ -1,8 +1,8 @@
+// src/assistant/analyzer.js
 import { ChannelType, PermissionsBitField } from "discord.js";
 import { ASSISTANT_CONFIG } from "../config/index.js";
 import { assistantMemory } from "../services/ajuda.js";
 
-// Cache de histórico com TTL
 const HISTORY_CACHE_TTL = 3600000; // 1 hora
 let lastHistoryFetch = 0;
 
@@ -12,7 +12,6 @@ export class MessageAnalyzer {
         this.rateLimitQueue = [];
     }
 
-    // Rate limit helper para evitar 429
     async rateLimitDelay() {
         const now = Date.now();
         this.rateLimitQueue = this.rateLimitQueue.filter(t => now - t < 1000);
@@ -23,7 +22,6 @@ export class MessageAnalyzer {
     }
 
     async fetchExpertHistory(guild, userId, limit = 50) {
-        // Cache: só atualiza a cada 1 hora
         if (Date.now() - lastHistoryFetch < HISTORY_CACHE_TTL && assistantMemory.diegoHistory?.length > 0) {
             return assistantMemory.diegoHistory;
         }
@@ -34,18 +32,14 @@ export class MessageAnalyzer {
                  c.permissionsFor(this.client.user)?.has(PermissionsBitField.Flags.ViewChannel)
         );
 
-        // ✅ AUMENTADO para 10 canais
         const channelsToFetch = Array.from(textChannels.values()).slice(0, 10);
 
         for (const channel of channelsToFetch) {
             try {
                 await this.rateLimitDelay();
-
                 if (!channel.permissionsFor(this.client.user)?.has(PermissionsBitField.Flags.ReadMessageHistory)) {
                     continue;
                 }
-
-                // ✅ AUMENTADO para 100 mensagens
                 const messages = await channel.messages.fetch({ limit: 100 });
                 const expertMsgs = messages.filter(m => m.author.id === userId && m.content.length > 10);
 
@@ -122,11 +116,11 @@ export class MessageAnalyzer {
             if (h.isHelpful) score += 5;
             if (h.hasLinks.length > 0) score += 4;
 
-            // ✅ PESO EXTRA: palavras específicas da pergunta
-            const specificWords = ["camara", "camera", "console", "developer", "config.cfg", "numpad", "0"];
+            // Palavras específicas (câmara, console, etc.)
+            const specificWords = ["camara", "camera", "console", "developer", "config.cfg", "numpad", "0", "teletransportar", "ctrl f9", "project alm", "insanux"];
             specificWords.forEach(word => {
                 if (questionLower.includes(word) && contentLower.includes(word)) {
-                    score += 15; // bónus grande para tópicos específicos
+                    score += 15;
                 }
             });
 
@@ -140,7 +134,6 @@ export class MessageAnalyzer {
         });
 
         scored.sort((a, b) => b.score - a.score);
-        // ✅ LIMIAR REDUZIDO para 3
         return scored.filter(s => s.score > 3).slice(0, 3);
     }
 }
