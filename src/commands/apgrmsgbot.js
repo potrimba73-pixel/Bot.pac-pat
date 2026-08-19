@@ -233,7 +233,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
     let rawText = getMessageText(msg);
 
     // ============================================================
-    // Lógica de Processamento: Markdown e Links
+    // Lógica de Processamento: Markdown e Links (CORRIGIDO)
     // ============================================================
     let processed = rawText;
     const placeholders = [];
@@ -276,14 +276,15 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
     // 6. Escapar o resto do texto (garante que não haja injecção de código)
     let texto = escapeHtml(processed);
 
-    // 7. Recolocar as tags utilizando Regex Global para substituir TODAS as ocorrências
+    // 7. Recolocar as tags utilizando Regex Global
+    // [CORREÇÃO CRUCIAL]: As chavetas {} tinham de ser escapadas com \\, senão a RegExp falhava!
     for (let i = 0; i < placeholders.length; i++) {
-      const regex = new RegExp(`{__HTML_PLACEHOLDER__${i}__}`, 'g');
+      const regex = new RegExp(`\\{__HTML_PLACEHOLDER__${i}__\\}`, 'g');
       texto = texto.replace(regex, placeholders[i]);
     }
 
     // 8. Converter quebras de linha para <br>
-    texto = texto.replace(/\n/g, '<br>');
+    texto = texto.replace(/\r\n/g, '<br>').replace(/\n/g, '<br>');
     // ============================================================
 
     const hue = (parseInt(msg.author.id.slice(0, 6), 16) % 360);
