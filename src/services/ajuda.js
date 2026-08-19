@@ -7,9 +7,9 @@ import {
   ActionRowBuilder, 
   ButtonBuilder, 
   ButtonStyle,
-  ModalBuilder,        // ✅ ADICIONADO
-  TextInputBuilder,    // ✅ ADICIONADO
-  TextInputStyle       // ✅ ADICIONADO
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle
 } from "discord.js";
 import { CONFIG } from "../config/index.js";
 import { safeEditReply } from "../utils/safeReply.js";
@@ -23,14 +23,10 @@ export const assistantMemory = new Map();
 // FUNÇÃO PRINCIPAL - /ajuda
 // ============================================================
 export async function handleAjudaCommand(interaction, client) {
-  // O deferReply já foi feito no interactionCreate.js
-  // Por isso usamos apenas editReply
-
   const umaHora = 60 * 60 * 1000;
   const agora = Date.now();
   const memoria = assistantMemory.get(interaction.user.id);
 
-  // ✅ Verificar se o utilizador já fez uma pergunta recentemente
   if (memoria && (agora - memoria.timestamp) < umaHora) {
     const embed = new EmbedBuilder()
       .setTitle(`${CONFIG.EMOJI_INFO} Central de Ajuda`)
@@ -68,7 +64,6 @@ export async function handleAjudaCommand(interaction, client) {
     return;
   }
 
-  // ✅ Menu principal
   const embed = new EmbedBuilder()
     .setTitle(`${CONFIG.EMOJI_AJUDA || "❓"} Central de Ajuda | Portugal Alfa Community`)
     .setDescription([
@@ -123,12 +118,18 @@ export async function handleAjudaCommand(interaction, client) {
 // HANDLER - BOTÃO "Procurar Ajuda"
 // ============================================================
 export async function handleAjudaProcurar(interaction) {
+  // ✅ Verificar se a interação ainda é válida
+  if (!interaction.isRepliable()) {
+    console.log("[Ajuda] Interação não é repliable, ignorando.");
+    return;
+  }
+
   const modal = new ModalBuilder()
-    .setCustomId(`modal_ajuda_${interaction.user.id}_${Date.now()}`)
+    .setCustomId(`modal_ajuda_${interaction.user.id}`) // ✅ sem timestamp para consistência
     .setTitle(`${CONFIG.EMOJI_AJUDA || "❓"} Pergunta de Ajuda`);
 
   const inputPergunta = new TextInputBuilder()
-    .setCustomId("pergunta_ajuda")
+    .setCustomId("pergunta_ajuda") // ✅ nome consistente
     .setLabel("Qual é a tua pergunta?")
     .setPlaceholder("Ex: Como configuro a câmara 0? Como ando no jogo?")
     .setStyle(TextInputStyle.Paragraph)
@@ -149,22 +150,39 @@ export async function handleAjudaProcurar(interaction) {
     new ActionRowBuilder().addComponents(inputDetalhes)
   );
 
-  await interaction.showModal(modal);
+  try {
+    await interaction.showModal(modal);
+  } catch (error) {
+    console.error("[Ajuda] Erro ao mostrar modal:", error);
+    // Fallback: responder com erro
+    try {
+      await interaction.reply({ 
+        content: "❌ Não foi possível abrir o formulário. Tenta novamente.", 
+        flags: 64 
+      });
+    } catch (e) {}
+  }
 }
 
 // ============================================================
-// HANDLER - MODAL DE AJUDA
+// HANDLER - MODAL DE AJUDA (com histórico do Diego + IA)
 // ============================================================
 export async function handleAjudaModal(interaction, client) {
-  const pergunta = interaction.fields.getTextInputValue("pergunta_ajuda");
-  const detalhes = interaction.fields.getTextInputValue("detalhes_ajuda") || "";
+  // ✅ Verificar se a interação ainda é válida
+  if (!interaction.isRepliable()) {
+    console.log("[AjudaModal] Interação não é repliable, ignorando.");
+    return;
+  }
 
-  // ✅ Defer reply (pode demorar a processar)
+  // ✅ Deferir a resposta para ganhar tempo
   await interaction.deferReply({ flags: 64 });
 
   try {
-    // ✅ Gerar resposta baseada na pergunta
-    const resposta = gerarRespostaAjuda(pergunta, detalhes);
+    const pergunta = interaction.fields.getTextInputValue("pergunta_ajuda");
+    const detalhes = interaction.fields.getTextInputValue("detalhes_ajuda") || "";
+
+    // ✅ Gerar resposta com prioridade: Histórico do Diego > FAQ > IA externa
+    const resposta = await gerarRespostaInteligente(pergunta, interaction, client);
 
     // ✅ Guardar na memória
     assistantMemory.set(interaction.user.id, {
@@ -222,316 +240,86 @@ export async function handleAjudaModal(interaction, client) {
 }
 
 // ============================================================
-// GERADOR DE RESPOSTAS - BASEADO EM PALAVRAS-CHAVE
+// GERADOR DE RESPOSTA INTELIGENTE (Histórico > FAQ > IA)
 // ============================================================
-function gerarRespostaAjuda(pergunta, detalhes = "") {
-  const perguntaLower = pergunta.toLowerCase();
-  const respostas = [];
+async function gerarRespostaInteligente(pergunta, interaction, client) {
+  // ===== 1. TENTAR HISTÓRICO DO DIEGO =====
+  try {
+    const { MessageAnalyzer } = await import("../assistant/analyzer.js");
+    const analyzer = client.messageAnalyzer || new MessageAnalyzer(client);
+    const guild = interaction.guild;
+    const userId = "849132183112384573"; // Diego
 
-  // ✅ Função auxiliar para adicionar resposta
-  function addResposta(titulo, conteudo) {
-    respostas.push(`**${titulo}**\n${conteudo}`);
+    // Se o histórico não estiver em cache, forçar fetch
+    if (!assistantMemory.diegoHistory || assistantMemory.diegoHistory.length === 0) {
+      console.log("[Ajuda] A carregar histórico do Diego...");
+      await analyzer.fetchExpertHistory(guild, userId, 50);
+    }
+
+    const similar = analyzer.findSimilarResponses(pergunta);
+    if (similar.length > 0) {
+      const best = similar[0];
+      let texto = `**Baseado no que o <@${userId}> já respondeu:**\n\n`;
+      texto += `> ${best.content}\n\n`;
+      if (best.hasLinks.length > 0) {
+        texto += `**Links mencionados:**\n`;
+        best.hasLinks.forEach(link => {
+          texto += `• ${link}\n`;
+        });
+        texto += "\n";
+      }
+      texto += "*Esta resposta foi baseada no histórico de mensagens. Pode não estar 100% atualizada.*";
+      return texto;
+    }
+  } catch (err) {
+    console.error("[Ajuda] Erro ao buscar histórico:", err.message);
   }
 
-  // ===== CÂMARA 0 / CONFIGURAR CÂMARA =====
-  if (perguntaLower.includes("camara") || perguntaLower.includes("camera") || 
-      perguntaLower.includes("configurar camara") || perguntaLower.includes("camera 0") ||
-      perguntaLower.includes("camara 0")) {
-    addResposta(
-      "📹 Configurar Câmara 0 no ETS2/ATS",
-      [
-        "1️⃣ Abre o jogo e vai a **Opções**",
-        "2️⃣ Vai a **Controles** → **Câmara**",
-        "3️⃣ Procura **'Câmara 0'** ou **'Câmara de cabine'**",
-        "4️⃣ Atribui uma tecla (ex: **F1** ou **1**)",
-        "5️⃣ Durante o jogo, pressiona a tecla para mudar para a câmara 0",
-        "",
-        "💡 **Dica:** A câmara 0 é a vista de dentro da cabine (primeira pessoa).",
-        "",
-        "📺 **Vídeo tutorial:** [Tutorial de Câmaras](https://youtu.be/mDBtpdlwGms)"
-      ].join("\n")
-    );
+  // ===== 2. TENTAR FAQ LOCAL =====
+  try {
+    const { encontrarRespostaFAQ } = await import("../database/faq.js");
+    const faq = encontrarRespostaFAQ(pergunta);
+    if (faq.found) {
+      return faq.texto;
+    }
+  } catch (err) {
+    console.error("[Ajuda] Erro no FAQ:", err.message);
   }
 
-  // ===== COMO ANDAR / MOVER-SE =====
-  if (perguntaLower.includes("ando") || perguntaLower.includes("andar") || 
-      perguntaLower.includes("mover") || perguntaLower.includes("mover-se") || 
-      perguntaLower.includes("como ando") || perguntaLower.includes("como mexo")) {
-    addResposta(
-      "🎮 Como andar no ETS2/ATS",
-      [
-        "**Controles básicos:**",
-        "• **W** - Acelerar",
-        "• **S** - Travar / Andar para trás",
-        "• **A** - Virar à esquerda",
-        "• **D** - Virar à direita",
-        "• **Espaço** - Travar de mão",
-        "• **Setas** - Também funcionam para conduzir",
-        "",
-        "**Controles adicionais:**",
-        "• **1-8** - Mudar câmaras",
-        "• **F** - Faróis",
-        "• **J** - Limpa-vidros",
-        "• **L** - Luzes de emergência",
-        "",
-        "💡 **Dica:** Usa a câmara do tablier (tecla **1**) para uma experiência mais realista."
-      ].join("\n")
-    );
+  // ===== 3. TENTAR IA EXTERNA (se configurada) =====
+  try {
+    const { callPollinationsAI, callGeminiAI } = await import("../assistant/ets2AI.js");
+    let answer = await callPollinationsAI(pergunta) || await callGeminiAI(pergunta);
+    if (answer) {
+      return answer;
+    }
+  } catch (err) {
+    console.error("[Ajuda] Erro na IA:", err.message);
   }
 
-  // ===== REGRAS =====
-  if (perguntaLower.includes("regra") || perguntaLower.includes("regras") || 
-      perguntaLower.includes("normas") || perguntaLower.includes("políticas")) {
-    addResposta(
-      "📋 Regras da Portugal Alfa Community",
-      [
-        "**1️⃣ Respeito e Convivência**",
-        "• Respeita todos os membros e staff",
-        "• Ofensas, insultos ou toxicidade não serão tolerados",
-        "",
-        "**2️⃣ Conteúdo e Identidade**",
-        "• Nomes e avatares ofensivos são proibidos",
-        "• Conteúdo NSFW/Gore é estritamente proibido",
-        "",
-        "**3️⃣ Divulgação e Spam**",
-        "• Divulgar outros servidores requer autorização",
-        "• Spam/Flood não é permitido",
-        "",
-        "**4️⃣ Canais de Voz**",
-        "• Respeita o propósito de cada sala",
-        "• Gritar ou saturar o som é proibido",
-        "",
-        `📖 **Regras completas:** <#${CONFIG.CANAL_REGRAS}>`
-      ].join("\n")
-    );
-  }
-
-  // ===== TICKETS =====
-  if (perguntaLower.includes("ticket") || perguntaLower.includes("abrir ticket") || 
-      perguntaLower.includes("como abrir") || perguntaLower.includes("sistema de ticket")) {
-    addResposta(
-      "🎫 Como abrir um ticket",
-      [
-        `1️⃣ Vai ao canal <#${CONFIG.CANAL_TICKETS_GERAL}>`,
-        "2️⃣ Seleciona o tipo de ticket no menu",
-        "3️⃣ Descreve o teu problema detalhadamente",
-        "4️⃣ Aguarda resposta da staff",
-        "",
-        "**📋 Tipos de tickets disponíveis:**",
-        "• 🐛 **Bugs** - Reportar problemas no jogo",
-        "• 🚨 **Denúncia** - Reportar comportamentos inadequados",
-        "• 🔧 **Suporte** - Ajuda com problemas técnicos",
-        "• 🎥 **Criador de Conteúdo** - Para criadores de conteúdo",
-        "",
-        "⚠️ **Regras dos tickets:**",
-        "• Não menciones (ping) staff sem necessidade",
-        "• Mantém linguagem respeitosa",
-        "• Apenas 1 ticket por assunto"
-      ].join("\n")
-    );
-  }
-
-  // ===== RECRUTAMENTO =====
-  if (perguntaLower.includes("recrutamento") || perguntaLower.includes("recrutar") || 
-      perguntaLower.includes("pat") || perguntaLower.includes("entrar") || 
-      perguntaLower.includes("candidatar") || perguntaLower.includes("membro")) {
-    addResposta(
-      "🚛 Recrutamento - Portugal Alfa Truckers",
-      [
-        "**✅ Requisitos para entrar:**",
-        "• Máx. 100 km/h sempre - simulação real",
-        "• Respeito total entre membros e jogadores",
-        "• Comboios = disciplina + pontualidade",
-        "• 15.000 KM/mês (≈ 500 km/dia)",
-        "• Trucky App instalado e configurado",
-        "• Foco no ranking nacional",
-        "",
-        "**📋 Como te candidatar:**",
-        `1️⃣ Vai ao canal <#${CONFIG.CANAL_TICKETS_RECRUTAMENTO}>`,
-        "2️⃣ Seleciona **Recrutamento PAT**",
-        "3️⃣ Confirma que tens o Trucky instalado",
-        "4️⃣ Aceita as regras da VTC",
-        "5️⃣ Aguarda análise da staff",
-        "",
-        "⚠️ **Aviso:** Incumprimento dos requisitos por 60 dias pode resultar em desligamento.",
-        "",
-        "📲 **Trucky:** [truckyapp.com](https://truckyapp.com)"
-      ].join("\n")
-    );
-  }
-
-  // ===== ETS2LA =====
-  if (perguntaLower.includes("ets2la") || perguntaLower.includes("ets2 la") || 
-      perguntaLower.includes("lane assist") || perguntaLower.includes("la")) {
-    addResposta(
-      "⚙️ Configurar ETS2LA (Lane Assist)",
-      [
-        "⚠️ **Estado atual:** Alguns mods podem não estar atualizados.",
-        "",
-        "**💡 Recomendações:**",
-        "• Verifica se tens a versão mais recente do ETS2LA",
-        "• Alguns mods do TruckersMP podem não ser compatíveis",
-        "• Aguarda atualizações após updates do jogo",
-        "",
-        "**📺 Tutoriais:**",
-        "[VR Tutoriais Marco Pereira](https://youtu.be/mDBtpdlwGms)",
-        "",
-        "**🔧 Configuração básica:**",
-        "1. Instala o mod na pasta `mod` do ETS2",
-        "2. Ativa no gestor de mods",
-        "3. Configura no menu de opções do jogo",
-        "",
-        "💡 Se precisares de ajuda específica, abre ticket!"
-      ].join("\n")
-    );
-  }
-
-  // ===== VR =====
-  if (perguntaLower.includes("vr") || perguntaLower.includes("quest") || 
-      perguntaLower.includes("meta") || perguntaLower.includes("oculos") || 
-      perguntaLower.includes("realidade virtual") || perguntaLower.includes("quest 3") ||
-      perguntaLower.includes("quest 3s")) {
-    addResposta(
-      "🥽 VR - Meta Quest 3/3S no ETS2",
-      [
-        "**📺 Tutorial recomendado:**",
-        "[VR Tutoriais Marco Pereira](https://youtu.be/mDBtpdlwGms)",
-        "",
-        "**✅ Passos para configurar:**",
-        "1. Instala o SteamVR ou Oculus Link",
-        "2. Ativa o modo VR nas opções do ETS2",
-        "3. Ajusta as definições gráficas para performance",
-        "4. Configura os controladores",
-        "",
-        "**💡 Dicas:**",
-        "• A configuração do Diego é baseada neste vídeo",
-        "• Gráficos no Quest 3/3S dependem do PC",
-        "• Verifica drivers atualizados",
-        "• Usa OpenXR para melhor performance",
-        "",
-        "⚠️ **Nota:** Se tiveres problemas, abre ticket para ajuda personalizada!"
-      ].join("\n")
-    );
-  }
-
-  // ===== TRUCKY =====
-  if (perguntaLower.includes("trucky") || perguntaLower.includes("app") || 
-      perguntaLower.includes("aplicação") || perguntaLower.includes("tracker") || 
-      perguntaLower.includes("logbook") || perguntaLower.includes("registo") ||
-      perguntaLower.includes("km") || perguntaLower.includes("quilometros")) {
-    addResposta(
-      "📲 Trucky App - Gestão da VTC",
-      [
-        "**📲 O que é o Trucky?**",
-        "É a aplicação essencial para gerir e monitorizar toda a atividade da empresa.",
-        "",
-        "**🔗 Download:**",
-        "[truckyapp.com](https://truckyapp.com)",
-        "",
-        "**✅ O que fazer:**",
-        "1. Instala a app no computador",
-        "2. Liga à tua conta Steam/ETS2",
-        "3. Regista as viagens automaticamente",
-        "4. Cumpre os 15.000 KM/mês",
-        "",
-        "**💡 Vantagens:**",
-        "• Acompanha as tuas estatísticas em tempo real",
-        "• Registo automático de todas as cargas",
-        "• Ranking da VTC",
-        "• Sistema de patentes automático",
-        "",
-        "❓ **Dúvidas?** Abre ticket para ajuda personalizada!"
-      ].join("\n")
-    );
-  }
-
-  // ===== SERVIDOR / ENTRAR / COMBOIO =====
-  if (perguntaLower.includes("servidor") || perguntaLower.includes("entrar") || 
-      perguntaLower.includes("comboio") || perguntaLower.includes("convoy") ||
-      perguntaLower.includes("id") || perguntaLower.includes("como entrar")) {
-    addResposta(
-      "🎮 Como entrar no servidor da PAC",
-      [
-        "**📊 Capacidade:** Até 128 jogadores",
-        "🆔 **ID do Comboio:** `85568392935839115`",
-        "🔍 **Nome para pesquisar:** Portugal Alfa Community",
-        "🔗 **Coleção Steam:** [Clique aqui](https://steamcommunity.com/sharedfiles/filedetails/?id=3665511189)",
-        "",
-        "**📜 Regras de Condução:**",
-        "• Condução defensiva",
-        "• Distância de segurança",
-        "• Respeito nas zonas de carga",
-        "• Zero toxicidade no Rádio CB",
-        "",
-        "**🔧 Como entrar:**",
-        "1. Subscreve a coleção Steam",
-        "2. Abre o jogo e vai a Multiplayer",
-        "3. Pesquisa por **Portugal Alfa Community**",
-        "4. Entra no comboio",
-        "",
-        "⚠️ Precisas de mais ajuda? Clica em **🎫 Abrir ticket**!"
-      ].join("\n")
-    );
-  }
-
-  // ===== MODS =====
-  if (perguntaLower.includes("mod") || perguntaLower.includes("mods") || 
-      perguntaLower.includes("atualização") || perguntaLower.includes("atualizacao") ||
-      perguntaLower.includes("workshop") || perguntaLower.includes("plugin")) {
-    addResposta(
-      "📦 Mods e Atualizações",
-      [
-        "⚠️ **Aviso importante:**",
-        "Se sair atualização do TruckersMP, temos que esperar pela versão compatível.",
-        "",
-        "🔗 **Coleção oficial:**",
-        "[Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3665511189)",
-        "",
-        "💡 **Dicas:**",
-        "• Usa sempre a coleção oficial da Steam",
-        "• Não instales mods não aprovados",
-        "• Verifica a ordem de carregamento dos mods",
-        "",
-        "**🔧 Se o jogo crashar:**",
-        "1. Remove mods recentes",
-        "2. Verifica ficheiros na Steam",
-        "3. Aguarda compatibilização",
-        "4. Atualiza drivers da GPU"
-      ].join("\n")
-    );
-  }
-
-  // ===== RESPOSTA GENÉRICA (fallback) =====
-  if (respostas.length === 0) {
-    return [
-      `${CONFIG.EMOJI_INFO || "ℹ️"} **Obrigado pela tua pergunta!**`,
-      "",
-      `Não encontrei uma resposta específica para: **"${pergunta}"**`,
-      "",
-      "**💡 Sugestões:**",
-      "• Tenta reformular a pergunta",
-      "• Usa palavras-chave como: 'câmara', 'regras', 'ticket', 'recrutamento'",
-      "• Sê mais específico no que precisas",
-      "",
-      "**📚 Tópicos que posso ajudar:**",
-      "• 🎮 ETS2 / ATS - Servidor, mods, configurações",
-      "• 🚛 Recrutamento PAT - Requisitos, Trucky, candidatura",
-      "• ⚙️ ETS2LA - Configuração, mods, atualizações",
-      "• 🥽 VR - Meta Quest, tutoriais",
-      "• 📲 Trucky App - Download, instalação",
-      "",
-      `${CONFIG.EMOJI_TICKET || "🎫"} **Alternativa:** Abre um ticket para ajuda personalizada.`
-    ].join("\n");
-  }
-
-  // ✅ Juntar todas as respostas encontradas
-  return respostas.join("\n\n---\n\n");
+  // ===== 4. FALLBACK GENÉRICO =====
+  return [
+    `${CONFIG.EMOJI_INFO || "ℹ️"} **Não encontrei uma resposta específica para:** "${pergunta}"`,
+    "",
+    "**💡 Sugestões:**",
+    "• Tenta reformular a pergunta",
+    "• Usa palavras-chave como: 'câmara', 'regras', 'ticket', 'recrutamento'",
+    "• Sê mais específico no que precisas",
+    "",
+    `${CONFIG.EMOJI_TICKET || "🎫"} **Alternativa:** Abre um ticket para ajuda personalizada.`
+  ].join("\n");
 }
 
 // ============================================================
 // HANDLER - FEEDBACK DA AJUDA
 // ============================================================
 export async function handleAjudaFeedback(interaction) {
+  // ✅ Verificar se a interação ainda é válida
+  if (!interaction.isRepliable()) {
+    console.log("[AjudaFeedback] Interação não é repliable, ignorando.");
+    return;
+  }
+
   const customId = interaction.customId;
   
   if (customId === "ajuda_ticket" || customId.startsWith("ajuda_ticket_direct_")) {
@@ -573,7 +361,6 @@ export async function handleAjudaFeedback(interaction) {
     const isHelpful = customId.startsWith("smart_helpful_");
     const userId = customId.split("_")[2];
     
-    // Verificar se é o mesmo utilizador
     if (interaction.user.id !== userId) {
       return interaction.reply({
         content: `⚠️ Este feedback não é para ti!`,
@@ -588,7 +375,7 @@ export async function handleAjudaFeedback(interaction) {
       flags: 64
     });
 
-    // ✅ Log do feedback (opcional)
+    // Log do feedback
     try {
       const logChannel = await interaction.client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
       if (logChannel) {
