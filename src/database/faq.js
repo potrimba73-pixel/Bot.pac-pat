@@ -1,6 +1,6 @@
 // ==================== FAQ DATABASE ====================
 export const FAQ_DATABASE = {
-    // ✅ NOVA ENTRADA: CÂMARA 0 (prioridade alta)
+    // ✅ ENTRADA CÂMARA 0 (prioridade máxima)
     "camara0": {
         keywords: ["camara", "camera", "0", "configurar camara", "camara 0", "camera 0", "console", "developer", "config.cfg", "modo desenvolvedor", "ativar camara", "camera livre", "tecla 0", "numpad", "teleportar", "g_developer", "g_console"],
         titulo: "🎥 Como ativar e usar a Câmara 0 (câmara livre) no ETS2/ATS",
@@ -154,14 +154,21 @@ export function encontrarRespostaFAQ(pergunta) {
     for (const [key, data] of Object.entries(FAQ_DATABASE)) {
         let score = 0;
 
+        // Palavras-chave da entrada
         data.keywords.forEach(kw => {
             if (pergunta.toLowerCase().includes(kw.toLowerCase())) score += 5;
         });
 
+        // Palavras do título
         const textoCompleto = (data.titulo + " placeholder").toLowerCase();
         palavras.forEach(palavra => {
             if (textoCompleto.includes(palavra.toLowerCase())) score += 2;
         });
+
+        // Bónus para perguntas muito específicas (câmara 0)
+        if (key === "camara0" && pergunta.toLowerCase().includes("camara")) {
+            score += 10;
+        }
 
         if (score > melhorScore) {
             melhorScore = score;
