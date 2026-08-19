@@ -124,8 +124,10 @@ async function safeReply(
   }
 }
 
+// ✅ safeDefer melhorado
 async function safeDefer(interaction) {
   try {
+    // Verifica se a interação ainda é válida
     if (!interaction.isRepliable()) {
       console.log("[safeDefer] Interação não é repliable, ignorando defer.");
       return false;
@@ -138,7 +140,11 @@ async function safeDefer(interaction) {
 
     return true;
   } catch (error) {
-    console.error("[Interaction] Não foi possível deferir:", error);
+    if (error.code === 10062) {
+      console.log("[safeDefer] Interação expirada (Unknown interaction).");
+    } else {
+      console.error("[safeDefer] Erro:", error);
+    }
     return false;
   }
 }
@@ -896,20 +902,17 @@ export async function handleInteractionCreate(
         return handleTruckyVerification(interaction, client);
       }
 
-      // Modal de ajuda (abrir ticket)
-      if (interaction.customId.startsWith("modal_ajuda_")) {
-        const especificacoes = interaction.fields
-          .getTextInputValue("ajuda_especificacoes")
-          ?.trim();
-
+      // ===== MODAL DE AJUDA (RECRUTAMENTO) – tem o campo "ajuda_especificacoes" =====
+      if (interaction.customId.startsWith("modal_ajuda_") && interaction.fields.fields.has("ajuda_especificacoes")) {
+        const especificacoes = interaction.fields.getTextInputValue("ajuda_especificacoes")?.trim();
         interaction._ajudaEspecificacoes = especificacoes;
+        return createTicket(interaction, "ajuda", "❓ Pedir ajuda", client);
+      }
 
-        return createTicket(
-          interaction,
-          "ajuda",
-          "❓ Pedir ajuda",
-          client
-        );
+      // ===== MODAL DE AJUDA (/ajuda) – tem o campo "pergunta_ajuda" =====
+      if (interaction.customId.startsWith("modal_ajuda_") && interaction.fields.fields.has("pergunta_ajuda")) {
+        const { handleAjudaModal } = await import("../services/ajuda.js");
+        return handleAjudaModal(interaction, client);
       }
 
       // Modal de foto Trucky (recrutamento concluído)
