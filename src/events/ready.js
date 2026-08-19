@@ -7,7 +7,8 @@ import { setExternalClient, setupExternalLogChannels } from "../services/externa
 import { CONFIG } from "../config/index.js";
 import { sendPainelGeral, sendPainelRecrutamento, sendPainelRegras } from "../services/panels.js";
 import { db, saveDB } from "../utils/db.js";
-import { startTruckyCron } from "./ready/truckyCron.js"; // ✅ ADICIONADO
+import { startTruckyCron } from "./ready/truckyCron.js";
+import { MessageAnalyzer } from "../assistant/analyzer.js"; // ✅ ADICIONADO
 
 // ============================================================
 // CONSTANTES
@@ -22,6 +23,10 @@ export async function handleReady(client) {
   console.log(`[Ready] 🤖 Bot online: ${client.user.tag}`);
   console.log(`[Ready] 📊 Servidores: ${client.guilds.cache.size}`);
   console.log(`[Ready] 👥 Utilizadores: ${client.users.cache.size}`);
+
+  // ===== CRIAR ANALYZER ÚNICO =====
+  client.messageAnalyzer = new MessageAnalyzer(client); // ✅ ADICIONADO
+  console.log("[Ready] ✅ MessageAnalyzer inicializado");
 
   // ===== PRESENÇA =====
   client.user.setPresence({
