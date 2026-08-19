@@ -40,18 +40,41 @@ export async function logExternalMessageDelete(message) {
     if (!logChannel) return;
 
     let deleter = null;
+    let deleterDisplay = "🤖 Bot / Sistema";
+
+    // Tenta descobrir quem apagou via Audit Log
     try {
-      const auditLogs = await message.guild.fetchAuditLogs({ limit: 1, type: 72 });
+      const auditLogs = await message.guild.fetchAuditLogs({ 
+        limit: 1, 
+        type: 72  // MESSAGE_DELETE
+      });
       const entry = auditLogs.entries.first();
-      if (entry && entry.target.id === message.author?.id && Date.now() - entry.createdTimestamp < 5000) {
+      
+      // Verifica se o log corresponde a esta mensagem (mesmo canal e intervalo curto)
+      if (entry && 
+          entry.target.id === message.author?.id && 
+          entry.extra?.channel?.id === message.channel.id &&
+          Date.now() - entry.createdTimestamp < 2000) {
         deleter = entry.executor;
       }
-    } catch (e) {}
+    } catch (e) {
+      // Sem permissões ou erro – ignorar
+    }
+
+    if (deleter) {
+      deleterDisplay = `<@${deleter.id}> | \`${deleter.tag}\``;
+    } else {
+      // Fallback: se não houver executor, assume que foi o próprio autor
+      if (message.author) {
+        deleterDisplay = `👤 Autor (\`${message.author.tag}\`)`;
+      }
+      // Caso contrário, mantém "Bot / Sistema"
+    }
 
     const embed = createBaseEmbed("🗑️ Mensagem Apagada", 0xff0000)
       .addFields(
         { name: "👤 Autor", value: message.author ? `<@${message.author.id}> | \`${message.author.tag}\`` : "Desconhecido", inline: true },
-        { name: "🧹 Apagado por", value: deleter ? `<@${deleter.id}> | \`${deleter.tag}\`` : "🤖 Bot / Próprio Autor", inline: true },
+        { name: "🧹 Apagado por", value: deleterDisplay, inline: true },
         { name: "📍 Canal", value: `<#${message.channel.id}>`, inline: true },
         { name: "📝 Conteúdo", value: message.content?.substring(0, 1024) || "*Vazio/Embed/Anexo*", inline: false }
       )
