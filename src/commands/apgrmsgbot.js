@@ -8,7 +8,7 @@ import {
 } from 'discord.js';
 
 // ============================================================
-// CONSTANTES E PRESETS DE IDS
+// CONSTANTES E PRESETS
 // ============================================================
 const PRESET_IDS = {
   '412347553141751808': 'Jockie Music',
@@ -62,7 +62,7 @@ function getDisplayName(msg) {
 }
 
 // ============================================================
-// PARSER DE MARKDOWN, EMBEDS E BOTÕES
+// PARSER DE MARKDOWN & LINKS DO SPOTIFY
 // ============================================================
 function renderMarkdown(text) {
   if (!text) return '';
@@ -70,7 +70,10 @@ function renderMarkdown(text) {
 
   processed = processed.replace(/&lt;a?:([a-zA-Z0-9_]+):[0-9]+&gt;/g, ':$1:');
   processed = processed.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  
+  // Transforma links normais em links clicáveis (sem estragar as tags a já criadas)
   processed = processed.replace(/(^|[^"])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  
   processed = processed.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
   processed = processed.replace(/\*([^*]+?)\*/g, '<em>$1</em>');
   processed = processed.replace(/__([^_]+?)__/g, '<u>$1</u>');
@@ -80,10 +83,38 @@ function renderMarkdown(text) {
   return processed;
 }
 
+// Deteta links do Spotify na mensagem e converte no IFrame Widget oficial
+function getSpotifyEmbedWidget(text) {
+  if (!text) return '';
+  const spotifyRegex = /https?:\/\/open\.spotify\.com\/(playlist|track|album|artist|episode)\/([a-zA-Z0-9]+)/i;
+  const match = text.match(spotifyRegex);
+
+  if (match) {
+    const type = match[1];
+    const id = match[2];
+    return `
+    <div class="spotify-widget-container">
+      <iframe src="https://open.spotify.com/embed/${type}/${id}?utm_source=generator&theme=0" 
+              width="100%" 
+              height="${type === 'track' ? '152' : '352'}" 
+              frameBorder="0" 
+              allowfullscreen="" 
+              allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" 
+              loading="lazy" 
+              style="border-radius: 12px; margin-top: 8px; max-width: 400px;">
+      </iframe>
+    </div>`;
+  }
+  return '';
+}
+
+// ============================================================
+// RENDERIZAÇÃO DE EMBEDS E COMPONENTES
+// ============================================================
 function renderEmbedHTML(embed) {
   const desc = embed.description || '';
 
-  // Card Especial para Mensagens estilo Spotify
+  // Layout Especial "Started Playing"
   if (desc.toLowerCase().includes('started playing')) {
     const match = desc.match(/\[(.*?)\]\((.*?)\)/);
     let songTitle = match ? match[1] : desc.replace(/.*Started playing\s*/i, '');
@@ -100,7 +131,7 @@ function renderEmbedHTML(embed) {
     </div>`;
   }
 
-  const color = embed.color ? `#${embed.color.toString(16).padStart(6, '0')}` : '#2b2d31';
+  const borderStyle = embed.color ? `border-left: 4px solid #${embed.color.toString(16).padStart(6, '0')};` : 'border-left: 4px solid #2b2d31;';
   let embedInner = '';
 
   if (embed.author?.name) {
@@ -141,7 +172,7 @@ function renderEmbedHTML(embed) {
   }
 
   return `
-  <div class="embed-box" style="border-left: 4px solid ${color};">
+  <div class="embed-box" style="${borderStyle}">
     <div class="embed-body">
       <div class="embed-main">${embedInner}</div>
       ${thumbnailHtml}
@@ -149,7 +180,6 @@ function renderEmbedHTML(embed) {
   </div>`;
 }
 
-// Renderizar Botões de Interação (ActionRows / Buttons)
 function renderComponentsHTML(components) {
   if (!components || !components.length) return '';
 
@@ -184,8 +214,14 @@ function renderMessageContentHTML(msg) {
   if (msg.content) {
     let contentText = msg.content.replace(/<:spotify:[0-9]+>/g, '').trim();
     if (contentText.length > 0) {
-      contentText = renderMarkdown(contentText);
-      html += `<div class="text-content">${contentText}</div>`;
+      const parsedText = renderMarkdown(contentText);
+      html += `<div class="text-content">${parsedText}</div>`;
+      
+      // Se tiver link do Spotify, gera o Widget de Player
+      const spotifyWidget = getSpotifyEmbedWidget(msg.content);
+      if (spotifyWidget) {
+        html += spotifyWidget;
+      }
     }
   }
 
@@ -233,7 +269,7 @@ function getTxtContentRaw(msg) {
 }
 
 // ============================================================
-// GERADOR HTML COM VISUAL FIEL AO DISCORD
+// GERADOR HTML COM DESIGN IDÊNTICO AO DISCORD
 // ============================================================
 function generatePrettyHTML(messages, channel, staffName, motivo, targetNamesStr) {
   const sorted = [...messages].sort((a, b) => a.createdAt - b.createdAt);
@@ -285,7 +321,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetNamesStr
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mensagens apagadas - ${escapeHtml(guildName)}</title>
+<title>Mensagens Apagadas - ${escapeHtml(guildName)}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -366,7 +402,6 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetNamesStr
   .content { flex: 1; overflow: hidden; }
   .header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
   .author { font-weight: 600; color: #f2f3f5; font-size: 0.95rem; }
-  .bot-author { color: #f2f3f5; }
   
   .app-badge {
     background-color: #5865f2;
@@ -385,13 +420,13 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetNamesStr
   .text-content a { color: #00a8fc; text-decoration: none; }
   .text-content a:hover { text-decoration: underline; }
 
-  /* ESTILOS DE EMBED */
+  /* ESTILOS DE EMBEDS */
   .embed-box {
     background: #2b2d31;
     padding: 12px 16px;
     margin-top: 6px;
     border-radius: 4px;
-    max-width: 520px;
+    max-width: 480px;
   }
   .embed-body { display: flex; gap: 16px; justify-content: space-between; }
   .embed-main { flex: 1; }
@@ -400,17 +435,17 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetNamesStr
   .embed-title a { color: #00a8fc; text-decoration: none; }
   .embed-fields { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 8px; }
   .embed-field { flex: 1 1 100%; }
-  .embed-field.inline { flex: 0 1 calc(50% - 8px); min-width: 120px; }
+  .embed-field.inline { flex: 0 1 calc(50% - 8px); min-width: 100px; }
   .field-name { font-size: 0.8rem; font-weight: 700; color: #b5bac1; margin-bottom: 2px; }
   .field-value { font-size: 0.85rem; color: #dbdee1; }
-  .embed-thumbnail { width: 70px; height: 70px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+  .embed-thumbnail { width: 80px; height: 80px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
   .embed-footer { font-size: 0.75rem; color: #949ba4; margin-top: 8px; }
 
-  /* CARD SPOTIFY */
+  /* CARD SPOTIFY - STARTED PLAYING */
   .spotify-started-card {
     background: #2b2d31;
     border-radius: 4px;
-    padding: 10px 14px;
+    padding: 8px 12px;
     margin-top: 6px;
     display: flex;
     align-items: center;
