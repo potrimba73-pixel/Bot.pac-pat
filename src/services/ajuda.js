@@ -31,7 +31,6 @@ export const assistantMemory = {
 // FUNÇÃO PRINCIPAL - /ajuda
 // ============================================================
 export async function handleAjudaCommand(interaction, client) {
-  // O deferReply já foi feito no interactionCreate.js
   const umaHora = 60 * 60 * 1000;
   const agora = Date.now();
   const memoria = assistantMemory.cooldowns.get(interaction.user.id);
@@ -166,13 +165,7 @@ export async function handleAjudaModal(interaction, client) {
   await interaction.deferReply({ flags: 64 });
 
   try {
-    // Usar o orquestrador smartResponse para gerar resposta
-    const { handleSmartResponse } = await import("../assistant/smartResponse.js");
-    // Como o smartResponse espera um objeto message, criamos um mock para usar a lógica
-    // Alternativa: reutilizar a lógica de busca manualmente
-    // Por simplicidade, vamos chamar a função que gera a resposta diretamente
     const resposta = await gerarRespostaPersonalizada(pergunta, client);
-
     assistantMemory.setCooldown(interaction.user.id);
 
     const embed = new EmbedBuilder()
@@ -227,17 +220,14 @@ export async function handleAjudaModal(interaction, client) {
 // GERADOR DE RESPOSTAS (fallback para o modal)
 // ============================================================
 async function gerarRespostaPersonalizada(pergunta, client) {
-  // Tentar tutoriais
   const { encontrarTutorialPAC } = await import("../database/tutoriais.js");
   const tutorial = encontrarTutorialPAC(pergunta);
   if (tutorial) return tutorial.resumo;
 
-  // Tentar FAQ
   const { encontrarRespostaFAQ } = await import("../database/faq.js");
   const faq = encontrarRespostaFAQ(pergunta);
   if (faq.found) return faq.texto;
 
-  // Tentar IA externa
   const { callPollinationsAI, callGeminiAI } = await import("../assistant/ets2AI.js");
   let resposta = await callPollinationsAI(pergunta);
   if (!resposta) resposta = await callGeminiAI(pergunta);
@@ -288,9 +278,12 @@ export async function handleAjudaFeedback(interaction) {
 
   // Feedback dos botões smart_helpful / smart_not_helpful
   if (customId.startsWith("smart_helpful_") || customId.startsWith("smart_not_helpful_")) {
-    const isHelpful = customId.startsWith("smart_helpful_");
-    const userId = customId.split("_")[2];
-    
+    const parts = customId.split("_");
+    // Formato: smart_helpful_USERID_MESSAGEID (quando vem do smartResponse)
+    // Ou smart_helpful_USERID (quando vem do modal)
+    const userId = parts[2];
+    const messageId = parts[3] || null; // pode não existir no modal
+
     if (interaction.user.id !== userId) {
       return interaction.reply({
         content: `⚠️ Este feedback não é para ti!`,
@@ -298,6 +291,7 @@ export async function handleAjudaFeedback(interaction) {
       });
     }
 
+    const isHelpful = customId.startsWith("smart_helpful_");
     const feedback = isHelpful ? "✅ Positivo" : "❌ Negativo";
     
     await interaction.reply({
@@ -305,16 +299,27 @@ export async function handleAjudaFeedback(interaction) {
       flags: 64
     });
 
-    // Log do feedback
+    // Buscar pergunta/resposta se tivermos messageId
+    let question = "N/A";
+    let answer = "N/A";
+    if (messageId && assistantMemory.pendingSearches?.has(messageId)) {
+      const data = assistantMemory.pendingSearches.get(messageId);
+      question = data.question || "N/A";
+      answer = data.answer || "N/A";
+    }
+
+    // Log do feedback (com hora no formato <t:...:t>)
     try {
       const logChannel = await interaction.client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
       if (logChannel) {
+        const now = Math.floor(Date.now() / 1000);
         const logEmbed = new EmbedBuilder()
           .setTitle("📊 Feedback da Ajuda")
           .setDescription([
-            `👤 Utilizador: ${interaction.user.tag}`,
-            `📝 Feedback: ${feedback}`,
-            `🕐 Data: ${new Date().toLocaleString("pt-PT")}`
+            `👤 Utilizador: <@${interaction.user.id}> | \`${interaction.user.tag}\``,
+            `📝 Avaliação: ${feedback}`,
+            `💬 Comentário: ${question} → ${answer}`,
+            `🕐 Hora: <t:${now}:t>`
           ].join("\n"))
           .setColor(isHelpful ? 0x00ff00 : 0xff0000)
           .setTimestamp();
