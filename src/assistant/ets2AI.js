@@ -35,7 +35,8 @@ function matchesAjudaKeywords(content) {
   return AJUDA_KEYWORDS.some(kw => lower.includes(kw));
 }
 
-async function callPollinationsAI(question) {
+// ✅ EXPORTADO
+export async function callPollinationsAI(question) {
   try {
     const prompt = `Responde em portugues de Portugal de forma curta e direta (max 500 caracteres) a esta pergunta sobre Euro Truck Simulator 2, American Truck Simulator, ou a comunidade Portugal Alfa Truckers: "${question}"`;
     const url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}?seed=${Date.now()}&json=false`;
@@ -51,7 +52,8 @@ async function callPollinationsAI(question) {
   }
 }
 
-async function callGeminiAI(question) {
+// ✅ EXPORTADO
+export async function callGeminiAI(question) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return null;
 
@@ -182,7 +184,7 @@ export async function handleIAFeedback(interaction, client) {
     return;
   }
 
-  const feedback = action === "ajudou" ? "👍 Positivo" : "👎 Negativo";
+  const feedback = action === "ajudou" ? "👍 Sim" : "👎 Não";
 
   await interaction.reply({
     content: `Obrigado pelo feedback! (${feedback})`,
