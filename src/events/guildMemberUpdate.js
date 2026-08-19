@@ -1,88 +1,64 @@
 import { EmbedBuilder } from "discord.js";
 import { CONFIG } from "../config/index.js";
 
-// Cache para agrupar atualizações por membro
-const pendingUpdates = new Map();
+// Define aqui o ID do teu cargo de regras (substitui pelo ID real)
+const ID_CARGO_REGRAS = "1534970663344017479"; 
 
 export async function handleGuildMemberUpdate(oldMember, newMember, client) {
-  const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
+  const logChannel = await newMember.guild.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
   if (!logChannel) return;
 
-  const memberId = newMember.id;
-  const now = Date.now();
-
-  // Se já existe um agendamento para este membro, cancelar e reagendar
-  if (pendingUpdates.has(memberId)) {
-    clearTimeout(pendingUpdates.get(memberId).timeout);
-    pendingUpdates.delete(memberId);
-  }
-
-  // Acumular alterações
-  const changes = {
-    nickname: null,
-    addedRoles: [],
-    removedRoles: [],
-    timestamp: now
-  };
-
-  // Verificar mudança de nickname
-  if (oldMember.nickname !== newMember.nickname) {
-    changes.nickname = {
-      old: oldMember.nickname || "Nenhum",
-      new: newMember.nickname || "Nenhum"
-    };
-  }
-
-  // Verificar cargos adicionados
+  // Comparação para detetar cargos adicionados
   const addedRoles = newMember.roles.cache.filter(role => !oldMember.roles.cache.has(role.id));
+
   if (addedRoles.size > 0) {
-    changes.addedRoles = Array.from(addedRoles.values());
-  }
+    const aceitouRegras = addedRoles.has(ID_CARGO_REGRAS);
+    
+    // Mapeia os cargos para menções diretas (evita o erro "@cargo desconhecido")
+    const rolesList = addedRoles.map(r => `${r}`).join(" e ");
 
-  // Verificar cargos removidos (opcional, mas mantido para consistência)
-  const removedRoles = oldMember.roles.cache.filter(role => !newMember.roles.cache.has(role.id));
-  if (removedRoles.size > 0) {
-    changes.removedRoles = Array.from(removedRoles.values());
-  }
-
-  // Se não há alterações, sair
-  if (!changes.nickname && changes.addedRoles.length === 0 && changes.removedRoles.length === 0) {
-    return;
-  }
-
-  // Agendar envio do log consolidado (debounce de 500ms)
-  const timeout = setTimeout(async () => {
-    pendingUpdates.delete(memberId);
-
-    // Construir descrição das alterações
-    let description = `**Membro Atualizado**\n${newMember} foi atualizado.`;
-    let changesText = "";
-
-    if (changes.nickname) {
-      changesText += `Nickname: **${changes.nickname.old}** → **${changes.nickname.new}**\n`;
-    }
-
-    if (changes.addedRoles.length > 0) {
-      const rolesMentions = changes.addedRoles.map(r => `${r}`).join(" ");
-      changesText += `➕ Cargos adicionados: ${rolesMentions}\n`;
-    }
-
-    if (changes.removedRoles.length > 0) {
-      const rolesMentions = changes.removedRoles.map(r => `${r}`).join(" ");
-      changesText += `➖ Cargos removidos: ${rolesMentions}\n`;
-    }
+    // Se aceitou as regras, mostra o título personalizado, senão mostra "Membro Atualizado"
+    const titulo = aceitouRegras ? "📝 Regras aceites ✅" : "📝 Membro Atualizado";
 
     const embed = new EmbedBuilder()
-      .setColor(0x2B2D31)
-      .setDescription(description)
+      .setColor(0x57F287) // Cor Verde
+      .setThumbnail(newMember.user.displayAvatarURL({ dynamic: true }))
+      .setTitle(titulo)
+      .setDescription(`${newMember} foi atualizado.`)
       .addFields(
-        { name: "Alterações", value: changesText.trim(), inline: false }
+        { 
+          name: "Alterações", 
+          value: `➕ **Cargos adicionados:** ${rolesList}`, 
+          inline: false 
+        }
       )
       .setFooter({ text: `ID: ${newMember.id}` })
       .setTimestamp();
 
-    await logChannel.send({ embeds: [embed] }).catch(() => {});
-  }, 500);
+    return logChannel.send({ embeds: [embed] });
+  }
 
-  pendingUpdates.set(memberId, { timeout });
+  // Comparação para detetar cargos removidos
+  const removedRoles = oldMember.roles.cache.filter(role => !newMember.roles.cache.has(role.id));
+
+  if (removedRoles.size > 0) {
+    const rolesList = removedRoles.map(r => `${r}`).join(" e ");
+
+    const embed = new EmbedBuilder()
+      .setColor(0xED4245) // Cor Vermelha
+      .setThumbnail(newMember.user.displayAvatarURL({ dynamic: true }))
+      .setTitle("📝 Membro Atualizado")
+      .setDescription(`${newMember} foi atualizado.`)
+      .addFields(
+        { 
+          name: "Alterações", 
+          value: `➖ **Cargos removidos:** ${rolesList}`, 
+          inline: false 
+        }
+      )
+      .setFooter({ text: `ID: ${newMember.id}` })
+      .setTimestamp();
+
+    return logChannel.send({ embeds: [embed] });
+  }
 }
