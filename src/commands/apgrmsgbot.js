@@ -53,23 +53,24 @@ const dateFormatterShort = new Intl.DateTimeFormat('pt-PT', {
 });
 
 // ============================================================
-// [NOVA FUNÇÃO] CONVERTE MARKDOWN DO DISCORD DIRETAMENTE PARA HTML
+// [CORRIGIDO] CONVERTE MARKDOWN DO DISCORD DIRETAMENTE PARA HTML
 // ============================================================
 function renderMarkdown(text) {
   if (!text) return '';
 
   let processed = text;
 
-  // 1. Substituir emojis personalizados do Discord (ex: <:spotify:837...>) por texto para evitar imagens quebradas no HTML
+  // 1. Substituir emojis personalizados do Discord (ex: <:spotify:837...>) por texto
   processed = processed.replace(/<a?:([a-zA-Z0-9_]+):[0-9]+>/g, ':$1:');
 
-  // 2. Processar Links do Discord [texto](url) primeiro
+  // 2. [CORREÇÃO IMPORTANTE] Processar Links do Discord [texto](url) PRIMEIRO!
   processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, textContent, url) => {
-    return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(textContent)}</a>`;
+    return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${textContent}</a>`;
   });
 
-  // 3. Links soltos (https://...) que não estão em formato [](url)
-  processed = processed.replace(/(https?:\/\/[^\s]+)/g, (match) => {
+  // 3. Processar Links soltos (URLs que não estão em formato [](url))
+  // A regex para em " ou < > para evitar links partidos com aspas
+  processed = processed.replace(/(https?:\/\/[^\s"<>]+)/g, (match) => {
     return `<a href="${escapeHtml(match)}" target="_blank" rel="noopener noreferrer">${escapeHtml(match)}</a>`;
   });
 
@@ -95,97 +96,53 @@ function renderMarkdown(text) {
 // FUNÇÕES DE EXTRAÇÃO DE TEXTO
 // ============================================================
 
-// [PARA HTML] Extrai e organiza o conteúdo, removendo formatações de link cruas para o HTML
+// [PARA HTML] Extrai e organiza o conteúdo (Corrigido para o Jockie)
 function getMessageText(msg) {
   const isJockie = msg.author.id === '412347553141751808';
   let text = msg.content || '';
 
   if (msg.embeds?.length) {
     for (const embed of msg.embeds) {
-      // --- Playlist ---
-      if (
-        embed.title?.toLowerCase().includes('playlist') ||
-        embed.fields?.some(f => f.name?.toLowerCase().includes('playlist'))
-      ) {
-        let playlistName = '', tracks = '', length = '';
-        for (const field of embed.fields || []) {
-          const fname = field.name.toLowerCase();
-          if (fname.includes('playlist')) playlistName = field.value;
-          else if (fname.includes('tracks')) tracks = field.value;
-          else if (fname.includes('length') || fname.includes('duração')) length = field.value;
-        }
-        if (!playlistName && embed.description) {
-          const lines = embed.description.split('\n');
-          for (const line of lines) {
-            if (line.includes('Playlist') && !line.includes('Length')) playlistName = line.replace('Playlist', '').trim();
-            if (line.includes('Tracks')) tracks = line.replace(/.*Tracks\s*/, '').trim();
-            if (line.includes('Length')) length = line.replace(/.*Length\s*/, '').trim();
+      // --- Processo Especial para o Jockie Music ---
+      if (isJockie && embed.description) {
+        // Playlist
+        if (
+          embed.title?.toLowerCase().includes('playlist') ||
+          embed.description.toLowerCase().includes('playlist')
+        ) {
+          let playlistName = '', tracks = '', length = '';
+          for (const field of embed.fields || []) {
+            const fname = field.name.toLowerCase();
+            if (fname.includes('playlist')) playlistName = field.value;
+            else if (fname.includes('tracks')) tracks = field.value;
+            else if (fname.includes('length') || fname.includes('duração')) length = field.value;
           }
-        }
-        let result = '📋 **Added Playlist**';
-        if (playlistName) result += `\n**Playlist:** ${playlistName}`;
-        if (tracks) result += `\n**Tracks:** ${tracks}`;
-        if (length) result += `\n**Length:** ${length}`;
-        if (embed.url) result += `\n🔗 ${embed.url}`;
-        text += (text ? '\n' : '') + result;
-        continue;
-      }
-
-      // --- Música ---
-      if (
-        embed.url?.includes('spotify.com') || embed.provider?.name === 'Spotify' ||
-        (isJockie && (embed.title || embed.description)) ||
-        embed.description?.toLowerCase().includes('started playing')
-      ) {
-        let lines = [];
-        if (embed.description) {
-          const descLines = embed.description.split('\n').map(s => s.trim()).filter(Boolean);
-          const hasStartedPlaying = descLines.some(line => /^[-•*]\s*Started playing/i.test(line));
-
-          if (hasStartedPlaying) {
-            for (const line of descLines) {
-              const match = line.match(/^[-•*]\s*Started playing\s+(.+?)\s+by\s+(.+)/i);
-              if (match) {
-                lines.push(`- Started playing **${match[1].trim()}** by **${match[2].trim()}**`);
-              } else {
-                lines.push(line);
-              }
+          if (!playlistName && embed.description) {
+            const lines = embed.description.split('\n');
+            for (const line of lines) {
+              if (line.includes('Playlist') && !line.includes('Length')) playlistName = line.replace('Playlist', '').trim();
+              if (line.includes('Tracks')) tracks = line.replace(/.*Tracks\s*/, '').trim();
+              if (line.includes('Length')) length = line.replace(/.*Length\s*/, '').trim();
             }
-          } else {
-            let title = embed.title || '';
-            let artist = '';
-            const byMatch = embed.description.match(/by\s+(.+)/i);
-            if (byMatch) artist = byMatch[1].trim();
-            else {
-              const parts = embed.description.split(/[•\-]/).map(s => s.trim());
-              if (parts.length >= 2) artist = parts[1];
-              else artist = embed.description;
-            }
-            if (!artist && embed.author?.name) artist = embed.author.name;
-            if (!artist && title.includes('-')) {
-              const parts = title.split('-').map(s => s.trim());
-              if (parts.length === 2) { title = parts[0]; artist = parts[1]; }
-            }
-            if (!title && msg.content) title = msg.content;
-            let result = `🎵 **${title}**`;
-            if (artist) result += ` por **${artist}**`;
-            if (embed.url) result += `\n🔗 ${embed.url}`;
-            lines.push(result);
           }
-        } else {
-          let title = embed.title || '';
-          let artist = '';
-          if (embed.author?.name) artist = embed.author.name;
-          let result = `🎵 **${title}**`;
-          if (artist) result += ` por ${artist}`;
+          let result = '📋 **Added Playlist**';
+          if (playlistName) result += `\n**Playlist:** ${playlistName}`;
+          if (tracks) result += `\n**Tracks:** ${tracks}`;
+          if (length) result += `\n**Length:** ${length}`;
           if (embed.url) result += `\n🔗 ${embed.url}`;
-          lines.push(result);
+          text += (text ? '\n' : '') + result;
+          continue;
         }
-        if (lines.length) text += (text ? '\n' : '') + lines.join('\n');
-        continue;
+
+        // [CORREÇÃO] Se for música, usamos a descrição CRUA.
+        // O renderMarkdown vai processar o [**Título** by **Artista**](URL) automaticamente!
+        if (embed.description.toLowerCase().includes('started playing')) {
+          text += (text ? '\n' : '') + embed.description;
+          continue;
+        }
       }
 
-      // --- Outros Embeds ---
+      // --- Outros Embeds (Genérico) ---
       let parts = [];
       if (embed.title) parts.push(`**${embed.title}**`);
       if (embed.description) parts.push(embed.description);
@@ -204,27 +161,24 @@ function getMessageText(msg) {
   return text || '(sem conteúdo)';
 }
 
-// [PARA TXT] Extrai o texto CRU exatamente como aparece no Discord, sem processar Markdown ou Links
+// [PARA TXT] Extrai o texto CRU exatamente como aparece no Discord
 function getTxtContent(msg) {
   const isJockie = msg.author.id === '412347553141751808';
   let parts = [];
 
-  // 1. Adicionar o conteúdo de texto puro
   if (msg.content) parts.push(msg.content);
 
-  // 2. Processar os Embeds de forma CRUA
   if (msg.embeds?.length) {
     for (const embed of msg.embeds) {
-      // Se for o Jockie, preservamos a descrição original que contém [**Título**](URL)
+      // Se for o Jockie, preservamos a descrição original que contém [Título](URL)
       if (isJockie) {
         if (embed.description) parts.push(embed.description);
         if (embed.url && !embed.description?.includes(embed.url)) {
           parts.push(embed.url);
         }
-        continue; // Não processa os outros campos do embed para o Jockie, para não duplicar
+        continue;
       }
 
-      // Para outros bots ou embeds normais, concatena tudo sem escapar
       if (embed.title) parts.push(embed.title);
       if (embed.description) parts.push(embed.description);
       if (embed.fields) {
@@ -238,7 +192,6 @@ function getTxtContent(msg) {
     }
   }
 
-  // 3. Anexos e Stickers
   if (msg.attachments?.size) {
     for (const [, att] of msg.attachments) {
       parts.push(`📎 ${att.name} (${att.url})`);
@@ -354,7 +307,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
 }
 
 // ============================================================
-// GERAR TXT (COM O FORMATO EXATO QUE VOCÊ PEDIU)
+// GERAR TXT
 // ============================================================
 function generateTxt(messages, channel, staffName, motivo, targetId, targetName) {
   const sorted = [...messages].sort((a, b) => a.createdAt - b.createdAt);
@@ -401,11 +354,11 @@ async function askConfirmation(interaction, quantidade) {
 }
 
 // ============================================================
-// COMANDO PRINCIPAL (10062 CORRIGIDO)
+// COMANDO PRINCIPAL
 // ============================================================
 export async function execute(interaction, client) {
   // ============================================================
-  // PREVENÇÃO MÁXIMA DO ERRO 10062: Defer logo na 1ª linha!
+  // PREVENÇÃO DO ERRO 10062: Defer logo na 1ª linha!
   // ============================================================
   try {
     await interaction.deferReply({ flags: 64 });
@@ -414,7 +367,7 @@ export async function execute(interaction, client) {
     return; 
   }
 
-  // A partir daqui, TODAS as respostas de erro usam .editReply() e NÃO .reply()
+  // TUDO abaixo usa .editReply() (NUNCA .reply())
   try {
     if (!interaction.member.permissions.has('ManageMessages')) {
       return interaction.editReply({ content: '❌ Precisas da permissão **Gerenciar Mensagens**.', flags: 64 });
