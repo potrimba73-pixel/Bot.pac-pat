@@ -56,8 +56,10 @@ export async function handleSmartResponse(message, client) {
 
   const question = message.content.replace(/<@!?\d+>/g, "").trim();
 
-  // 1. Tentar FAQ primeiro
+  // ===== 1. TENTAR FAQ PRIMEIRO (com prioridade máxima) =====
   const faqResposta = encontrarRespostaFAQ(question);
+  
+  // ✅ Se o FAQ encontrou uma resposta com score >= 5 (ou se for uma pergunta específica)
   if (faqResposta.found) {
     const embed = new EmbedBuilder()
       .setTitle(faqResposta.titulo)
@@ -66,7 +68,6 @@ export async function handleSmartResponse(message, client) {
       .setFooter({ text: "Resposta automatica — Info pode nao estar 100% atualizada" })
       .setTimestamp();
 
-    // ✅ CORREÇÃO: usar message.author.id para os botões de feedback
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(safeCustomId("smart_helpful", message.author.id))
@@ -96,10 +97,10 @@ export async function handleSmartResponse(message, client) {
     } catch (err) {
       console.error("[SmartResponse] Erro ao enviar FAQ:", err.message);
     }
-    return;
+    return; // ✅ SAI AQUI – NÃO USA O HISTÓRICO
   }
 
-  // 2. Tentar historico do Diego
+  // ===== 2. SE FAQ NÃO ENCONTROU, TENTAR HISTÓRICO DO DIEGO =====
   try {
     const analyzer = client.messageAnalyzer || new MessageAnalyzer(client);
     const similar = analyzer.findSimilarResponses(question);
@@ -119,7 +120,6 @@ export async function handleSmartResponse(message, client) {
 
       texto += "*Esta resposta foi baseada no historico de mensagens. Pode nao estar 100% atualizada.*";
 
-      // ✅ CORREÇÃO: usar message.author.id para os botões de feedback
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(safeCustomId("smart_helpful", message.author.id))
@@ -148,7 +148,7 @@ export async function handleSmartResponse(message, client) {
     console.error("[SmartResponse] Erro no analyzer:", err.message);
   }
 
-  // 3. Tentar IA externa (Pollinations ou Gemini)
+  // ===== 3. TENTAR IA EXTERNA =====
   let iaAnswer = null;
   let source = "";
 
@@ -176,7 +176,6 @@ export async function handleSmartResponse(message, client) {
       .setFooter({ text: `Fonte: ${source} | Clique nos botões para dar feedback` })
       .setTimestamp();
 
-    // ✅ CORREÇÃO: usar message.author.id para os botões de feedback
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(safeCustomId("smart_helpful", message.author.id))
@@ -205,7 +204,7 @@ export async function handleSmartResponse(message, client) {
     return;
   }
 
-  // 4. Se tudo falhar, sugere pesquisa (botão)
+  // ===== 4. SUGERIR PESQUISA =====
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(safeCustomId("smart_do_search", message.id, question))
