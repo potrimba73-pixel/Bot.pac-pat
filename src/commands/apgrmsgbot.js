@@ -18,12 +18,13 @@ const PRESET_IDS = {
   '456226577798135808': 'Utilizador 4562...',
 };
 
-const DEFAULT_TARGET_ID = '412347553141751808';
+// IDs predefinidos para apagar se nenhum for especificado (Jockie + pt.jp lyaz)
+const DEFAULT_TARGET_IDS = ['412347553141751808', '759343605726052392'];
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID || '';
 const TIMEZONE = 'Europe/Lisbon';
 
 // ============================================================
-// UTIL: ESCAPAR HTML E SANITIZAR
+// UTILITÁRIOS
 // ============================================================
 function escapeHtml(text) {
   if (!text) return '';
@@ -39,12 +40,9 @@ function sanitizeFileName(name) {
   return name.replace(/[^a-zA-Z0-9\-_]/g, '_');
 }
 
-// ============================================================
-// FORMATADORES DE DATA
-// ============================================================
 const dateFormatter = new Intl.DateTimeFormat('pt-PT', {
   day: '2-digit', month: '2-digit', year: 'numeric',
-  hour: '2-digit', minute: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit',
   timeZone: TIMEZONE,
 });
 
@@ -53,9 +51,6 @@ const dateFormatterShort = new Intl.DateTimeFormat('pt-PT', {
   timeZone: TIMEZONE,
 });
 
-// ============================================================
-// AUXILIARES
-// ============================================================
 function getDisplayName(msg) {
   if (msg.member) return msg.member.displayName;
   if (msg.guild) {
@@ -71,15 +66,22 @@ function getDiscriminator(author) {
 }
 
 // ============================================================
-// MARKDOWN DO DISCORD
+// PARSER DE MARKDOWN & LINKS SPOTIFY
 // ============================================================
 function renderMarkdown(text) {
   if (!text) return '';
   let processed = escapeHtml(text);
 
+  // Emojis customizados
   processed = processed.replace(/&lt;a?:([a-zA-Z0-9_]+):[0-9]+&gt;/g, ':$1:');
+
+  // Links Markdown [Texto](URL)
   processed = processed.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+  // Links simples
   processed = processed.replace(/(^|[^"])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+
+  // Formatação
   processed = processed.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
   processed = processed.replace(/\*([^*]+?)\*/g, '<em>$1</em>');
   processed = processed.replace(/__([^_]+?)__/g, '<u>$1</u>');
@@ -89,20 +91,23 @@ function renderMarkdown(text) {
   return processed;
 }
 
-// ============================================================
-// RENDERIZADOR DE CONTEÚDO
-// ============================================================
 function renderMessageContentHTML(msg) {
   let html = '';
 
   if (msg.content) {
-    html += `<div class="text-content">${renderMarkdown(msg.content)}</div>`;
+    // Adiciona ícone de nota musical se for comando de música ou link do Spotify
+    let contentText = renderMarkdown(msg.content);
+    if (msg.content.includes('spotify.com') || msg.content.startsWith('m!p')) {
+      contentText = `🎵 ${contentText}`;
+    }
+    html += `<div class="text-content">${contentText}</div>`;
   }
 
   if (msg.embeds?.length) {
     for (const embed of msg.embeds) {
       const desc = embed.description || '';
 
+      // Card de música jogada
       if (desc.toLowerCase().includes('started playing')) {
         const match = desc.match(/\[(.*?)\]\((.*?)\)/);
         const songTitle = match ? match[1] : desc.replace(/.*Started playing\s*/i, '');
@@ -110,17 +115,18 @@ function renderMessageContentHTML(msg) {
 
         html += `
         <div class="music-card">
-          <svg class="spotify-icon" viewBox="0 0 24 24"><path fill="#1DB954" d="M12 0C5.376 0 0 5.376 0 12s5.376 12 12 12 12-5.376 12-12S18.624 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.899 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.019zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141 C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.18-.1.2-.84-.36-.18-.6.36-1.2.96-1.38 4.2-1.26 11.28-1.02 15.72 1.62.54.3.72 1.02.42 1.56-.3.42-1.02.6-1.56.3z"/></svg>
+          <span class="music-icon">🎵</span>
           <span class="music-label">Started playing</span>
           <a href="${escapeHtml(songUrl)}" target="_blank" class="music-title">${escapeHtml(songTitle)}</a>
         </div>`;
         continue;
       }
 
-      const color = embed.color ? `#${embed.color.toString(16).padStart(6, '0')}` : '#202225';
+      // Embed genérico
+      const color = embed.color ? `#${embed.color.toString(16).padStart(6, '0')}` : '#2f3136';
       html += `
-      <div class="embed-box" style="border-left-color: ${color};">
-        ${embed.title ? `<div class="embed-title-header">${renderMarkdown(embed.title)}</div>` : ''}
+      <div class="embed-box" style="border-left: 4px solid ${color};">
+        ${embed.title ? `<div class="embed-title">${renderMarkdown(embed.title)}</div>` : ''}
         ${embed.description ? `<div class="text-content">${renderMarkdown(embed.description)}</div>` : ''}
       </div>`;
     }
@@ -131,7 +137,7 @@ function renderMessageContentHTML(msg) {
       if (att.contentType?.startsWith('image/')) {
         html += `<div class="attachment"><img src="${escapeHtml(att.url)}" alt="Anexo"></div>`;
       } else {
-        html += `<div class="attachment"><a href="${escapeHtml(att.url)}" target="_blank" class="music-title">📎 ${escapeHtml(att.name)}</a></div>`;
+        html += `<div class="attachment"><a href="${escapeHtml(att.url)}" target="_blank">📎 ${escapeHtml(att.name)}</a></div>`;
       }
     }
   }
@@ -155,10 +161,12 @@ function getTxtContentRaw(msg) {
 }
 
 // ============================================================
-// GERADORES DE TRANSCRIPT
+// GERADOR HTML ESTILO PRO / CARD DISCORD
 // ============================================================
-function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targetName) {
+function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, targetNamesStr) {
   const sorted = [...messages].sort((a, b) => a.createdAt - b.createdAt);
+  const guildName = channel.guild ? channel.guild.name : 'Servidor';
+  const guildIcon = channel.guild?.iconURL({ extension: 'png', size: 64 }) || '';
 
   const msgsHtml = sorted.map((msg) => {
     const avatar = msg.author.displayAvatarURL({ extension: 'png', size: 64 });
@@ -166,24 +174,20 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
     const authorName = getDisplayName(msg);
     const isBot = msg.author.bot;
 
-    const botBadgeHtml = isBot ? `
-      <span class="bot-tag">
-        <svg class="bot-check" viewBox="0 0 16 15" width="10" height="10"><path fill="currentColor" d="M6 11L2 7l1.4-1.4L6 8.2l6.6-6.6L14 3z"/></svg>
-        <span class="bot-text">APP</span>
-      </span>` : '';
+    const botBadge = isBot ? `
+      <span class="bot-badge">BOT</span>
+      <span class="app-badge">APP</span>` : '';
 
     return `
-    <div class="chat-message">
-      <img class="user-avatar" src="${avatar}" alt="Avatar" loading="lazy">
-      <div class="message-body">
-        <div class="message-header">
-          <span class="username">${escapeHtml(authorName)}</span>
-          ${botBadgeHtml}
-          <span class="timestamp">${data}</span>
+    <div class="message-card">
+      <img class="avatar" src="${avatar}" alt="Avatar" loading="lazy">
+      <div class="content">
+        <div class="header">
+          <span class="author">${escapeHtml(authorName)}</span>
+          ${botBadge}
+          <span class="time">${data}</span>
         </div>
-        <div class="message-content">
-          ${renderMessageContentHTML(msg)}
-        </div>
+        ${renderMessageContentHTML(msg)}
       </div>
     </div>`;
   }).join('\n');
@@ -192,32 +196,162 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
 <html lang="pt">
 <head>
 <meta charset="UTF-8">
-<title>Transcript - #${escapeHtml(channel.name)}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mensagens apagadas - ${escapeHtml(guildName)}</title>
 <style>
-  body { background-color: #111214; color: #dbdee1; font-family: sans-serif; padding: 20px; }
-  .chat-message { display: flex; margin-bottom: 16px; }
-  .user-avatar { width: 40px; height: 40px; border-radius: 50%; margin-right: 16px; }
-  .username { font-weight: bold; color: #f2f3f5; }
-  .timestamp { color: #949ba4; font-size: 0.75rem; margin-left: 6px; }
-  .bot-tag { background-color: #5865f2; color: #fff; font-size: 0.6rem; padding: 1px 4px; border-radius: 3px; }
-  .music-card { background: #2b2d31; padding: 8px; border-radius: 4px; margin-top: 4px; display: inline-block; }
-  .embed-box { background: #2b2d31; border-left: 4px solid #1e1f22; padding: 10px; margin-top: 4px; border-radius: 4px; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background-color: #121316;
+    color: #dcddde;
+    font-family: 'Whitney', 'GG Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 30px 15px;
+  }
+  .container {
+    width: 100%;
+    max-width: 850px;
+    background-color: #1e1f22;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    overflow: hidden;
+    border: 1px solid #2b2d31;
+  }
+  .top-bar {
+    background-color: #2b2d31;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid #1e1f22;
+  }
+  .server-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: #5865f2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    color: #fff;
+  }
+  .top-info h1 {
+    font-size: 1.1rem;
+    color: #fff;
+    font-weight: 700;
+  }
+  .top-info p {
+    font-size: 0.8rem;
+    color: #949ba4;
+    margin-top: 2px;
+  }
+  .chat-area {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .message-card {
+    background-color: #2b2d31;
+    border-radius: 8px;
+    padding: 12px 16px;
+    display: flex;
+    gap: 14px;
+  }
+  .avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .content { flex: 1; overflow: hidden; }
+  .header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .author { font-weight: 600; color: #5865f2; font-size: 0.95rem; }
+  .bot-badge {
+    background-color: #5865f2;
+    color: #fff;
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+  .app-badge {
+    background-color: #4752c4;
+    color: #fff;
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+  .time { color: #949ba4; font-size: 0.75rem; margin-left: auto; }
+  .text-content { color: #dbdee1; font-size: 0.9rem; word-break: break-word; }
+  .text-content a { color: #00a8fc; text-decoration: none; }
+  .text-content a:hover { text-decoration: underline; }
+  .music-card {
+    background: #1e1f22;
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin-top: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .music-title { color: #00a8fc; font-weight: 600; text-decoration: none; font-size: 0.85rem; }
+  .embed-box { background: #1e1f22; padding: 10px; margin-top: 6px; border-radius: 4px; }
+  .footer-bar {
+    background-color: #2b2d31;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px solid #1e1f22;
+    font-size: 0.8rem;
+    color: #949ba4;
+  }
+  .badges { display: flex; gap: 10px; }
+  .badge {
+    background-color: #1e1f22;
+    padding: 4px 8px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
 </style>
 </head>
 <body>
-  <div class="chat-container">${msgsHtml}</div>
+  <div class="container">
+    <div class="top-bar">
+      ${guildIcon ? `<img src="${guildIcon}" class="server-icon" alt="Icon">` : `<div class="server-icon">${escapeHtml(guildName[0])}</div>`}
+      <div class="top-info">
+        <h1>Mensagens apagadas</h1>
+        <p>Servidor: <strong>${escapeHtml(guildName)}</strong> • Canal: <strong>#${escapeHtml(channel.name)}</strong> • Staff: <strong>${escapeHtml(staffName)}</strong> • Alvo: <strong>${escapeHtml(targetNamesStr)}</strong> • Data: <strong>${dateFormatterShort.format(new Date())}</strong></p>
+      </div>
+    </div>
+    <div class="chat-area">
+      ${msgsHtml}
+    </div>
+    <div class="footer-bar">
+      <div class="badges">
+        <div class="badge">📊 ${sorted.length} mensagens</div>
+        <div class="badge">👤 Alvo: &lt;@${escapeHtml(targetIdsStr)}&gt;</div>
+      </div>
+      <div>Transcript gerado automaticamente • ${dateFormatterShort.format(new Date())}</div>
+    </div>
+  </div>
 </body>
 </html>`;
 }
 
-function generateTxt(messages, channel, staffName, motivo, targetId, targetName) {
+function generateTxt(messages, channel, staffName, motivo, targetNamesStr) {
   const sorted = [...messages].sort((a, b) => a.createdAt - b.createdAt);
   const lines = [
     '🧹 MENSAGENS APAGADAS',
     `Canal: #${channel.name}`,
     `Staff: ${staffName}`,
     `Motivo: ${motivo}`,
-    `Alvo: ${targetId} (${targetName})`,
+    `Alvo(s): ${targetNamesStr}`,
     `Quantidade: ${sorted.length}`,
     '================================\n'
   ];
@@ -252,33 +386,38 @@ export async function execute(interaction, client) {
     const channel = interaction.channel;
     const targetUser = interaction.options.getUser('membro');
     const targetIdRaw = interaction.options.getString('alvo-id');
-    let targetId, targetName;
+    
+    let targetIds = [];
+    let targetNames = [];
 
     if (targetUser) {
-      targetId = targetUser.id;
-      targetName = targetUser.username;
+      targetIds.push(targetUser.id);
+      targetNames.push(targetUser.username);
     } else if (targetIdRaw) {
-      if (!/^\d{17,19}$/.test(targetIdRaw)) {
-        return interaction.editReply({ content: '❌ O ID deve ser numérico (17-19 dígitos).' });
+      // Aceita IDs separados por vírgula ou espaço
+      const parsedIds = targetIdRaw.split(/[, ]+/).filter(id => /^\d{17,19}$/.test(id));
+      if (parsedIds.length === 0) {
+        return interaction.editReply({ content: '❌ O(s) ID(s) deve(m) ser numérico(s) com 17-19 dígitos.' });
       }
-      targetId = targetIdRaw;
-      if (PRESET_IDS[targetId]) {
-        targetName = PRESET_IDS[targetId];
-      } else {
-        try {
-          const user = await client.users.fetch(targetId);
-          targetName = user.username;
-        } catch {
-          targetName = 'Utilizador Desconhecido';
+      targetIds = parsedIds;
+      for (const id of targetIds) {
+        if (PRESET_IDS[id]) {
+          targetNames.push(PRESET_IDS[id]);
+        } else {
+          try {
+            const user = await client.users.fetch(id);
+            targetNames.push(user.username);
+          } catch {
+            targetNames.push(`ID: ${id}`);
+          }
         }
       }
     } else {
-      targetId = DEFAULT_TARGET_ID;
-      targetName = PRESET_IDS[targetId] || 'Alvo predefinido';
+      // Por padrão sem opções, apaga tanto o Jockie Music como o pt.jp lyaz
+      targetIds = DEFAULT_TARGET_IDS;
+      targetNames = DEFAULT_TARGET_IDS.map(id => PRESET_IDS[id] || id);
     }
 
-    // PERMITE APAGAR: Removeu-se a restrição que impedia apagar se o targetId fosse igual ao bot que executa o comando.
-    
     const quantidade = interaction.options.getInteger('quantidade') || 50;
     const motivo = interaction.options.getString('motivo') || 'Limpeza de mensagens';
     const formato = interaction.options.getString('formato') || 'ambos';
@@ -296,12 +435,12 @@ export async function execute(interaction, client) {
       lastId = batch.last().id;
     }
 
-    // Filtra as mensagens pelo ID pretendido (ex: 759343605726052392 ou outro)
-    const targetMessages = collected.filter(msg => msg.author.id === targetId);
+    // Filtra as mensagens pelos IDs selecionados (Jockie Music, pt.jp lyaz, etc.)
+    const targetMessages = collected.filter(msg => targetIds.includes(msg.author.id));
     const totalFound = targetMessages.size;
 
     if (totalFound === 0) {
-      return interaction.editReply({ content: `ℹ️ Nenhuma mensagem de <@${targetId}> (${targetName}) encontrada nas últimas ${collected.size} mensagens.` });
+      return interaction.editReply({ content: `ℹ️ Nenhuma mensagem dos alvos selecionados (${targetNames.join(', ')}) encontrada nas últimas ${collected.size} mensagens.` });
     }
 
     const now = Date.now();
@@ -330,23 +469,26 @@ export async function execute(interaction, client) {
     const baseName = `transcript-${safeChannelName}-${timestamp}`;
     const files = [];
 
+    const targetIdsStr = targetIds.join(', ');
+    const targetNamesStr = targetNames.join(', ');
+
     if (formato === 'html' || formato === 'ambos') {
-      const html = generatePrettyHTML(msgArray, channel, interaction.user.username, motivo, targetId, targetName);
+      const html = generatePrettyHTML(msgArray, channel, interaction.user.username, motivo, targetIdsStr, targetNamesStr);
       files.push(new AttachmentBuilder(Buffer.from(html, 'utf-8'), { name: `${baseName}.html` }));
     }
     if (formato === 'txt' || formato === 'ambos') {
-      const txt = generateTxt(msgArray, channel, interaction.user.username, motivo, targetId, targetName);
+      const txt = generateTxt(msgArray, channel, interaction.user.username, motivo, targetNamesStr);
       files.push(new AttachmentBuilder(Buffer.from(txt, 'utf-8'), { name: `${baseName}.txt` }));
     }
 
     const embed = new EmbedBuilder()
       .setTitle('🧹 Mensagens Apagadas')
-      .setDescription(`📊 **Quantidade:** ${deletedCount}\n👤 **Alvo:** <@${targetId}> (${targetName})\n👮 **Staff:** <@${interaction.user.id}>\nℹ️ **Motivo:** ${motivo}`)
-      .setColor(0xFF0000)
+      .setDescription(`📊 **Quantidade:** ${deletedCount}\n👤 **Alvo(s):** ${targetNamesStr}\n👮 **Staff:** <@${interaction.user.id}>\nℹ️ **Motivo:** ${motivo}`)
+      .setColor(0x5865F2)
       .setTimestamp();
 
     await channel.send({ embeds: [embed], files });
-    await interaction.editReply({ content: `✅ ${deletedCount} mensagens de <@${targetId}> apagadas com sucesso.` });
+    await interaction.editReply({ content: `✅ ${deletedCount} mensagens apagadas com sucesso.` });
 
   } catch (error) {
     console.error('[Apgrmsgbot] Erro:', error);
