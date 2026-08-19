@@ -1,6 +1,5 @@
 // ==================== FAQ DATABASE ====================
 export const FAQ_DATABASE = {
-    // ✅ ENTRADA CÂMARA 0 (prioridade máxima)
     "camara0": {
         keywords: ["camara", "camera", "0", "configurar camara", "camara 0", "camera 0", "console", "developer", "config.cfg", "modo desenvolvedor", "ativar camara", "camera livre", "tecla 0", "numpad", "teleportar", "g_developer", "g_console"],
         titulo: "🎥 Como ativar e usar a Câmara 0 (câmara livre) no ETS2/ATS",
@@ -36,15 +35,15 @@ export const FAQ_DATABASE = {
         resposta: (cfg) => `📊 **Capacidade:** Até 128 jogadores
 🆔 **ID do Comboio:** \`85568392935839115\`
 🔍 **Nome para pesquisar:** Portugal Alfa Community
-🔗 **Coleção Steam:** [Clique aqui para subscrever](https://steamcommunity.com/sharedfiles/filedetails/?id=3665511189)
+🔗 **Coleção Steam:** [Clique aqui](https://steamcommunity.com/sharedfiles/filedetails/?id=3665511189)
 
 📜 **Regras de Condução:**
 • Condução defensiva
-• Distância de segurança por causa do lag
+• Distância de segurança
 • Respeito nas zonas de carga
 • Zero toxicidade no Rádio CB
 
-⚠️ Precisas de mais ajuda? Clica em **🎫 Abrir ticket** em baixo!`
+⚠️ Precisas de mais ajuda? Clica em **🎫 Abrir ticket**!`
     },
 
     "recrutamento": {
@@ -58,7 +57,7 @@ export const FAQ_DATABASE = {
 • Cumprir quilometragem mínima: 15.000 KM/mês (≈ 500 km/dia)
 • Foco no ranking nacional respeitando os 0 aos 100 km/h
 
-📲 **Trucky:** [Download aqui](https://hub.truckyapp.com/)
+📲 **Trucky:** [hub.truckyapp.com](https://hub.truckyapp.com/)
 📝 **Candidatura:** <#${cfg.CANAL_TICKETS_RECRUTAMENTO}>
 
 ⏳ **Aviso:** Não cumprimento dos requisitos em 60 dias pode resultar no desligamento. Após esse período, podes continuar nas outras atividades do Discord.
@@ -73,8 +72,8 @@ export const FAQ_DATABASE = {
 
 💡 **Recomendação:**
 • Verifica se tens a versão mais recente do ETS2LA
-• Alguns mods do trucksmp podem não ser compatíveis de imediato
-• Quando sair atualização do trucksmp, será feito na versão mais recente
+• Alguns mods do trucksmp podem não ser compatíveis
+• Aguarda atualizações após updates do jogo
 
 📺 **Tutorial base:** [VR Tutoriais Marco Pereira](https://youtu.be/mDBtpdlwGms)
 
@@ -84,16 +83,16 @@ Se precisares de ajuda específica, abre ticket!`
     "mods": {
         keywords: ["mods", "mod", "atualização", "trucksmp", "workshop", "plugin", "addon"],
         titulo: "📦 Mods e Atualizações",
-        resposta: (cfg) => `⚠️ **Aviso importante:** Se sair atualização do trucksmp, temos mesmo que esperar pela versão compatível.
+        resposta: (cfg) => `⚠️ **Aviso importante:** Se sair atualização do TruckersMP, temos que esperar pela versão compatível.
 
 🔗 **Coleção oficial:** [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3665511189)
 
 💡 **Dicas:**
 • Usa sempre a coleção oficial da Steam
-• Não instales mods não aprovados para evitar incompatibilidades
-• Verifica a ordem de carregamento dos mods se tiveres problemas
+• Não instales mods não aprovados
+• Verifica a ordem de carregamento dos mods
 
-Se o jogo crashar após atualização, aguarda pela compatibilização!`
+Se o jogo crashar, remove mods recentes e verifica ficheiros na Steam.`
     },
 
     "vr": {
@@ -104,27 +103,25 @@ Se o jogo crashar após atualização, aguarda pela compatibilização!`
 💡 **Como jogar Euro Truck em VR e mostrar no monitor:**
 O vídeo acima explica a configuração base completa.
 
-📝 **Nota:** A configuração do Diego é baseada neste vídeo. Se precisares de ajuda específica com a tua configuração, o melhor é veres o tutorial no YouTube.
+📝 **Nota:** A configuração do Diego é baseada neste vídeo. Se precisares de ajuda específica, vê o tutorial.
 
 ⚠️ Gráficos no Meta Quest 3/3S dependem muito da configuração do PC. Verifica drivers atualizados!`
     },
 
     "trucky": {
-        keywords: ["trucky", "app", "aplicação", "tracker", "logbook", "registo"],
+        keywords: ["trucky", "app", "aplicação", "tracker", "logbook", "registo", "hub"],
         titulo: "📲 Trucky App",
         resposta: (cfg) => `📲 **Trucky** é essencial para gerir e monitorizar toda a atividade da empresa.
 
 🔗 **Download:** [hub.truckyapp.com](https://hub.truckyapp.com/)
-
 📺 **Como instalar:** https://www.youtube.com/watch?v=jiGT1pBiLWs
-
 📺 **Como solicitar vaga:** https://www.youtube.com/watch?v=5Te6tmE2tWM
 
 ✅ **O que fazer:**
 • Instala a app
-• Liga-a ao teu perfil Steam/ETS2
-• Regista as tuas viagens automaticamente
-• Cumpre os 15.000 KM/mês
+• Liga ao Steam/ETS2
+• Regista viagens automaticamente
+• Cumpre 15.000 KM/mês
 
 💡 Sem o Trucky não é possível fazer parte da Portugal Alfa Truckers!
 
@@ -153,22 +150,14 @@ export function encontrarRespostaFAQ(pergunta) {
 
     for (const [key, data] of Object.entries(FAQ_DATABASE)) {
         let score = 0;
-
-        // Palavras-chave da entrada
         data.keywords.forEach(kw => {
             if (pergunta.toLowerCase().includes(kw.toLowerCase())) score += 5;
         });
-
-        // Palavras do título
         const textoCompleto = (data.titulo + " placeholder").toLowerCase();
         palavras.forEach(palavra => {
             if (textoCompleto.includes(palavra.toLowerCase())) score += 2;
         });
-
-        // Bónus para perguntas muito específicas (câmara 0)
-        if (key === "camara0" && pergunta.toLowerCase().includes("camara")) {
-            score += 10;
-        }
+        if (key === "camara0" && pergunta.toLowerCase().includes("camara")) score += 10;
 
         if (score > melhorScore) {
             melhorScore = score;
@@ -177,16 +166,7 @@ export function encontrarRespostaFAQ(pergunta) {
     }
 
     if (melhorMatch && melhorScore >= 5) {
-        return {
-            found: true,
-            titulo: melhorMatch.titulo,
-            texto: melhorMatch.resposta
-        };
+        return { found: true, titulo: melhorMatch.titulo, texto: melhorMatch.resposta };
     }
-
-    return {
-        found: false,
-        titulo: "🔍 A pesquisar...",
-        texto: "A procurar informações na internet..."
-    };
+    return { found: false, titulo: "🔍 A pesquisar...", texto: "A procurar informações na internet..." };
 }
