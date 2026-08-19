@@ -1,64 +1,94 @@
 import { EmbedBuilder } from "discord.js";
-import { CONFIG } from "../config/index.js";
 
-// Define aqui o ID do teu cargo de regras (substitui pelo ID real)
-const ID_CARGO_REGRAS = "1534970663344017479"; 
+// IDs dos Servidores
+const GUILD_PRINCIPAL_ID = "932093509060689933";
+const GUILD_LOGS_ID = "1510401803974475947";
+
+// IDs dos Canais de Logs (Servidor de Logs)
+const CANAL_LOGS_MEMBROS = "1510402309929042060";
+const CANAL_LOGS_REGRAS = "1539682562794852474";
+
+// ID do Embed das Regras
+const EMBED_REGRAS_ID = "1539040418107367425";
 
 export async function handleGuildMemberUpdate(oldMember, newMember, client) {
-  const logChannel = await newMember.guild.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
-  if (!logChannel) return;
+  // Executa apenas se a alteração acontecer no Servidor Principal
+  if (newMember.guild.id !== GUILD_PRINCIPAL_ID) return;
 
-  // Comparação para detetar cargos adicionados
+  const guildLogs = await client.guilds.fetch(GUILD_LOGS_ID).catch(() => null);
+  if (!guildLogs) return;
+
+  // Comparação de Cargos Adicionados
   const addedRoles = newMember.roles.cache.filter(role => !oldMember.roles.cache.has(role.id));
 
   if (addedRoles.size > 0) {
-    const aceitouRegras = addedRoles.has(ID_CARGO_REGRAS);
-    
-    // Mapeia os cargos para menções diretas (evita o erro "@cargo desconhecido")
-    const rolesList = addedRoles.map(r => `${r}`).join(" e ");
+    // Nomes dos cargos formatados em texto simples (evita o erro @cargo desconhecido)
+    const rolesNames = addedRoles.map(r => `\`${r.name}\``).join(" | ");
 
-    // Se aceitou as regras, mostra o título personalizado, senão mostra "Membro Atualizado"
-    const titulo = aceitouRegras ? "📝 Regras aceites ✅" : "📝 Membro Atualizado";
+    // Verifica se o cargo atribuído tem a ver com as regras
+    const eRegras = addedRoles.some(r => 
+      r.name.toLowerCase().includes("regras") || 
+      r.name.toLowerCase().includes("verificado")
+    );
 
-    const embed = new EmbedBuilder()
-      .setColor(0x57F287) // Cor Verde
-      .setThumbnail(newMember.user.displayAvatarURL({ dynamic: true }))
-      .setTitle(titulo)
-      .setDescription(`${newMember} foi atualizado.`)
-      .addFields(
-        { 
-          name: "Alterações", 
-          value: `➕ **Cargos adicionados:** ${rolesList}`, 
-          inline: false 
-        }
-      )
-      .setFooter({ text: `ID: ${newMember.id}` })
-      .setTimestamp();
+    if (eRegras) {
+      // Log exclusivo para o Canal de Regras (1539682562794852474)
+      const canalRegras = await guildLogs.channels.fetch(CANAL_LOGS_REGRAS).catch(() => null);
+      if (canalRegras) {
+        const embedRegras = new EmbedBuilder()
+          .setColor(0x57F287) // Verde
+          .setThumbnail(newMember.user.displayAvatarURL({ dynamic: true }))
+          .setTitle("📝 Regras aceites ✅")
+          .setDescription(`${newMember} foi atualizado.`)
+          .addFields(
+            { name: "Alterações", value: `➕ **Cargos adicionados:** (${rolesNames})`, inline: false }
+          )
+          .setFooter({ text: `ID: ${newMember.id} • Mensagem Regras: ${EMBED_REGRAS_ID}` })
+          .setTimestamp();
 
-    return logChannel.send({ embeds: [embed] });
+        await canalRegras.send({ embeds: [embedRegras] });
+      }
+    } else {
+      // Log para o Canal Geral de Membros (1510402309929042060)
+      const canalMembros = await guildLogs.channels.fetch(CANAL_LOGS_MEMBROS).catch(() => null);
+      if (canalMembros) {
+        const embedMembros = new EmbedBuilder()
+          .setColor(0x57F287) // Verde
+          .setThumbnail(newMember.user.displayAvatarURL({ dynamic: true }))
+          .setTitle("📝 Membro Atualizado")
+          .setDescription(`${newMember} foi atualizado.`)
+          .addFields(
+            { name: "Alterações", value: `➕ **Cargos adicionados:** (${rolesNames})`, inline: false }
+          )
+          .setFooter({ text: `ID: ${newMember.id}` })
+          .setTimestamp();
+
+        await canalMembros.send({ embeds: [embedMembros] });
+      }
+    }
+    return;
   }
 
-  // Comparação para detetar cargos removidos
+  // Comparação de Cargos Removidos
   const removedRoles = oldMember.roles.cache.filter(role => !newMember.roles.cache.has(role.id));
 
   if (removedRoles.size > 0) {
-    const rolesList = removedRoles.map(r => `${r}`).join(" e ");
+    const canalMembros = await guildLogs.channels.fetch(CANAL_LOGS_MEMBROS).catch(() => null);
+    if (!canalMembros) return;
 
-    const embed = new EmbedBuilder()
-      .setColor(0xED4245) // Cor Vermelha
+    const rolesNames = removedRoles.map(r => `\`${r.name}\``).join(" | ");
+
+    const embedRemovido = new EmbedBuilder()
+      .setColor(0xED4245) // Vermelho
       .setThumbnail(newMember.user.displayAvatarURL({ dynamic: true }))
       .setTitle("📝 Membro Atualizado")
       .setDescription(`${newMember} foi atualizado.`)
       .addFields(
-        { 
-          name: "Alterações", 
-          value: `➖ **Cargos removidos:** ${rolesList}`, 
-          inline: false 
-        }
+        { name: "Alterações", value: `➖ **Cargos removidos:** (${rolesNames})`, inline: false }
       )
       .setFooter({ text: `ID: ${newMember.id}` })
       .setTimestamp();
 
-    return logChannel.send({ embeds: [embed] });
+    await canalMembros.send({ embeds: [embedRemovido] });
   }
 }
