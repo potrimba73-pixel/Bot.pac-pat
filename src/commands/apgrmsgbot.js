@@ -103,7 +103,7 @@ function getMessageText(msg) {
         continue;
       }
 
-      // --- Música (Started playing) - MELHORADO ---
+      // --- Música (Started playing) ---
       if (
         embed.url?.includes('spotify.com') ||
         embed.provider?.name === 'Spotify' ||
@@ -112,13 +112,11 @@ function getMessageText(msg) {
       ) {
         let lines = [];
 
-        // Caso haja descrição com várias linhas
         if (embed.description) {
           const descLines = embed.description.split('\n').map(s => s.trim()).filter(Boolean);
           const hasStartedPlaying = descLines.some(line => /^[-•*]\s*Started playing/i.test(line));
 
           if (hasStartedPlaying) {
-            // Processar cada linha individualmente
             for (const line of descLines) {
               const match = line.match(/^[-•*]\s*Started playing\s+(.+?)\s+by\s+(.+)/i);
               if (match) {
@@ -126,16 +124,13 @@ function getMessageText(msg) {
                 const artist = match[2].trim();
                 lines.push(`- Started playing **${title}** by ${artist}`);
               } else {
-                // Se não encaixar, manter a linha original
                 lines.push(line);
               }
             }
           } else {
-            // Caso normal: uma única música (ou description sem lista)
             let title = embed.title || '';
             let artist = '';
 
-            // Extrair artista da description (ex: "by Ivandro" ou "Ivandro • Moça")
             const byMatch = embed.description.match(/by\s+(.+)/i);
             if (byMatch) {
               artist = byMatch[1].trim();
@@ -152,7 +147,6 @@ function getMessageText(msg) {
               artist = embed.author.name;
             }
 
-            // Se título tiver " - ", separar
             if (!artist && title.includes('-')) {
               const parts = title.split('-').map(s => s.trim());
               if (parts.length === 2) {
@@ -171,7 +165,6 @@ function getMessageText(msg) {
             lines.push(result);
           }
         } else {
-          // Sem description, usar apenas título
           let title = embed.title || '';
           let artist = '';
           if (embed.author?.name) artist = embed.author.name;
@@ -205,12 +198,10 @@ function getMessageText(msg) {
     }
   }
 
-  // Se ainda não tiver texto e for Jockie, pode ser uma mensagem de texto simples (ex: "Did you know...")
   if (!text && isJockie && msg.content) {
     text = msg.content;
   }
 
-  // Anexos e stickers
   if (msg.attachments?.size) {
     for (const [, att] of msg.attachments) {
       text += (text ? '\n' : '') + `📎 ${att.name} (${att.url})`;
@@ -226,7 +217,7 @@ function getMessageText(msg) {
 }
 
 // ============================================================
-// GERAR HTML (com estrutura visual limpa E markdown/Links)
+// GERAR HTML (com Markdown e Links Renderizados)
 // ============================================================
 function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targetName) {
   const guild = channel.guild;
@@ -242,7 +233,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
     let rawText = getMessageText(msg);
 
     // ============================================================
-    // [NOVO] Processamento de Markdown e Links
+    // Lógica de Processamento: Markdown e Links
     // ============================================================
     let processed = rawText;
     const placeholders = [];
@@ -278,17 +269,17 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
     // 5. Links clicáveis (URLs)
     processed = processed.replace(/(https?:\/\/[^\s]+)/g, (match) => {
       const id = placeholders.length;
-      // Cria o link, escapando a URL para garantir segurança
       placeholders.push(`<a href="${escapeHtml(match)}" target="_blank" rel="noopener noreferrer">${escapeHtml(match)}</a>`);
       return `{__HTML_PLACEHOLDER__${id}__}`;
     });
 
-    // 6. Escapar o resto do texto (protege contra XSS, exceto os placeholders)
+    // 6. Escapar o resto do texto (garante que não haja injecção de código)
     let texto = escapeHtml(processed);
 
-    // 7. Recolocar as tags seguras nos placeholders
+    // 7. Recolocar as tags utilizando Regex Global para substituir TODAS as ocorrências
     for (let i = 0; i < placeholders.length; i++) {
-      texto = texto.replace(`{__HTML_PLACEHOLDER__${i}__}`, placeholders[i]);
+      const regex = new RegExp(`{__HTML_PLACEHOLDER__${i}__}`, 'g');
+      texto = texto.replace(regex, placeholders[i]);
     }
 
     // 8. Converter quebras de linha para <br>
@@ -316,7 +307,6 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
     </div>`;
   }).join('\n');
 
-  // (O resto do HTML e CSS permanece igual ao seu código original)
   return `<!DOCTYPE html>
 <html lang="pt">
 <head>
@@ -446,7 +436,6 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
       word-wrap: break-word;
       color: #dbdee1;
     }
-    /* Estilo dos links clicáveis */
     .text a {
       color: #00a8fc;
       text-decoration: none;
@@ -660,9 +649,14 @@ export async function execute(interaction, client) {
   const formato = interaction.options.getString('formato') || 'ambos';
 
   // ============================================================
-  // IMPORTANTE: Defere a resposta IMEDIATAMENTE para evitar expiração
+  // CORREÇÃO: Tratar o deferReply com segurança para evitar o erro 10062
   // ============================================================
-  await interaction.deferReply({ flags: 64 });
+  try {
+    await interaction.deferReply({ flags: 64 });
+  } catch (err) {
+    console.error('[Erro Crítico] Interação expirou antes de deferir:', err);
+    return; // Se a interação morreu, não é possível responder
+  }
 
   try {
     // 4. Buscar mensagens (paginado)
