@@ -20,9 +20,9 @@ import { handleMessageCreate } from "./src/events/messageCreate.js";
 import { handleMessageDelete } from "./src/events/messageDelete.js";
 import { handleMessageUpdate } from "./src/events/messageUpdate.js";
 
-// ===== HANDLERS ADICIONAIS (IMPORTANTES) =====
-import guildMemberUpdateHandler from "./src/events/guildMemberUpdate.js";
-import voiceStateUpdateHandler from "./src/events/voiceStateUpdate.js";
+// ===== HANDLERS ADICIONAIS (IMPORTANTES - CORRIGIDOS) =====
+import guildMemberUpdate from "./src/events/guildMemberUpdate.js";
+import voiceStateUpdate from "./src/events/voiceStateUpdate.js";
 
 // ===== SERVIÇOS EXTERNOS =====
 import {
@@ -61,8 +61,8 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message, Partials.GuildMember],
   sweepers: {
     messages: {
-      interval: 300, // 5 minutos
-      lifetime: 1800, // 30 minutos
+      interval: 300,
+      lifetime: 1800,
     },
   },
 });
@@ -94,7 +94,7 @@ client.on(Events.GuildMemberRemove, (member) =>
 
 // ---- ATUALIZAÇÃO DE MEMBRO (cargos/nickname) ----
 client.on(Events.GuildMemberUpdate, (oldMember, newMember) =>
-  guildMemberUpdateHandler.execute(oldMember, newMember, client)
+  guildMemberUpdate.execute(oldMember, newMember, client)
 );
 
 // ---- INTERAÇÕES (comandos, botões, menus, modais) ----
@@ -115,7 +115,7 @@ client.on(Events.MessageUpdate, (oldMessage, newMessage) =>
 
 // ---- ESTADO DE VOZ ----
 client.on(Events.VoiceStateUpdate, (oldState, newState) =>
-  voiceStateUpdateHandler.execute(oldState, newState, client)
+  voiceStateUpdate.execute(oldState, newState, client)
 );
 
 // ---- LOGS EXTERNOS: CANAIS ----
@@ -210,8 +210,6 @@ process.on("uncaughtException", (error) =>
     console.log("[INDEX] ✅ Login efetuado com sucesso!");
   } catch (error) {
     console.error("[INDEX] ❌ Erro fatal no login:", error);
-    // Mantém o servidor HTTP a funcionar mesmo se o login falhar,
-    // mas encerra o processo com código 1 para o Render reiniciar.
     process.exit(1);
   }
 })();
