@@ -12,8 +12,6 @@ import {
 const PRESET_IDS = {
   '412347553141751808': 'Jockie Music',
   '759343605726052392': 'pt.jp lyaz',
-  '770599668710637608': 'Utilizador 7705...',
-  '456226577798135808': 'Utilizador 4562...',
 };
 
 const DEFAULT_TARGET_IDS = Object.keys(PRESET_IDS);
@@ -54,22 +52,17 @@ const dateFormatterShort = new Intl.DateTimeFormat('pt-PT', {
   timeZone: TIMEZONE,
 });
 
+// Captura o nome de exibição no Discord (Server Nickname > Global Name > Username)
 function getDisplayName(msg) {
+  if (msg.member?.displayName) return msg.member.displayName;
+  if (msg.author?.globalName) return msg.author.globalName;
+  if (msg.author?.username) return msg.author.username;
   if (PRESET_IDS[msg.author.id]) return PRESET_IDS[msg.author.id];
-  if (msg.member && msg.member.displayName && msg.member.displayName.toUpperCase() !== 'BOT') {
-    return msg.member.displayName;
-  }
-  if (msg.author.globalName && msg.author.globalName.toUpperCase() !== 'BOT') {
-    return msg.author.globalName;
-  }
-  if (msg.author.username && msg.author.username.toUpperCase() !== 'BOT') {
-    return msg.author.username;
-  }
   return `Utilizador (${msg.author.id.slice(0, 4)}...)`;
 }
 
 // ============================================================
-// PARSER DE MARKDOWN & SPOTIFY & EMBEDS COMPLETOS
+// PARSER DE MARKDOWN & EMBEDS
 // ============================================================
 function renderMarkdown(text) {
   if (!text) return '';
@@ -87,18 +80,9 @@ function renderMarkdown(text) {
   return processed;
 }
 
-function extractSpotifyEmbed(text) {
-  if (!text) return null;
-  const spotifyRegex = /https:\/\/open\.spotify\.com\/(playlist|track|album|artist)\/([a-zA-Z0-9]+)/;
-  const match = text.match(spotifyRegex);
-  if (!match) return null;
-  return { type: match[1], id: match[2], fullUrl: match[0] };
-}
-
 function renderEmbedHTML(embed) {
   const desc = embed.description || '';
 
-  // Tratamento especial para mensagens do tipo "Started playing" do Jockie Music
   if (desc.toLowerCase().includes('started playing')) {
     const match = desc.match(/\[(.*?)\]\((.*?)\)/);
     let songTitle = match ? match[1] : desc.replace(/.*Started playing\s*/i, '');
@@ -116,15 +100,12 @@ function renderEmbedHTML(embed) {
   }
 
   const color = embed.color ? `#${embed.color.toString(16).padStart(6, '0')}` : '#2f3136';
-
   let embedInner = '';
 
-  // Autor do Embed
   if (embed.author?.name) {
     embedInner += `<div class="embed-author">${renderMarkdown(embed.author.name)}</div>`;
   }
 
-  // Título do Embed
   if (embed.title) {
     const titleHtml = embed.url 
       ? `<a href="${escapeHtml(embed.url)}" target="_blank">${renderMarkdown(embed.title)}</a>`
@@ -132,12 +113,10 @@ function renderEmbedHTML(embed) {
     embedInner += `<div class="embed-title">${titleHtml}</div>`;
   }
 
-  // Descrição do Embed
   if (embed.description) {
     embedInner += `<div class="text-content">${renderMarkdown(embed.description)}</div>`;
   }
 
-  // Fields (Campos como Playlist Length, Tracks, etc.)
   if (embed.fields?.length) {
     let fieldsHtml = '<div class="embed-fields">';
     for (const field of embed.fields) {
@@ -151,13 +130,11 @@ function renderEmbedHTML(embed) {
     embedInner += fieldsHtml;
   }
 
-  // Thumbnail (Capa do álbum / imagem à direita)
   let thumbnailHtml = '';
   if (embed.thumbnail?.url) {
     thumbnailHtml = `<img class="embed-thumbnail" src="${escapeHtml(embed.thumbnail.url)}" alt="Thumbnail">`;
   }
 
-  // Footer
   if (embed.footer?.text) {
     embedInner += `<div class="embed-footer">${renderMarkdown(embed.footer.text)}</div>`;
   }
@@ -173,7 +150,6 @@ function renderEmbedHTML(embed) {
 
 function renderMessageContentHTML(msg) {
   let html = '';
-  const spotifyData = extractSpotifyEmbed(msg.content);
 
   if (msg.content) {
     let contentText = msg.content.replace(/<:spotify:[0-9]+>/g, '').trim();
@@ -181,23 +157,6 @@ function renderMessageContentHTML(msg) {
       contentText = renderMarkdown(contentText);
       html += `<div class="text-content">${contentText}</div>`;
     }
-  }
-
-  if (spotifyData && !msg.author.bot) {
-    const embedUrl = `https://open.spotify.com/embed/${spotifyData.type}/${spotifyData.id}?utm_source=generator&theme=0`;
-    html += `
-    <div class="spotify-widget-container">
-      <iframe 
-        style="border-radius:12px;" 
-        src="${embedUrl}" 
-        width="100%" 
-        height="152" 
-        frameBorder="0" 
-        allowfullscreen="" 
-        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" 
-        loading="lazy">
-      </iframe>
-    </div>`;
   }
 
   if (msg.embeds?.length) {
@@ -240,18 +199,26 @@ function getTxtContentRaw(msg) {
 }
 
 // ============================================================
-// GERADOR HTML ESTILO DISCORD DARK
+// GERADOR HTML COM FILTROS E ORDENAÇÃO
 // ============================================================
-function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, targetNamesStr) {
+function generatePrettyHTML(messages, channel, staffName, motivo, targetNamesStr) {
   const sorted = [...messages].sort((a, b) => a.createdAt - b.createdAt);
   const guildName = channel.guild ? channel.guild.name : 'Servidor';
   const guildIcon = channel.guild?.iconURL({ extension: 'png', size: 64 }) || '';
+
+  // Mapeamento único de utilizadores presentes para o filtro
+  const usersMap = new Map();
 
   const msgsHtml = sorted.map((msg) => {
     const avatar = msg.author.displayAvatarURL({ extension: 'png', size: 64 });
     const data = dateFormatter.format(msg.createdAt);
     const authorName = getDisplayName(msg);
     const isBot = msg.author.bot;
+    const timestamp = msg.createdTimestamp;
+
+    if (!usersMap.has(msg.author.id)) {
+      usersMap.set(msg.author.id, authorName);
+    }
 
     const appBadge = isBot ? `
       <span class="app-badge">
@@ -262,7 +229,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
       </span>` : '';
 
     return `
-    <div class="message-card">
+    <div class="message-card" data-author-id="${msg.author.id}" data-timestamp="${timestamp}">
       <img class="avatar" src="${avatar}" alt="Avatar" loading="lazy">
       <div class="content">
         <div class="header">
@@ -274,6 +241,12 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
       </div>
     </div>`;
   }).join('\n');
+
+  // Opções do Select de Filtro
+  let userOptions = '<option value="all">👥 Todos os Utilizadores</option>';
+  for (const [id, name] of usersMap.entries()) {
+    userOptions += `<option value="${id}">${escapeHtml(name)}</option>`;
+  }
 
   return `<!DOCTYPE html>
 <html lang="pt">
@@ -320,16 +293,32 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
     color: #fff;
     object-fit: cover;
   }
-  .top-info h1 {
-    font-size: 1.05rem;
-    color: #fff;
-    font-weight: 700;
+  .top-info h1 { font-size: 1.05rem; color: #fff; font-weight: 700; }
+  .top-info p { font-size: 0.8rem; color: #949ba4; margin-top: 2px; }
+  
+  /* BARRA DE CONTROLO DE FILTROS */
+  .controls-bar {
+    background-color: #232428;
+    padding: 10px 16px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+    border-bottom: 1px solid #1e1f22;
   }
-  .top-info p {
-    font-size: 0.8rem;
-    color: #949ba4;
-    margin-top: 2px;
+  .control-item {
+    background-color: #1e1f22;
+    color: #dbdee1;
+    border: 1px solid #35363c;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 0.82rem;
+    outline: none;
+    cursor: pointer;
   }
+  .control-item:focus { border-color: #5865f2; }
+  .search-input { flex: 1; min-width: 150px; }
+
   .chat-area {
     padding: 16px;
     display: flex;
@@ -343,12 +332,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
     display: flex;
     gap: 12px;
   }
-  .avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
+  .avatar { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; }
   .content { flex: 1; overflow: hidden; }
   .header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
   .author { font-weight: 600; color: #f2f3f5; font-size: 0.95rem; }
@@ -371,7 +355,6 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
   .text-content a { color: #00a8fc; text-decoration: none; }
   .text-content a:hover { text-decoration: underline; }
 
-  /* ESTILOS DE EMBED ESTILO DISCORD */
   .embed-box {
     background: #2b2d31;
     padding: 12px;
@@ -379,16 +362,11 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
     border-radius: 4px;
     max-width: 520px;
   }
-  .embed-body {
-    display: flex;
-    gap: 16px;
-    justify-content: space-between;
-  }
+  .embed-body { display: flex; gap: 16px; justify-content: space-between; }
   .embed-main { flex: 1; }
   .embed-author { font-size: 0.8rem; font-weight: 600; color: #b5bac1; margin-bottom: 4px; }
   .embed-title { font-size: 0.95rem; font-weight: 700; color: #fff; margin-bottom: 6px; }
   .embed-title a { color: #00a8fc; text-decoration: none; }
-  .embed-title a:hover { text-decoration: underline; }
   .embed-fields { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
   .embed-field { flex: 1 1 100%; }
   .embed-field.inline { flex: 1 1 30%; min-width: 100px; }
@@ -412,8 +390,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
   .spotify-logo { flex-shrink: 0; }
   .started-text { color: #949ba4; font-size: 0.85rem; font-weight: 500; }
   .started-link { color: #00a8fc; font-weight: 600; text-decoration: none; font-size: 0.85rem; }
-  .started-link:hover { text-decoration: underline; }
-  
+
   .footer-bar {
     background-color: #2b2d31;
     padding: 10px 18px;
@@ -425,11 +402,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
     color: #949ba4;
   }
   .badges { display: flex; gap: 8px; }
-  .badge {
-    background-color: #1e1f22;
-    padding: 3px 8px;
-    border-radius: 4px;
-  }
+  .badge { background-color: #1e1f22; padding: 3px 8px; border-radius: 4px; }
 </style>
 </head>
 <body>
@@ -441,17 +414,72 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
         <p>Servidor: <strong>${escapeHtml(guildName)}</strong> • Canal: <strong>#${escapeHtml(channel.name)}</strong> • Staff: <strong>${escapeHtml(staffName)}</strong></p>
       </div>
     </div>
-    <div class="chat-area">
+
+    <!-- CONTROLES DE FILTRO E ORDENAÇÃO -->
+    <div class="controls-bar">
+      <select id="userFilter" class="control-item" onchange="applyFilters()">
+        ${userOptions}
+      </select>
+      
+      <select id="sortOrder" class="control-item" onchange="applyFilters()">
+        <option value="asc">⏳ Antigas primeiro</option>
+        <option value="desc">⌛ Recentes primeiro</option>
+      </select>
+
+      <input type="text" id="searchInput" class="control-item search-input" placeholder="🔍 Pesquisar mensagem..." oninput="applyFilters()">
+    </div>
+
+    <div class="chat-area" id="chatArea">
       ${msgsHtml}
     </div>
+
     <div class="footer-bar">
       <div class="badges">
-        <div class="badge">📊 ${sorted.length} mensagens</div>
+        <div class="badge">📊 <span id="visibleCount">${sorted.length}</span> / ${sorted.length} mensagens</div>
         <div class="badge">👤 Alvo(s): ${escapeHtml(targetNamesStr)}</div>
       </div>
       <div>Transcript gerado em ${dateFormatterShort.format(new Date())}</div>
     </div>
   </div>
+
+  <script>
+    function applyFilters() {
+      const selectedUser = document.getElementById('userFilter').value;
+      const order = document.getElementById('sortOrder').value;
+      const query = document.getElementById('searchInput').value.toLowerCase();
+      
+      const chatArea = document.getElementById('chatArea');
+      const cards = Array.from(chatArea.getElementsByClassName('message-card'));
+      
+      let visibleCount = 0;
+
+      // Filtragem por Utilizador e Pesquisa
+      cards.forEach(card => {
+        const authorId = card.getAttribute('data-author-id');
+        const textContent = card.innerText.toLowerCase();
+        
+        const matchesUser = (selectedUser === 'all' || authorId === selectedUser);
+        const matchesQuery = (!query || textContent.includes(query));
+
+        if (matchesUser && matchesQuery) {
+          card.style.display = 'flex';
+          visibleCount++;
+        } else {
+          card.style.display = 'none';
+        }
+      });
+
+      // Ordenação das mensagens
+      cards.sort((a, b) => {
+        const timeA = parseInt(a.getAttribute('data-timestamp'));
+        const timeB = parseInt(b.getAttribute('data-timestamp'));
+        return order === 'asc' ? timeA - timeB : timeB - timeA;
+      });
+
+      cards.forEach(card => chatArea.appendChild(card));
+      document.getElementById('visibleCount').innerText = visibleCount;
+    }
+  </script>
 </body>
 </html>`;
 }
@@ -595,11 +623,10 @@ export async function execute(interaction, client) {
     const baseName = `transcript-${safeChannelName}-${timestamp}`;
     const files = [];
 
-    const targetIdsStr = targetIds.join(', ');
     const targetNamesStr = targetNames.join(', ');
 
     if (formato === 'html' || formato === 'ambos') {
-      const html = generatePrettyHTML(msgArray, channel, interaction.user.username, motivo, targetIdsStr, targetNamesStr);
+      const html = generatePrettyHTML(msgArray, channel, interaction.user.username, motivo, targetNamesStr);
       files.push(new AttachmentBuilder(Buffer.from(html, 'utf-8'), { name: `${baseName}.html` }));
     }
     if (formato === 'txt' || formato === 'ambos') {
