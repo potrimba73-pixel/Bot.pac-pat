@@ -53,38 +53,55 @@ const dateFormatterShort = new Intl.DateTimeFormat('pt-PT', {
 });
 
 // ============================================================
-// [CORRIGIDO] CONVERTE MARKDOWN DO DISCORD DIRETAMENTE PARA HTML
+// FUNÇÕES AUXILIARES PARA NOMES E DISCRIMINADORES
+// ============================================================
+function getDisplayName(msg) {
+  if (msg.member) return msg.member.displayName;
+  if (msg.guild) {
+    const member = msg.guild.members.cache.get(msg.author.id);
+    if (member) return member.displayName;
+  }
+  return msg.author.globalName || msg.author.username;
+}
+
+function getDiscriminator(author) {
+  const disc = author.discriminator || '0';
+  return parseInt(disc) || 0;
+}
+
+// ============================================================
+// UTIL: CONVERTER MARKDOWN PARA HTML (COM RECURSÃO)
 // ============================================================
 function renderMarkdown(text) {
   if (!text) return '';
 
   let processed = text;
 
-  // 1. Substituir emojis personalizados do Discord (ex: <:spotify:837...>) por texto
+  // 1. Substituir emojis personalizados do Discord por texto simples (para o HTML não quebrar)
   processed = processed.replace(/<a?:([a-zA-Z0-9_]+):[0-9]+>/g, ':$1:');
 
-  // 2. [CORREÇÃO IMPORTANTE] Processar Links do Discord [texto](url) PRIMEIRO!
+  // 2. Links com texto no formato [Texto](URL) - PRIORIDADE MÁXIMA
   processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, textContent, url) => {
-    return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${textContent}</a>`;
+    const safeText = renderMarkdown(textContent);
+    return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${safeText}</a>`;
   });
 
-  // 3. Processar Links soltos (URLs que não estão em formato [](url))
-  // A regex para em " ou < > para evitar links partidos com aspas
-  processed = processed.replace(/(https?:\/\/[^\s"<>]+)/g, (match) => {
+  // 3. Links soltos (URLs normais sem colchetes)
+  processed = processed.replace(/(https?:\/\/[^\s]+)/g, (match) => {
     return `<a href="${escapeHtml(match)}" target="_blank" rel="noopener noreferrer">${escapeHtml(match)}</a>`;
   });
 
   // 4. Negrito **texto**
-  processed = processed.replace(/\*\*([^*]+?)\*\*/g, (match, p1) => `<strong>${escapeHtml(p1)}</strong>`);
+  processed = processed.replace(/\*\*([^*]+?)\*\*/g, (match, p1) => `<strong>${renderMarkdown(p1)}</strong>`);
   
   // 5. Itálico *texto*
-  processed = processed.replace(/\*([^*]+?)\*/g, (match, p1) => `<em>${escapeHtml(p1)}</em>`);
+  processed = processed.replace(/\*([^*]+?)\*/g, (match, p1) => `<em>${renderMarkdown(p1)}</em>`);
 
   // 6. Sublinhado __texto__
-  processed = processed.replace(/__([^_]+?)__/g, (match, p1) => `<u>${escapeHtml(p1)}</u>`);
+  processed = processed.replace(/__([^_]+?)__/g, (match, p1) => `<u>${renderMarkdown(p1)}</u>`);
 
   // 7. Riscado ~~texto~~
-  processed = processed.replace(/~~([^~]+?)~~/g, (match, p1) => `<s>${escapeHtml(p1)}</s>`);
+  processed = processed.replace(/~~([^~]+?)~~/g, (match, p1) => `<s>${renderMarkdown(p1)}</s>`);
 
   // 8. Quebras de linha
   processed = processed.replace(/\r\n/g, '<br>').replace(/\n/g, '<br>');
@@ -93,17 +110,14 @@ function renderMarkdown(text) {
 }
 
 // ============================================================
-// FUNÇÕES DE EXTRAÇÃO DE TEXTO
+// EXTRAÇÃO DE TEXTO PARA HTML (com conversão de emojis e markdown)
 // ============================================================
-
-// [PARA HTML] Extrai e organiza o conteúdo (Corrigido para o Jockie)
 function getMessageText(msg) {
   const isJockie = msg.author.id === '412347553141751808';
   let text = msg.content || '';
 
   if (msg.embeds?.length) {
     for (const embed of msg.embeds) {
-      // --- Processo Especial para o Jockie Music ---
       if (isJockie && embed.description) {
         // Playlist
         if (
@@ -125,7 +139,7 @@ function getMessageText(msg) {
               if (line.includes('Length')) length = line.replace(/.*Length\s*/, '').trim();
             }
           }
-          let result = '📋 **Added Playlist**';
+          let result = '**Added Playlist**';
           if (playlistName) result += `\n**Playlist:** ${playlistName}`;
           if (tracks) result += `\n**Tracks:** ${tracks}`;
           if (length) result += `\n**Length:** ${length}`;
@@ -134,15 +148,16 @@ function getMessageText(msg) {
           continue;
         }
 
-        // [CORREÇÃO] Se for música, usamos a descrição CRUA.
-        // O renderMarkdown vai processar o [**Título** by **Artista**](URL) automaticamente!
+        // Música - substitui 📺 por ▶️
         if (embed.description.toLowerCase().includes('started playing')) {
-          text += (text ? '\n' : '') + embed.description;
+          let desc = embed.description;
+          desc = desc.replace(/📺\s*Started playing/g, '▶️ Started playing');
+          text += (text ? '\n' : '') + desc;
           continue;
         }
       }
 
-      // --- Outros Embeds (Genérico) ---
+      // Outros Embeds (Genérico)
       let parts = [];
       if (embed.title) parts.push(`**${embed.title}**`);
       if (embed.description) parts.push(embed.description);
@@ -161,8 +176,10 @@ function getMessageText(msg) {
   return text || '(sem conteúdo)';
 }
 
-// [PARA TXT] Extrai o texto CRU exatamente como aparece no Discord
-function getTxtContent(msg) {
+// ============================================================
+// EXTRAÇÃO DE TEXTO PARA TXT (CONTEÚDO BRUTO, SEM MODIFICAR EMOJIS NEM MARKDOWN)
+// ============================================================
+function getTxtContentRaw(msg) {
   const isJockie = msg.author.id === '412347553141751808';
   let parts = [];
 
@@ -170,7 +187,6 @@ function getTxtContent(msg) {
 
   if (msg.embeds?.length) {
     for (const embed of msg.embeds) {
-      // Se for o Jockie, preservamos a descrição original que contém [Título](URL)
       if (isJockie) {
         if (embed.description) parts.push(embed.description);
         if (embed.url && !embed.description?.includes(embed.url)) {
@@ -221,19 +237,23 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
     const data = dateFormatter.format(msg.createdAt);
     const rawText = getMessageText(msg);
     const texto = renderMarkdown(rawText);
+    const authorName = getDisplayName(msg);
 
     const hue = (parseInt(msg.author.id.slice(0, 6), 16) % 360);
     const authorColor = msg.author.bot ? '#5865F2' : `hsl(${hue}, 70%, 55%)`;
-    const botBadge = msg.author.bot ? '<span class="bot-badge">BOT</span>' : '';
-    const appBadge = msg.author.bot ? '<span class="app-badge">APP</span>' : '';
+    const botBadge = msg.author.bot ? '<span class="badge bot">BOT</span>' : '';
+    const appBadge = msg.author.bot ? '<span class="badge app">APP</span>' : '';
     const rowClass = index % 2 === 0 ? 'message' : 'message alt';
+    // Borda lateral para embeds do Jockie
+    const isEmbed = msg.author.id === '412347553141751808' && msg.embeds?.length > 0;
+    const embedClass = isEmbed ? 'embed-border' : '';
 
     return `
-    <div class="${rowClass}">
+    <div class="${rowClass} ${embedClass}">
       <img class="avatar" src="${avatar}" alt="Avatar" loading="lazy">
       <div class="content">
         <div class="header">
-          <span class="author" style="color: ${authorColor};">${escapeHtml(msg.author.username)}</span>
+          <span class="author" style="color: ${authorColor};">${escapeHtml(authorName)}</span>
           ${botBadge} ${appBadge}
           <span class="time">${data}</span>
         </div>
@@ -247,33 +267,156 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Transcript - Limpeza</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #1e1f22; color: #dbdee1; font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; line-height: 1.6; }
-  .container { max-width: 900px; margin: 0 auto; background: #2b2d31; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
-  .header { background: #1e1f22; padding: 20px 24px; border-bottom: 1px solid #3a3c42; display: flex; align-items: center; gap: 16px; }
-  .header .guild-icon { width: 48px; height: 48px; border-radius: 50%; background: #2b2d31; border: 2px solid #3a3c42; object-fit: cover; }
+  body {
+    background: #1e1f22;
+    color: #dbdee1;
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    padding: 20px;
+    line-height: 1.5;
+    display: flex;
+    justify-content: center;
+  }
+  .container {
+    max-width: 900px;
+    width: 100%;
+    background: #313338;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+  }
+  .header {
+    background: #2b2d31;
+    padding: 16px 20px;
+    border-bottom: 1px solid #3a3c42;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .header .guild-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #1e1f22;
+    border: 2px solid #3a3c42;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
   .header .info { flex: 1; }
-  .header h1 { color: #ffffff; font-size: 20px; font-weight: 600; margin: 0; }
-  .header p { color: #949ba4; font-size: 13px; margin: 4px 0 0; }
+  .header h1 {
+    color: #ffffff;
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.2px;
+  }
+  .header p {
+    color: #949ba4;
+    font-size: 13px;
+    margin: 4px 0 0;
+  }
   .header p strong { color: #dbdee1; font-weight: 600; }
-  .messages { padding: 12px 16px; }
-  .message { display: flex; gap: 14px; padding: 10px 12px; border-radius: 6px; transition: background 0.15s; }
-  .message.alt { background: rgba(255,255,255,0.03); }
-  .message:hover { background: rgba(255,255,255,0.05); }
-  .avatar { width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; border: 1px solid #3a3c42; }
+  .messages {
+    padding: 8px 12px;
+    background: #2b2d31;
+  }
+  .message {
+    display: flex;
+    gap: 14px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    transition: background 0.1s;
+    position: relative;
+  }
+  .message.alt { background: rgba(255,255,255,0.02); }
+  .message:hover { background: rgba(255,255,255,0.04); }
+  .message.embed-border {
+    border-left: 4px solid #5865f2;
+    padding-left: 10px;
+    margin-left: 2px;
+  }
+  .avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 4px;
+    border: 1px solid #3a3c42;
+  }
   .content { flex: 1; min-width: 0; }
-  .header { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
-  .header .author { font-weight: 600; font-size: 15px; margin-right: 4px; }
-  .bot-badge { background: #5865f2; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.3px; }
-  .app-badge { background: #3ba55d; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.3px; }
-  .header .time { color: #72767d; font-size: 12px; font-weight: 400; margin-left: auto; }
-  .text { margin-top: 4px; font-size: 14px; white-space: pre-wrap; word-wrap: break-word; color: #dbdee1; }
-  .text a { color: #00a8fc; text-decoration: none; }
+  .header {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    margin-bottom: 2px;
+  }
+  .header .author {
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: -0.2px;
+  }
+  .badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    display: inline-block;
+  }
+  .badge.bot { background: #5865f2; color: #fff; }
+  .badge.app { background: #3ba55d; color: #fff; }
+  .header .time {
+    color: #72767d;
+    font-size: 11.5px;
+    font-weight: 400;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+  .text {
+    margin-top: 2px;
+    font-size: 14px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    color: #dbdee1;
+  }
+  .text a {
+    color: #00a8fc;
+    text-decoration: none;
+  }
   .text a:hover { text-decoration: underline; }
+  .text strong { color: #ffffff; font-weight: 600; }
   .text br + br { display: block; content: ''; margin-top: 4px; }
-  .footer { background: #1e1f22; padding: 16px 24px; border-top: 1px solid #3a3c42; text-align: center; color: #72767d; font-size: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
-  .footer .stats { display: flex; gap: 16px; color: #949ba4; }
-  .footer .stats span { background: #2b2d31; padding: 2px 10px; border-radius: 12px; font-size: 11px; }
-  @media (max-width: 600px) { .header { flex-direction: column; align-items: flex-start; } .header .time { margin-left: 0; } .message { padding: 8px 8px; gap: 10px; } .avatar { width: 36px; height: 36px; } }
+  .footer {
+    background: #2b2d31;
+    padding: 12px 20px;
+    border-top: 1px solid #3a3c42;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    color: #72767d;
+    font-size: 12px;
+  }
+  .footer .stats {
+    display: flex;
+    gap: 14px;
+    color: #949ba4;
+  }
+  .footer .stats span {
+    background: #1e1f22;
+    padding: 2px 12px;
+    border-radius: 12px;
+    font-size: 11px;
+    border: 1px solid #3a3c42;
+  }
+  @media (max-width: 600px) {
+    .header { flex-direction: column; align-items: flex-start; }
+    .header .time { margin-left: 0; }
+    .message { padding: 6px 6px; gap: 10px; }
+    .avatar { width: 32px; height: 32px; }
+  }
 </style>
 </head>
 <body>
@@ -325,8 +468,10 @@ function generateTxt(messages, channel, staffName, motivo, targetId, targetName)
 
   for (const msg of sorted) {
     const data = dateFormatter.format(msg.createdAt);
-    const text = getTxtContent(msg);
-    lines.push(`[${data}] ${msg.author.username}: ${text}`);
+    const authorName = getDisplayName(msg);
+    const discrim = getDiscriminator(msg.author);
+    const content = getTxtContentRaw(msg);
+    lines.push(`[${data}] ${authorName} (${discrim}): ${content}`);
   }
 
   return lines.join('\n');
@@ -357,17 +502,13 @@ async function askConfirmation(interaction, quantidade) {
 // COMANDO PRINCIPAL
 // ============================================================
 export async function execute(interaction, client) {
-  // ============================================================
-  // PREVENÇÃO DO ERRO 10062: Defer logo na 1ª linha!
-  // ============================================================
   try {
     await interaction.deferReply({ flags: 64 });
   } catch (err) {
     console.error('[Erro Crítico] Interação expirou antes de deferir.', err);
-    return; 
+    return;
   }
 
-  // TUDO abaixo usa .editReply() (NUNCA .reply())
   try {
     if (!interaction.member.permissions.has('ManageMessages')) {
       return interaction.editReply({ content: '❌ Precisas da permissão **Gerenciar Mensagens**.', flags: 64 });
