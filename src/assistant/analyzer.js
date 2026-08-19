@@ -22,7 +22,7 @@ export class MessageAnalyzer {
         this.rateLimitQueue.push(now);
     }
 
-    async fetchExpertHistory(guild, userId, limit = 50) { // REDUZIDO de 200 para 50
+    async fetchExpertHistory(guild, userId, limit = 50) {
         // Cache: só atualiza a cada 1 hora
         if (Date.now() - lastHistoryFetch < HISTORY_CACHE_TTL && assistantMemory.diegoHistory?.length > 0) {
             return assistantMemory.diegoHistory;
@@ -34,19 +34,19 @@ export class MessageAnalyzer {
                  c.permissionsFor(this.client.user)?.has(PermissionsBitField.Flags.ViewChannel)
         );
 
-        // Limitar a 5 canais mais ativos para evitar overload
-        const channelsToFetch = Array.from(textChannels.values()).slice(0, 5);
+        // ✅ AUMENTADO para 10 canais
+        const channelsToFetch = Array.from(textChannels.values()).slice(0, 10);
 
         for (const channel of channelsToFetch) {
             try {
                 await this.rateLimitDelay();
 
-                // Verificar permissão de leitura de histórico
                 if (!channel.permissionsFor(this.client.user)?.has(PermissionsBitField.Flags.ReadMessageHistory)) {
                     continue;
                 }
 
-                const messages = await channel.messages.fetch({ limit: 50 }); // REDUZIDO de 100
+                // ✅ AUMENTADO para 100 mensagens
+                const messages = await channel.messages.fetch({ limit: 100 });
                 const expertMsgs = messages.filter(m => m.author.id === userId && m.content.length > 10);
 
                 expertMsgs.forEach(msg => {
@@ -58,12 +58,12 @@ export class MessageAnalyzer {
                     if (idx > 0) {
                         context.push({
                             author: allMsgs[idx-1].author.username,
-                            content: allMsgs[idx-1].content.substring(0, 200) // Limitar tamanho
+                            content: allMsgs[idx-1].content.substring(0, 200)
                         });
                     }
                     context.push({
                         author: msg.author.username,
-                        content: msg.content.substring(0, 500) // Limitar tamanho
+                        content: msg.content.substring(0, 500)
                     });
 
                     history.push({
@@ -76,8 +76,7 @@ export class MessageAnalyzer {
                     });
                 });
             } catch (e) {
-                // Silencioso — não floodar logs com erros de permissão
-                if (e.code !== 50001 && e.code !== 50013) { // Ignorar Missing Access/Permissions
+                if (e.code !== 50001 && e.code !== 50013) {
                     console.log(`[Analyzer] Erro em ${channel.name}:`, e.message);
                 }
             }
@@ -123,6 +122,14 @@ export class MessageAnalyzer {
             if (h.isHelpful) score += 5;
             if (h.hasLinks.length > 0) score += 4;
 
+            // ✅ PESO EXTRA: palavras específicas da pergunta
+            const specificWords = ["camara", "camera", "console", "developer", "config.cfg", "numpad", "0"];
+            specificWords.forEach(word => {
+                if (questionLower.includes(word) && contentLower.includes(word)) {
+                    score += 15; // bónus grande para tópicos específicos
+                }
+            });
+
             h.context.forEach(ctx => {
                 qWords.forEach(word => {
                     if (ctx.content.toLowerCase().includes(word)) score += 2;
@@ -133,6 +140,7 @@ export class MessageAnalyzer {
         });
 
         scored.sort((a, b) => b.score - a.score);
-        return scored.filter(s => s.score > 5).slice(0, 3);
+        // ✅ LIMIAR REDUZIDO para 3
+        return scored.filter(s => s.score > 3).slice(0, 3);
     }
 }
