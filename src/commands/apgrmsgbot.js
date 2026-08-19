@@ -37,7 +37,6 @@ function escapeHtml(text) {
 
 function sanitizeFileName(name) {
   if (!name) return 'canal';
-  // Remove emojis e caracteres especiais mantendo apenas letras/números
   const cleaned = name.replace(/[^\w\s-]/gi, '').trim().replace(/\s+/g, '_');
   return cleaned.length > 0 ? cleaned : 'canal';
 }
@@ -63,22 +62,15 @@ function getDisplayName(msg) {
 }
 
 // ============================================================
-// PARSER DE MARKDOWN & WIDGET INTERATIVO SPOTIFY
+// PARSER DE MARKDOWN & SPOTIFY
 // ============================================================
 function renderMarkdown(text) {
   if (!text) return '';
   let processed = escapeHtml(text);
 
-  // Emojis do Discord
   processed = processed.replace(/&lt;a?:([a-zA-Z0-9_]+):[0-9]+&gt;/g, ':$1:');
-
-  // Links em Markdown [Texto](URL)
   processed = processed.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-
-  // Links simples
   processed = processed.replace(/(^|[^"])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
-
-  // Estilos de texto
   processed = processed.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
   processed = processed.replace(/\*([^*]+?)\*/g, '<em>$1</em>');
   processed = processed.replace(/__([^_]+?)__/g, '<u>$1</u>');
@@ -94,9 +86,7 @@ function extractSpotifyEmbed(text) {
   const match = text.match(spotifyRegex);
   if (!match) return null;
   
-  const type = match[1]; // playlist, track, album, etc.
-  const id = match[2];
-  return { type, id, fullUrl: match[0] };
+  return { type: match[1], id: match[2], fullUrl: match[0] };
 }
 
 function renderMessageContentHTML(msg) {
@@ -108,8 +98,8 @@ function renderMessageContentHTML(msg) {
     html += `<div class="text-content">${contentText}</div>`;
   }
 
-  // WIDGET INTERATIVO SPOTIFY
-  if (spotifyData) {
+  // Widget Interativo grande para comandos de utilizadores com link do Spotify
+  if (spotifyData && !msg.author.bot) {
     const embedUrl = `https://open.spotify.com/embed/${spotifyData.type}/${spotifyData.id}?utm_source=generator&theme=0`;
     html += `
     <div class="spotify-widget-container">
@@ -126,46 +116,29 @@ function renderMessageContentHTML(msg) {
     </div>`;
   }
 
-  // EMBEDS DO DISCORD (Ex: Jockie Music)
+  // Embeds do Bot (Jockie Music)
   if (msg.embeds?.length) {
     for (const embed of msg.embeds) {
       const desc = embed.description || '';
 
+      // Caixa "Started playing" do Jockie Music (igual à imagem 2)
       if (desc.toLowerCase().includes('started playing')) {
         const match = desc.match(/\[(.*?)\]\((.*?)\)/);
         const songTitle = match ? match[1] : desc.replace(/.*Started playing\s*/i, '');
         const songUrl = match ? match[2] : '#';
 
-        const embedSpotify = extractSpotifyEmbed(songUrl);
-        if (embedSpotify) {
-          const embedUrl = `https://open.spotify.com/embed/${embedSpotify.type}/${embedSpotify.id}?utm_source=generator&theme=0`;
-          html += `
-          <div class="spotify-widget-container">
-            <iframe style="border-radius:12px;" src="${embedUrl}" width="100%" height="80" frameBorder="0" allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
-          </div>`;
-        } else {
-          html += `
-          <div class="music-card">
-            <span class="music-icon">🎵</span>
-            <span class="music-label">Started playing:</span>
-            <a href="${escapeHtml(songUrl)}" target="_blank" class="music-title">${escapeHtml(songTitle)}</a>
-          </div>`;
-        }
-        continue;
-      }
-
-      // Se o embed contiver link do Spotify mas não tiver acionado o iframe acima
-      if (!spotifyData && embed.url && extractSpotifyEmbed(embed.url)) {
-        const sp = extractSpotifyEmbed(embed.url);
-        const embedUrl = `https://open.spotify.com/embed/${sp.type}/${sp.id}?utm_source=generator&theme=0`;
         html += `
-        <div class="spotify-widget-container">
-          <iframe style="border-radius:12px;" src="${embedUrl}" width="100%" height="152" frameBorder="0" allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
+        <div class="spotify-started-card">
+          <svg class="spotify-logo" viewBox="0 0 24 24" width="20" height="20" fill="#1DB954">
+            <path d="M12 0C5.376 0 0 5.376 0 12s5.376 12 12 12 12-5.376 12-12S18.624 0 12 0zm5.521 17.341c-.217.357-.68.472-1.038.254-2.842-1.737-6.42-2.13-10.635-1.166-.402.093-.802-.16-.894-.562-.093-.403.16-.803.562-.895 4.616-1.055 8.567-.603 11.748 1.341.358.217.472.68.257 1.038zm1.472-3.272c-.273.444-.853.585-1.296.312-3.251-1.998-8.21-2.58-12.057-1.411-.5.152-1.026-.134-1.177-.633-.152-.5.134-1.027.633-1.178 4.402-1.336 9.882-.69 13.585 1.583.444.273.585.853.312 1.327zm.144-3.41c-3.899-2.315-10.334-2.528-14.1-1.385-.6.183-1.237-.16-1.42-.76-.183-.601.16-1.238.76-1.421 4.318-1.311 11.42-1.06 15.86 1.576.54.321.718 1.021.398 1.56-.322.541-1.021.718-1.498.43z"/>
+          </svg>
+          <span class="started-text">Started playing</span>
+          <a href="${escapeHtml(songUrl)}" target="_blank" class="started-link">${escapeHtml(songTitle)}</a>
         </div>`;
         continue;
       }
 
-      // Embed Padrão
+      // Embed genérico
       const color = embed.color ? `#${embed.color.toString(16).padStart(6, '0')}` : '#2f3136';
       html += `
       <div class="embed-box" style="border-left: 4px solid ${color};">
@@ -204,7 +177,7 @@ function getTxtContentRaw(msg) {
 }
 
 // ============================================================
-// GERADOR HTML ESTILO DISCORD PRO
+// GERADOR HTML ESTILO DISCORD DARK
 // ============================================================
 function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, targetNamesStr) {
   const sorted = [...messages].sort((a, b) => a.createdAt - b.createdAt);
@@ -217,17 +190,22 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
     const authorName = getDisplayName(msg);
     const isBot = msg.author.bot;
 
-    const botBadge = isBot ? `
-      <span class="bot-badge">BOT</span>
-      <span class="app-badge">APP</span>` : '';
+    // Apenas a tag APP com o ícone de verificado
+    const appBadge = isBot ? `
+      <span class="app-badge">
+        <svg class="check-icon" viewBox="0 0 16 16" width="10" height="10" fill="currentColor">
+          <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/>
+        </svg>
+        APP
+      </span>` : '';
 
     return `
     <div class="message-card">
       <img class="avatar" src="${avatar}" alt="Avatar" loading="lazy">
       <div class="content">
         <div class="header">
-          <span class="author">${escapeHtml(authorName)}</span>
-          ${botBadge}
+          <span class="author ${isBot ? 'bot-author' : ''}">${escapeHtml(authorName)}</span>
+          ${appBadge}
           <span class="time">${data}</span>
         </div>
         ${renderMessageContentHTML(msg)}
@@ -312,27 +290,28 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
   .content { flex: 1; overflow: hidden; }
   .header { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
   .author { font-weight: 600; color: #5865f2; font-size: 0.95rem; }
-  .bot-badge {
+  .bot-author { color: #57F287; }
+  
+  /* Tag APP Única */
+  .app-badge {
     background-color: #5865f2;
     color: #fff;
-    font-size: 0.6rem;
+    font-size: 0.62rem;
     font-weight: 700;
-    padding: 1px 4px;
+    padding: 1px 5px;
     border-radius: 3px;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
   }
-  .app-badge {
-    background-color: #4752c4;
-    color: #fff;
-    font-size: 0.6rem;
-    font-weight: 700;
-    padding: 1px 4px;
-    border-radius: 3px;
-  }
+  .check-icon { display: inline-block; }
+
   .time { color: #949ba4; font-size: 0.75rem; margin-left: auto; }
   .text-content { color: #dbdee1; font-size: 0.9rem; word-break: break-word; }
   .text-content a { color: #00a8fc; text-decoration: none; }
   .text-content a:hover { text-decoration: underline; }
   
+  /* Widget Interativo de Playlist */
   .spotify-widget-container {
     margin-top: 8px;
     max-width: 100%;
@@ -341,16 +320,24 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
     background: #000;
   }
 
-  .music-card {
-    background: #1e1f22;
-    padding: 8px 12px;
+  /* Caixa Started Playing estilo Discord */
+  .spotify-started-card {
+    background: #111214;
+    border: 1px solid #2b2d31;
     border-radius: 6px;
+    padding: 10px 14px;
     margin-top: 6px;
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
+    width: fit-content;
+    max-width: 100%;
   }
-  .music-title { color: #00a8fc; font-weight: 600; text-decoration: none; font-size: 0.85rem; }
+  .spotify-logo { flex-shrink: 0; }
+  .started-text { color: #dbdee1; font-size: 0.88rem; font-weight: 500; }
+  .started-link { color: #00a8fc; font-weight: 700; text-decoration: none; font-size: 0.88rem; }
+  .started-link:hover { text-decoration: underline; }
+
   .embed-box { background: #1e1f22; padding: 10px; margin-top: 6px; border-radius: 4px; }
   
   .footer-bar {
