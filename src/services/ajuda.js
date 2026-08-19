@@ -67,14 +67,10 @@ export async function handleAjudaCommand(interaction, client) {
       new ActionRowBuilder().addComponents(inputDetalhes)
     );
 
-    // Como a interação já foi deferida, não podemos usar showModal.
-    // Para comandos que abrem modal, NÃO se deve deferir.
+    // Nota: Para comandos que abrem modal, NÃO se deve deferir.
     // Por isso, esta função deve ser chamada sem defer (apenas no comando /ajuda).
-    // Vamos refatorar: no interactionCreate, para o comando "ajuda", NÃO faças defer,
-    // e aqui usamos interaction.showModal(modal).
-    // Mas para não quebrar, vou apenas responder com um aviso.
-    // O correto é ajustar no interactionCreate.
-
+    // Se já deferiste, não podes usar showModal.
+    // Vou responder com um aviso, mas o ideal é ajustar no interactionCreate para não deferir o /ajuda.
     await safeEditReply(interaction, {
       content: "ℹ️ Por favor, usa o comando `/ajuda` novamente para abrir o formulário.",
       flags: 64,
@@ -86,7 +82,6 @@ export async function handleAjudaCommand(interaction, client) {
 }
 
 export async function handleAjudaProcurar(interaction) {
-  // ✅ Usar safeDeferReply
   const deferred = await safeDeferReply(interaction);
   if (!deferred) return;
 
@@ -102,7 +97,6 @@ export async function handleAjudaProcurar(interaction) {
 }
 
 export async function handleAjudaModal(interaction, client) {
-  // ✅ O modal já é a resposta, mas podemos deferir para dar tempo
   const deferred = await safeDeferReply(interaction);
   if (!deferred) {
     if (interaction.isRepliable()) {
@@ -163,7 +157,6 @@ export async function handleAjudaModal(interaction, client) {
         .setStyle(ButtonStyle.Primary)
     );
 
-    // ✅ Usar safeEditReply
     await safeEditReply(interaction, { embeds: [embed], components: [row], flags: 64 });
 
     if (logThread) {
