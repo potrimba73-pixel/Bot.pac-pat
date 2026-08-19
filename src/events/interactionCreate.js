@@ -413,9 +413,8 @@ export async function handleInteractionCreate(interaction, client) {
 async function handleSlashCommand(interaction, client) {
   const command = interaction.commandName;
 
-  // Lista de comandos que NÃO devem ser deferidos (porque abrem modal ou respondem rápido)
-  const noDeferCommands = ["ajuda"];
-
+const noDeferCommands = [];
+  
   let deferred = false;
   if (!noDeferCommands.includes(command)) {
     deferred = await safeDefer(interaction);
