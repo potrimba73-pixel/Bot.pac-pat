@@ -3,7 +3,8 @@ import {
   EmbedBuilder,
   AttachmentBuilder,
   Collection,
-  MessageFlags
+  MessageFlags,
+  ButtonStyle
 } from 'discord.js';
 
 // ============================================================
@@ -43,7 +44,7 @@ function stripMarkdown(text) {
 
 const dateFormatter = new Intl.DateTimeFormat('pt-PT', {
   day: '2-digit', month: '2-digit', year: 'numeric',
-  hour: '2-digit', minute: '2-digit', second: '2-digit',
+  hour: '2-digit', minute: '2-digit',
   timeZone: TIMEZONE,
 });
 
@@ -52,17 +53,16 @@ const dateFormatterShort = new Intl.DateTimeFormat('pt-PT', {
   timeZone: TIMEZONE,
 });
 
-// Captura o nome de exibição no Discord (Server Nickname > Global Name > Username)
 function getDisplayName(msg) {
   if (msg.member?.displayName) return msg.member.displayName;
   if (msg.author?.globalName) return msg.author.globalName;
   if (msg.author?.username) return msg.author.username;
-  if (PRESET_IDS[msg.author.id]) return PRESET_IDS[msg.author.id];
-  return `Utilizador (${msg.author.id.slice(0, 4)}...)`;
+  if (PRESET_IDS[msg.author?.id]) return PRESET_IDS[msg.author.id];
+  return 'Deleted User';
 }
 
 // ============================================================
-// PARSER DE MARKDOWN & EMBEDS
+// PARSER DE MARKDOWN, EMBEDS E BOTÕES
 // ============================================================
 function renderMarkdown(text) {
   if (!text) return '';
@@ -83,6 +83,7 @@ function renderMarkdown(text) {
 function renderEmbedHTML(embed) {
   const desc = embed.description || '';
 
+  // Card Especial para Mensagens estilo Spotify
   if (desc.toLowerCase().includes('started playing')) {
     const match = desc.match(/\[(.*?)\]\((.*?)\)/);
     let songTitle = match ? match[1] : desc.replace(/.*Started playing\s*/i, '');
@@ -99,7 +100,7 @@ function renderEmbedHTML(embed) {
     </div>`;
   }
 
-  const color = embed.color ? `#${embed.color.toString(16).padStart(6, '0')}` : '#2f3136';
+  const color = embed.color ? `#${embed.color.toString(16).padStart(6, '0')}` : '#2b2d31';
   let embedInner = '';
 
   if (embed.author?.name) {
@@ -148,6 +149,35 @@ function renderEmbedHTML(embed) {
   </div>`;
 }
 
+// Renderizar Botões de Interação (ActionRows / Buttons)
+function renderComponentsHTML(components) {
+  if (!components || !components.length) return '';
+
+  let html = '<div class="components-container">';
+
+  for (const row of components) {
+    html += '<div class="action-row">';
+    for (const comp of row.components) {
+      if (comp.type === 2) { // Button Component
+        let btnClass = 'btn-secondary';
+        if (comp.style === ButtonStyle.Primary) btnClass = 'btn-primary';
+        if (comp.style === ButtonStyle.Success) btnClass = 'btn-success';
+        if (comp.style === ButtonStyle.Danger) btnClass = 'btn-danger';
+        if (comp.style === ButtonStyle.Link) btnClass = 'btn-link';
+
+        const label = escapeHtml(comp.label || '');
+        const emoji = comp.emoji ? `${comp.emoji.name || ''} ` : '';
+
+        html += `<button class="discord-btn ${btnClass}" disabled>${emoji}${label}</button>`;
+      }
+    }
+    html += '</div>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
 function renderMessageContentHTML(msg) {
   let html = '';
 
@@ -163,6 +193,10 @@ function renderMessageContentHTML(msg) {
     for (const embed of msg.embeds) {
       html += renderEmbedHTML(embed);
     }
+  }
+
+  if (msg.components?.length) {
+    html += renderComponentsHTML(msg.components);
   }
 
   if (msg.attachments?.size) {
@@ -199,24 +233,23 @@ function getTxtContentRaw(msg) {
 }
 
 // ============================================================
-// GERADOR HTML COM FILTROS E ORDENAÇÃO
+// GERADOR HTML COM VISUAL FIEL AO DISCORD
 // ============================================================
 function generatePrettyHTML(messages, channel, staffName, motivo, targetNamesStr) {
   const sorted = [...messages].sort((a, b) => a.createdAt - b.createdAt);
   const guildName = channel.guild ? channel.guild.name : 'Servidor';
   const guildIcon = channel.guild?.iconURL({ extension: 'png', size: 64 }) || '';
 
-  // Mapeamento único de utilizadores presentes para o filtro
   const usersMap = new Map();
 
   const msgsHtml = sorted.map((msg) => {
-    const avatar = msg.author.displayAvatarURL({ extension: 'png', size: 64 });
+    const avatar = msg.author?.displayAvatarURL({ extension: 'png', size: 64 }) || 'https://cdn.discordapp.com/embed/avatars/0.png';
     const data = dateFormatter.format(msg.createdAt);
     const authorName = getDisplayName(msg);
-    const isBot = msg.author.bot;
+    const isBot = msg.author?.bot;
     const timestamp = msg.createdTimestamp;
 
-    if (!usersMap.has(msg.author.id)) {
+    if (msg.author?.id && !usersMap.has(msg.author.id)) {
       usersMap.set(msg.author.id, authorName);
     }
 
@@ -229,7 +262,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetNamesStr
       </span>` : '';
 
     return `
-    <div class="message-card" data-author-id="${msg.author.id}" data-timestamp="${timestamp}">
+    <div class="message-card" data-author-id="${msg.author?.id || 'deleted'}" data-timestamp="${timestamp}">
       <img class="avatar" src="${avatar}" alt="Avatar" loading="lazy">
       <div class="content">
         <div class="header">
@@ -242,7 +275,6 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetNamesStr
     </div>`;
   }).join('\n');
 
-  // Opções do Select de Filtro
   let userOptions = '<option value="all">👥 Todos os Utilizadores</option>';
   for (const [id, name] of usersMap.entries()) {
     userOptions += `<option value="${id}">${escapeHtml(name)}</option>`;
@@ -296,7 +328,6 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetNamesStr
   .top-info h1 { font-size: 1.05rem; color: #fff; font-weight: 700; }
   .top-info p { font-size: 0.8rem; color: #949ba4; margin-top: 2px; }
   
-  /* BARRA DE CONTROLO DE FILTROS */
   .controls-bar {
     background-color: #232428;
     padding: 10px 16px;
@@ -323,20 +354,19 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetNamesStr
     padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 16px;
   }
   .message-card {
-    background-color: #2b2d31;
-    border-radius: 8px;
-    padding: 10px 14px;
+    background-color: transparent;
+    padding: 2px 0;
     display: flex;
-    gap: 12px;
+    gap: 14px;
   }
   .avatar { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; }
   .content { flex: 1; overflow: hidden; }
   .header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
   .author { font-weight: 600; color: #f2f3f5; font-size: 0.95rem; }
-  .bot-author { color: #57F287; }
+  .bot-author { color: #f2f3f5; }
   
   .app-badge {
     background-color: #5865f2;
@@ -350,14 +380,15 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetNamesStr
     gap: 3px;
   }
 
-  .time { color: #949ba4; font-size: 0.75rem; margin-left: auto; }
-  .text-content { color: #dbdee1; font-size: 0.9rem; word-break: break-word; }
+  .time { color: #949ba4; font-size: 0.75rem; margin-left: 4px; }
+  .text-content { color: #dbdee1; font-size: 0.95rem; word-break: break-word; line-height: 1.375rem; }
   .text-content a { color: #00a8fc; text-decoration: none; }
   .text-content a:hover { text-decoration: underline; }
 
+  /* ESTILOS DE EMBED */
   .embed-box {
     background: #2b2d31;
-    padding: 12px;
+    padding: 12px 16px;
     margin-top: 6px;
     border-radius: 4px;
     max-width: 520px;
@@ -367,19 +398,19 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetNamesStr
   .embed-author { font-size: 0.8rem; font-weight: 600; color: #b5bac1; margin-bottom: 4px; }
   .embed-title { font-size: 0.95rem; font-weight: 700; color: #fff; margin-bottom: 6px; }
   .embed-title a { color: #00a8fc; text-decoration: none; }
-  .embed-fields { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .embed-fields { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 8px; }
   .embed-field { flex: 1 1 100%; }
-  .embed-field.inline { flex: 1 1 30%; min-width: 100px; }
+  .embed-field.inline { flex: 0 1 calc(50% - 8px); min-width: 120px; }
   .field-name { font-size: 0.8rem; font-weight: 700; color: #b5bac1; margin-bottom: 2px; }
   .field-value { font-size: 0.85rem; color: #dbdee1; }
-  .embed-thumbnail { width: 80px; height: 80px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+  .embed-thumbnail { width: 70px; height: 70px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
   .embed-footer { font-size: 0.75rem; color: #949ba4; margin-top: 8px; }
 
+  /* CARD SPOTIFY */
   .spotify-started-card {
-    background: #1e1f22;
-    border: 1px solid #2b2d31;
-    border-radius: 6px;
-    padding: 8px 12px;
+    background: #2b2d31;
+    border-radius: 4px;
+    padding: 10px 14px;
     margin-top: 6px;
     display: flex;
     align-items: center;
@@ -388,8 +419,30 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetNamesStr
     max-width: 100%;
   }
   .spotify-logo { flex-shrink: 0; }
-  .started-text { color: #949ba4; font-size: 0.85rem; font-weight: 500; }
-  .started-link { color: #00a8fc; font-weight: 600; text-decoration: none; font-size: 0.85rem; }
+  .started-text { color: #f2f3f5; font-size: 0.9rem; font-weight: 500; }
+  .started-link { color: #00a8fc; font-weight: 600; text-decoration: none; font-size: 0.9rem; }
+
+  /* BOTÕES DO DISCORD */
+  .components-container { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .action-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .discord-btn {
+    border: none;
+    padding: 6px 16px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #fff;
+    cursor: not-allowed;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    opacity: 0.9;
+  }
+  .btn-primary { background-color: #5865f2; }
+  .btn-secondary { background-color: #4e5058; color: #dbdee1; }
+  .btn-success { background-color: #248046; }
+  .btn-danger { background-color: #da373c; }
+  .btn-link { background-color: #4e5058; }
 
   .footer-bar {
     background-color: #2b2d31;
@@ -415,7 +468,6 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetNamesStr
       </div>
     </div>
 
-    <!-- CONTROLES DE FILTRO E ORDENAÇÃO -->
     <div class="controls-bar">
       <select id="userFilter" class="control-item" onchange="applyFilters()">
         ${userOptions}
@@ -453,7 +505,6 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetNamesStr
       
       let visibleCount = 0;
 
-      // Filtragem por Utilizador e Pesquisa
       cards.forEach(card => {
         const authorId = card.getAttribute('data-author-id');
         const textContent = card.innerText.toLowerCase();
@@ -469,7 +520,6 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetNamesStr
         }
       });
 
-      // Ordenação das mensagens
       cards.sort((a, b) => {
         const timeA = parseInt(a.getAttribute('data-timestamp'));
         const timeB = parseInt(b.getAttribute('data-timestamp'));
