@@ -48,6 +48,10 @@ import {
 import { gerarTranscript } from "../utils/transcript.js";
 import { salvarTranscriptSupabase } from "../utils/supabase.js";
 
+// ✅ ADICIONADO: Importações para a IA
+import { assistantMemory } from "../services/ajuda.js";
+import { callPollinationsAI, callGeminiAI } from "../assistant/ets2AI.js";
+
 // ===== COOLDOWN PARA CHAMAR STAFF =====
 const COOLDOWN_CHAMAR = 5 * 60 * 1000; // 5 minutos
 const cooldownChamadas = new Map(); // userId -> timestamp
@@ -864,7 +868,6 @@ export async function handleInteractionCreate(
         );
       }
 
-      // ⬇️ NOVO COMANDO AQUI (FORA DO transcript-full) ⬇️
       if (command === "apgrmsgbot") {
         if (!isStaff(interaction.member)) {
           return safeReply(
@@ -881,7 +884,7 @@ export async function handleInteractionCreate(
         interaction,
         "⚠️ Comando não reconhecido."
       );
-    } // <-- FIM DO if (interaction.isChatInputCommand())
+    }
 
     // ========================================================
     // MODALS
@@ -1977,6 +1980,60 @@ export async function handleInteractionCreate(
         } else {
           return safeReply(interaction, "⏳ Funcionalidade em desenvolvimento.");
         }
+      }
+
+      // ======================================================
+      // 🆕 BOTÕES DE PESQUISA (Smart Response)
+      // ======================================================
+
+      if (customId.startsWith("smart_search_") || customId.startsWith("smart_do_search_")) {
+        const parts = customId.split("_");
+        // O formato é: smart_search_{messageId}_{hash} ou smart_do_search_{messageId}_{hash}
+        // O messageId é o segundo elemento (índice 2)
+        const messageId = parts[2];
+        const pending = assistantMemory.pendingSearches?.get(messageId);
+
+        if (!pending) {
+          return safeReply(interaction, "❓ Não encontrei a pergunta associada. Tenta novamente.");
+        }
+
+        const question = pending.question;
+
+        await interaction.deferReply({ flags: 64 });
+
+        try {
+          // Chamar IA externa
+          let answer = await callPollinationsAI(question) || await callGeminiAI(question);
+
+          if (answer) {
+            const embed = new EmbedBuilder()
+              .setTitle("🤖 Resultado da pesquisa")
+              .setDescription(answer)
+              .setColor(0x3498db)
+              .setFooter({ text: "Fonte: IA externa" })
+              .setTimestamp();
+            await interaction.editReply({ embeds: [embed] });
+          } else {
+            await interaction.editReply({
+              content: `🔍 Não consegui encontrar uma resposta para: "${question}"\n\nTenta reformular ou abre um ticket.`
+            });
+          }
+        } catch (err) {
+          console.error("[SmartSearch] Erro:", err);
+          await interaction.editReply({ content: "❌ Erro ao pesquisar. Tenta mais tarde." });
+        }
+
+        // Limpar da memória
+        assistantMemory.pendingSearches?.delete(messageId);
+        return;
+      }
+
+      // ======================================================
+      // 🆕 BOTÃO CANCELAR
+      // ======================================================
+
+      if (customId === "smart_cancel") {
+        return safeReply(interaction, "👍 Pesquisa cancelada.");
       }
 
       // ======================================================
