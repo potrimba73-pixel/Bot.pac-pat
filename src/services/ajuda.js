@@ -1,134 +1,197 @@
-// ============================================================
-// services/ajuda.js - Sistema de Ajuda Inteligente (CORRIGIDO)
-// ============================================================
-
-import {
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
+// src/services/ajuda.js
+import { 
+  EmbedBuilder, 
+  ActionRowBuilder, 
+  ButtonBuilder, 
   ButtonStyle,
   ModalBuilder,
   TextInputBuilder,
-  TextInputStyle,
+  TextInputStyle
 } from "discord.js";
 import { CONFIG } from "../config/index.js";
-import logger from "../utils/logger.js";
-import { safeEditReply } from "../utils/safeReply.js"; // apenas para feedback
-
-export const assistantMemory = new Map();
 
 // ============================================================
-// COMANDO /ajuda – ABRE MODAL (NÃO DEFERIR)
+// MEMÓRIA DA IA (em memória)
+// ============================================================
+export const assistantMemory = {
+  diegoHistory: [],
+  cooldowns: new Map(),
+  pendingSearches: new Map(),
+  isOnCooldown(userId) {
+    const last = this.cooldowns.get(userId);
+    if (!last) return false;
+    return (Date.now() - last) < (ASSISTANT_CONFIG?.COOLDOWN || 10) * 1000;
+  },
+  setCooldown(userId) {
+    this.cooldowns.set(userId, Date.now());
+  }
+};
+
+// ============================================================
+// FUNÇÃO PRINCIPAL - /ajuda
 // ============================================================
 export async function handleAjudaCommand(interaction, client) {
-  if (!interaction.isRepliable()) return;
+  // O deferReply já foi feito no interactionCreate.js
+  const umaHora = 60 * 60 * 1000;
+  const agora = Date.now();
+  const memoria = assistantMemory.cooldowns.get(interaction.user.id);
 
-  // NUNCA deferir aqui! O modal é a resposta.
-  try {
-    const modal = new ModalBuilder()
-      .setCustomId(`modal_ajuda_${interaction.user.id}_${Date.now()}`)
-      .setTitle("❓ Nova Pergunta de Ajuda");
+  if (memoria && (agora - memoria) < umaHora) {
+    const embed = new EmbedBuilder()
+      .setTitle(`${CONFIG.EMOJI_INFO} Central de Ajuda`)
+      .setDescription([
+        `${CONFIG.EMOJI_INFO} Já fizeste uma pergunta recentemente.`,
+        "",
+        `${CONFIG.EMOJI_TIME} Podes fazer outra pergunta em ${Math.ceil((umaHora - (agora - memoria)) / 60000)} minutos.`,
+        "",
+        `💡 Se precisares de ajuda urgente, abre um ticket.`
+      ].join("\n"))
+      .setColor(CONFIG.COR_PRINCIPAL || 0x262af1)
+      .setTimestamp();
 
-    const inputPergunta = new TextInputBuilder()
-      .setCustomId("pergunta_ajuda")
-      .setLabel("Escreve a tua pergunta")
-      .setStyle(TextInputStyle.Paragraph)
-      .setRequired(true)
-      .setMaxLength(500);
-
-    const inputDetalhes = new TextInputBuilder()
-      .setCustomId("detalhes_ajuda")
-      .setLabel("Detalhes adicionais (opcional)")
-      .setStyle(TextInputStyle.Paragraph)
-      .setRequired(false)
-      .setMaxLength(1000);
-
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(inputPergunta),
-      new ActionRowBuilder().addComponents(inputDetalhes)
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("ajuda_nova")
+        .setLabel("Nova Pergunta")
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji(CONFIG.EMOJI_AJUDA || "❓"),
+      new ButtonBuilder()
+        .setCustomId("ajuda_ticket")
+        .setLabel("Abrir Ticket")
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji(CONFIG.EMOJI_TICKET || "🎫")
     );
 
-    await interaction.showModal(modal);
-  } catch (error) {
-    console.error("[handleAjudaCommand] Erro ao mostrar modal:", error);
-    // Fallback: se o modal falhar, responde com uma mensagem
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({
-        content: "❌ Ocorreu um erro ao abrir o formulário. Tenta novamente.",
-        flags: 64,
-      });
-    }
+    await interaction.editReply({ 
+      embeds: [embed], 
+      components: [row], 
+      flags: 64 
+    });
+    return;
   }
+
+  // Menu principal
+  const embed = new EmbedBuilder()
+    .setTitle(`${CONFIG.EMOJI_AJUDA || "❓"} Central de Ajuda | Portugal Alfa Community`)
+    .setDescription([
+      `${CONFIG.EMOJI_INFO} Bem-vindo à central de ajuda!`,
+      "",
+      "Aqui podes fazer perguntas sobre a comunidade, regras, sistemas e mais.",
+      "",
+      "**📋 Como funciona:**",
+      "1️⃣ Clica em **Procurar Ajuda**",
+      "2️⃣ Escreve a tua pergunta",
+      "3️⃣ Recebe uma resposta personalizada",
+      "",
+      "**📚 Tópicos disponíveis:**",
+      "• 🎮 ETS2 / ATS - Servidor, mods, configurações",
+      "• 🚛 Recrutamento PAT - Requisitos, Trucky, candidatura",
+      "• ⚙️ ETS2LA - Configuração, mods, atualizações",
+      "• 🥽 VR - Meta Quest, tutoriais",
+      "• 📲 Trucky App - Download, instalação",
+      "• 🛠️ Câmara Zero / Consola - Ativação, teclas, teletransporte",
+      "• 🎨 Project ALM - Instalação, RGB",
+      "",
+      `${CONFIG.EMOJI_TIME} **Nota:** Apenas 1 pergunta por hora.`
+    ].join("\n"))
+    .setColor(CONFIG.COR_PRINCIPAL || 0x262af1)
+    .setTimestamp()
+    .setFooter({ 
+      text: "Portugal Alfa Community", 
+      iconURL: client?.user?.displayAvatarURL() 
+    });
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("ajuda_procurar")
+      .setLabel("🔍 Procurar Ajuda")
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId("ajuda_ticket")
+      .setLabel("🎫 Abrir Ticket")
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId("ajuda_faq")
+      .setLabel("📖 FAQ Rápido")
+      .setStyle(ButtonStyle.Success)
+  );
+
+  await interaction.editReply({ 
+    embeds: [embed], 
+    components: [row], 
+    flags: 64 
+  });
 }
 
 // ============================================================
-// BOTÃO "Procurar Ajuda" – redireciona para o comando
+// HANDLER - BOTÃO "Procurar Ajuda"
 // ============================================================
 export async function handleAjudaProcurar(interaction) {
-  if (!interaction.isRepliable()) return;
+  const modal = new ModalBuilder()
+    .setCustomId(`modal_ajuda_${interaction.user.id}_${Date.now()}`)
+    .setTitle(`${CONFIG.EMOJI_AJUDA || "❓"} Pergunta de Ajuda`);
 
-  // Se já estiver deferida, usa editReply; senão, responde
-  if (interaction.deferred || interaction.replied) {
-    await safeEditReply(interaction, {
-      content: "🔍 Para fazer uma pergunta, usa o comando `/ajuda`.",
-      flags: 64,
-    });
-  } else {
-    await interaction.reply({
-      content: "🔍 Para fazer uma pergunta, usa o comando `/ajuda`.",
-      flags: 64,
-    });
-  }
+  const inputPergunta = new TextInputBuilder()
+    .setCustomId("pergunta_ajuda")
+    .setLabel("Qual é a tua pergunta?")
+    .setPlaceholder("Ex: Como configuro a câmara 0?")
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(true)
+    .setMinLength(5)
+    .setMaxLength(500);
+
+  const inputDetalhes = new TextInputBuilder()
+    .setCustomId("detalhes_ajuda")
+    .setLabel("Detalhes adicionais (opcional)")
+    .setPlaceholder("Ex: Já tentei X e Y, mas não funcionou...")
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(false)
+    .setMaxLength(300);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(inputPergunta),
+    new ActionRowBuilder().addComponents(inputDetalhes)
+  );
+
+  await interaction.showModal(modal);
 }
 
 // ============================================================
-// MODAL SUBMIT – processa a pergunta
+// HANDLER - MODAL DE AJUDA
 // ============================================================
 export async function handleAjudaModal(interaction, client) {
-  // O modal já é uma resposta, mas podemos deferir para dar tempo
-  if (!interaction.isRepliable()) return;
+  const pergunta = interaction.fields.getTextInputValue("pergunta_ajuda");
+  const detalhes = interaction.fields.getTextInputValue("detalhes_ajuda") || "";
+
+  await interaction.deferReply({ flags: 64 });
 
   try {
-    // Se a interação ainda não foi deferida, deferir (opcional, mas seguro)
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferReply({ flags: 64 });
-    }
+    // Usar o orquestrador smartResponse para gerar resposta
+    const { handleSmartResponse } = await import("../assistant/smartResponse.js");
+    // Como o smartResponse espera um objeto message, criamos um mock para usar a lógica
+    // Alternativa: reutilizar a lógica de busca manualmente
+    // Por simplicidade, vamos chamar a função que gera a resposta diretamente
+    const resposta = await gerarRespostaPersonalizada(pergunta, client);
 
-    const pergunta = interaction.fields.getTextInputValue("pergunta_ajuda");
-    const detalhes = interaction.fields.getTextInputValue("detalhes_ajuda") || "";
-
-    let logThread = null;
-    try {
-      logThread = await logger.createUserThread(
-        client,
-        interaction.user.id,
-        interaction.user.username,
-        pergunta
-      );
-      if (logThread) {
-        await logger.logToThread(
-          client,
-          logThread.id,
-          `📩 **Pergunta:** ${pergunta}\n📝 **Detalhes:** ${detalhes || "Nenhum"}`
-        );
-      }
-    } catch (e) {
-      console.warn("[AjudaModal] Erro ao criar thread de log:", e.message);
-    }
-
-    const resposta = await gerarRespostaInteligente(pergunta, interaction, client);
-    assistantMemory.set(interaction.user.id, { pergunta, resposta, timestamp: Date.now() });
+    assistantMemory.setCooldown(interaction.user.id);
 
     const embed = new EmbedBuilder()
-      .setTitle("❓ Resposta de Ajuda")
-      .setDescription(
-        `**📝 Pergunta:**\n> ${pergunta}\n\n` +
-        `**💡 Resposta:**\n${resposta}\n\n` +
-        "ℹ️ Esta resposta foi útil?"
-      )
-      .setColor(0x00ff00)
+      .setTitle(`${CONFIG.EMOJI_AJUDA || "❓"} Resposta de Ajuda`)
+      .setDescription([
+        `**📝 Pergunta:**`,
+        `> ${pergunta}`,
+        "",
+        `**💡 Resposta:**`,
+        resposta,
+        "",
+        `${CONFIG.EMOJI_INFO} Esta resposta foi útil?`
+      ].join("\n"))
+      .setColor(CONFIG.COR_SUCESSO || 0x00ff00)
       .setTimestamp()
-      .setFooter({ text: "Portugal Alfa Community • Feedback ajuda a melhorar!" });
+      .setFooter({ 
+        text: "Portugal Alfa Community • Feedback ajuda a melhorar!", 
+        iconURL: client?.user?.displayAvatarURL() 
+      });
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -145,155 +208,127 @@ export async function handleAjudaModal(interaction, client) {
         .setStyle(ButtonStyle.Primary)
     );
 
-    await interaction.editReply({ embeds: [embed], components: [row], flags: 64 });
+    await interaction.editReply({ 
+      embeds: [embed], 
+      components: [row], 
+      flags: 64 
+    });
 
-    if (logThread) {
-      await logger.logToThread(
-        client,
-        logThread.id,
-        `💬 **Resposta enviada:** ${resposta.substring(0, 300)}...`
-      );
-      assistantMemory.set(`thread_${interaction.user.id}`, logThread.id);
-    }
   } catch (error) {
     console.error("[AjudaModal] Erro:", error);
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: "❌ Ocorreu um erro ao processar a tua pergunta.", flags: 64 });
-    } else {
-      await interaction.editReply({ content: "❌ Ocorreu um erro ao processar a tua pergunta.", flags: 64 });
-    }
+    await interaction.editReply({ 
+      content: `${CONFIG.EMOJI_ERROR || "💥"} Ocorreu um erro ao processar a tua pergunta. Tenta novamente mais tarde ou abre um ticket.`, 
+      flags: 64 
+    });
   }
 }
 
 // ============================================================
-// GERADOR DE RESPOSTAS (igual ao teu, mantido)
+// GERADOR DE RESPOSTAS (fallback para o modal)
 // ============================================================
-async function gerarRespostaInteligente(pergunta, interaction, client) {
-  // 1. Histórico do Diego
-  try {
-    const { MessageAnalyzer } = await import("../assistant/analyzer.js");
-    const analyzer = client.messageAnalyzer || new MessageAnalyzer(client);
-    const guild = interaction.guild;
-    const userId = "849132183112384573";
-    if (!assistantMemory.diegoHistory || assistantMemory.diegoHistory.length === 0) {
-      await analyzer.fetchExpertHistory(guild, userId, 50);
-    }
-    const similar = analyzer.findSimilarResponses(pergunta);
-    if (similar.length > 0) {
-      const best = similar[0];
-      let texto = `**Baseado no que o <@${userId}> já respondeu:**\n\n> ${best.content}\n\n`;
-      if (best.hasLinks && best.hasLinks.length > 0) {
-        texto += "**Links mencionados:**\n" + best.hasLinks.map(l => `• ${l}`).join("\n") + "\n\n";
-      }
-      texto += "*Esta resposta foi baseada no histórico de mensagens. Pode não estar 100% atualizada.*";
-      return texto;
-    }
-  } catch (err) {
-    console.warn("[gerarRespostaInteligente] Erro no histórico:", err.message);
-  }
+async function gerarRespostaPersonalizada(pergunta, client) {
+  // Tentar tutoriais
+  const { encontrarTutorialPAC } = await import("../database/tutoriais.js");
+  const tutorial = encontrarTutorialPAC(pergunta);
+  if (tutorial) return tutorial.resumo;
 
-  // 2. FAQ
-  try {
-    const { encontrarRespostaFAQ } = await import("../database/faq.js");
-    const faq = encontrarRespostaFAQ(pergunta);
-    if (faq.found) return faq.texto;
-  } catch (err) {
-    console.warn("[gerarRespostaInteligente] Erro no FAQ:", err.message);
-  }
+  // Tentar FAQ
+  const { encontrarRespostaFAQ } = await import("../database/faq.js");
+  const faq = encontrarRespostaFAQ(pergunta);
+  if (faq.found) return faq.texto;
 
-  // 3. IA externa
-  try {
-    const { callPollinationsAI, callGeminiAI } = await import("../assistant/ets2AI.js");
-    let answer = await callPollinationsAI(pergunta) || await callGeminiAI(pergunta);
-    if (answer) return answer;
-  } catch (err) {
-    console.warn("[gerarRespostaInteligente] Erro na IA:", err.message);
-  }
+  // Tentar IA externa
+  const { callPollinationsAI, callGeminiAI } = await import("../assistant/ets2AI.js");
+  let resposta = await callPollinationsAI(pergunta);
+  if (!resposta) resposta = await callGeminiAI(pergunta);
+  if (resposta) return resposta;
 
-  // 4. Fallback
-  return (
-    "ℹ️ **Não encontrei uma resposta específica.**\n" +
-    "💡 Tenta reformular ou usar palavras-chave como 'câmara', 'regras', 'ticket', 'recrutamento'.\n" +
-    "🎫 **Alternativa:** Abre um ticket para ajuda personalizada."
-  );
+  return "Não consegui encontrar uma resposta específica. Tenta reformular a pergunta ou abre um ticket para ajuda personalizada.";
 }
 
 // ============================================================
-// FEEDBACK DOS BOTÕES
+// HANDLER - FEEDBACK
 // ============================================================
 export async function handleAjudaFeedback(interaction) {
-  if (!interaction.isRepliable()) return;
-
   const customId = interaction.customId;
-
-  try {
-    if (customId === "ajuda_ticket" || customId.startsWith("ajuda_ticket_direct_")) {
-      await interaction.reply({
-        content: `🎫 Para abrir um ticket, vai ao canal <#${CONFIG.CANAL_TICKETS_GERAL}>.`,
-        flags: 64,
-      });
-      return;
-    }
-
-    if (customId === "ajuda_faq") {
-      await interaction.reply({
-        content: "📖 **FAQ Rápido:** ...",
-        flags: 64,
-      });
-      return;
-    }
-
-    if (customId === "ajuda_nova") {
-      await interaction.reply({
-        content: "🔍 Clica em **Procurar Ajuda** para fazer uma nova pergunta.",
-        flags: 64,
-      });
-      return;
-    }
-
-    if (customId === "ajuda_procurar") {
-      return handleAjudaProcurar(interaction);
-    }
-
-    if (customId.startsWith("smart_helpful_") || customId.startsWith("smart_not_helpful_")) {
-      const isHelpful = customId.startsWith("smart_helpful_");
-      const userId = customId.split("_")[2];
-      if (interaction.user.id !== userId) {
-        await interaction.reply({ content: "⚠️ Este feedback não é para ti!", flags: 64 });
-        return;
-      }
-
-      const feedback = isHelpful ? "✅ Positivo" : "❌ Negativo";
-      await interaction.reply({ content: `📝 Obrigado pelo feedback! (${feedback})`, flags: 64 });
-
-      const threadId = assistantMemory.get(`thread_${interaction.user.id}`);
-      if (threadId) {
-        await logger.updateThreadWithFeedback(interaction.client, threadId, feedback);
-        await logger.logToThread(interaction.client, threadId, `📊 **Feedback:** ${feedback}`);
-      }
-
-      try {
-        const logChannel = await interaction.client.channels
-          .fetch(CONFIG.CANAL_LOGS)
-          .catch(() => null);
-        if (logChannel) {
-          const embed = new EmbedBuilder()
-            .setTitle("📊 Feedback da Ajuda")
-            .setDescription(
-              `👤 Utilizador: ${interaction.user.tag}\n📝 Feedback: ${feedback}`
-            )
-            .setColor(isHelpful ? 0x00ff00 : 0xff0000)
-            .setTimestamp();
-          await logChannel.send({ embeds: [embed] });
-        }
-      } catch (e) {
-        console.warn("[AjudaFeedback] Erro ao enviar log:", e.message);
-      }
-      return;
-    }
-
-    await interaction.reply({ content: "❌ Ação desconhecida.", flags: 64 });
-  } catch (error) {
-    if (error.code !== 10062) console.error("[AjudaFeedback] Erro:", error);
+  
+  if (customId === "ajuda_ticket" || customId.startsWith("ajuda_ticket_direct_")) {
+    await interaction.reply({
+      content: `🎫 Para abrir um ticket, vai ao canal <#${CONFIG.CANAL_TICKETS_GERAL}> e seleciona a opção adequada.`,
+      flags: 64
+    });
+    return;
   }
+
+  if (customId === "ajuda_faq") {
+    await interaction.reply({
+      content: `📖 **FAQ Rápido:**\n\n` +
+               `• **Como entro no servidor?** Usa o ID: \`85568392935839115\`\n` +
+               `• **Como me candidato?** Vai ao canal de recrutamento\n` +
+               `• **Preciso de Trucky?** Sim, é obrigatório\n` +
+               `• **Tenho problemas técnicos?** Abre um ticket\n` +
+               `• **Regras?** Vê o canal #regras\n\n` +
+               `❓ Para mais perguntas, usa **Procurar Ajuda**!`,
+      flags: 64
+    });
+    return;
+  }
+
+  if (customId === "ajuda_nova") {
+    await interaction.reply({
+      content: `🔍 Clica em **Procurar Ajuda** para fazer uma nova pergunta.`,
+      flags: 64
+    });
+    return;
+  }
+
+  if (customId === "ajuda_procurar") {
+    return handleAjudaProcurar(interaction);
+  }
+
+  // Feedback dos botões smart_helpful / smart_not_helpful
+  if (customId.startsWith("smart_helpful_") || customId.startsWith("smart_not_helpful_")) {
+    const isHelpful = customId.startsWith("smart_helpful_");
+    const userId = customId.split("_")[2];
+    
+    if (interaction.user.id !== userId) {
+      return interaction.reply({
+        content: `⚠️ Este feedback não é para ti!`,
+        flags: 64
+      });
+    }
+
+    const feedback = isHelpful ? "✅ Positivo" : "❌ Negativo";
+    
+    await interaction.reply({
+      content: `📝 Obrigado pelo feedback! (${feedback})\n\n${isHelpful ? '🎉 Ainda bem que conseguimos ajudar!' : '😔 Vamos melhorar! Se precisares, abre um ticket para ajuda personalizada.'}`,
+      flags: 64
+    });
+
+    // Log do feedback
+    try {
+      const logChannel = await interaction.client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
+      if (logChannel) {
+        const logEmbed = new EmbedBuilder()
+          .setTitle("📊 Feedback da Ajuda")
+          .setDescription([
+            `👤 Utilizador: ${interaction.user.tag}`,
+            `📝 Feedback: ${feedback}`,
+            `🕐 Data: ${new Date().toLocaleString("pt-PT")}`
+          ].join("\n"))
+          .setColor(isHelpful ? 0x00ff00 : 0xff0000)
+          .setTimestamp();
+        await logChannel.send({ embeds: [logEmbed] });
+      }
+    } catch (e) {
+      // Silencioso
+    }
+    return;
+  }
+
+  // Fallback
+  await interaction.reply({
+    content: `❌ Ação desconhecida.`,
+    flags: 64
+  });
 }
