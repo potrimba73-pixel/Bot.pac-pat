@@ -8,6 +8,7 @@ import { ASSISTANT_CONFIG } from "../config/index.js";
 import { encontrarRespostaFAQ } from "../database/faq.js";
 import { assistantMemory } from "../services/ajuda.js";
 import { MessageAnalyzer } from "./analyzer.js";
+import { callPollinationsAI, callGeminiAI } from "./ets2AI.js"; // ✅ Importação adicionada
 
 // Helper para gerar Custom IDs seguros (max 100 chars)
 function safeCustomId(prefix, messageId, extra = "") {
@@ -99,7 +100,8 @@ export async function handleSmartResponse(message, client) {
 
   // 2. Tentar historico do Diego
   try {
-    const analyzer = new MessageAnalyzer(client);
+    // ✅ Usar analyzer do client se existir, senão criar um novo (fallback)
+    const analyzer = client.messageAnalyzer || new MessageAnalyzer(client);
     const similar = analyzer.findSimilarResponses(question);
 
     if (similar.length > 0) {
@@ -145,11 +147,67 @@ export async function handleSmartResponse(message, client) {
     console.error("[SmartResponse] Erro no analyzer:", err.message);
   }
 
-  // 3. Se nao encontrou nada, sugere pesquisa
+  // 3. ✅ NOVO: Tentar IA externa (Pollinations ou Gemini)
+  let iaAnswer = null;
+  let source = "";
+
+  try {
+    iaAnswer = await callPollinationsAI(question);
+    source = "Pollinations AI";
+  } catch (e) {
+    console.error("[SmartResponse] Pollinations falhou:", e.message);
+  }
+
+  if (!iaAnswer) {
+    try {
+      iaAnswer = await callGeminiAI(question);
+      source = "Gemini AI";
+    } catch (e) {
+      console.error("[SmartResponse] Gemini falhou:", e.message);
+    }
+  }
+
+  if (iaAnswer) {
+    const embed = new EmbedBuilder()
+      .setTitle("🤖 Assistente Portugal Alfa")
+      .setDescription(iaAnswer)
+      .setColor(0x3498db)
+      .setFooter({ text: `Fonte: ${source} | Clique nos botões para dar feedback` })
+      .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(safeCustomId("smart_helpful", message.id))
+        .setLabel("👍 Ajudou")
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(safeCustomId("smart_not_helpful", message.id))
+        .setLabel("👎 Não ajudou")
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId(safeCustomId("smart_search", message.id, question))
+        .setLabel("🔍 Pesquisar na net")
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    try {
+      const sent = await message.reply({ embeds: [embed], components: [row] });
+      assistantMemory.pendingSearches.set(message.id, {
+        question: question,
+        messageId: sent.id,
+        channelId: message.channel.id
+      });
+    } catch (err) {
+      console.error("[SmartResponse] Erro ao enviar resposta IA:", err.message);
+    }
+    return;
+  }
+
+  // 4. Se tudo falhar, sugere pesquisa (botão)
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(safeCustomId("smart_do_search", message.id, question))
-      .setLabel("Pesquisar na internet")
+      .setLabel("🔍 Pesquisar na internet")
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId("smart_cancel")
@@ -159,7 +217,7 @@ export async function handleSmartResponse(message, client) {
 
   try {
     const sent = await message.reply({
-      content: `**Nao encontrei nenhuma resposta no historico nem no FAQ.**\n\nQueres que eu **pesquise na internet** por: "${question}"?`,
+      content: `**Não encontrei nenhuma resposta no histórico, no FAQ nem na IA.**\n\nQueres que eu **pesquise na internet** por: "${question}"?`,
       components: [row]
     });
 
@@ -169,6 +227,6 @@ export async function handleSmartResponse(message, client) {
       channelId: message.channel.id
     });
   } catch (err) {
-    console.error("[SmartResponse] Erro ao enviar sugestao:", err.message);
+    console.error("[SmartResponse] Erro ao enviar sugestão:", err.message);
   }
 }
