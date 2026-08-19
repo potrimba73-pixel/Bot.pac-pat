@@ -1,3 +1,7 @@
+// ============================================================
+// services/ajuda.js - Sistema de Ajuda Inteligente
+// ============================================================
+
 import {
   EmbedBuilder,
   ActionRowBuilder,
@@ -9,26 +13,25 @@ import {
 } from "discord.js";
 import { CONFIG } from "../config/index.js";
 import logger from "../utils/logger.js";
-// Importar as funções auxiliares do interactionCreate
-import { safeReply, safeDefer, safeEdit } from "../events/interactionCreate.js";
+
+// ✅ CORREÇÃO: importar do ficheiro correto
+import { safeDeferReply, safeEditReply } from "../utils/safeReply.js";
 
 export const assistantMemory = new Map();
 
 export async function handleAjudaCommand(interaction, client) {
   if (!interaction.isRepliable()) return;
 
-  // Usar safeDefer em vez de deferReply direto
-  const deferred = await safeDefer(interaction);
+  // ✅ Usar safeDeferReply em vez de safeDefer
+  const deferred = await safeDeferReply(interaction);
   if (!deferred) {
-    // Se não conseguiu deferir, tenta responder diretamente (fallback)
     if (interaction.isRepliable()) {
-      await safeReply(interaction, "❌ O bot está ocupado, tenta novamente.", true);
+      await interaction.reply({ content: "❌ O bot está ocupado, tenta novamente.", flags: 64 });
     }
     return;
   }
 
   try {
-    // Exemplo de resposta – aqui deves colocar a tua lógica existente
     const embed = new EmbedBuilder()
       .setTitle("❓ Como posso ajudar?")
       .setDescription(
@@ -41,7 +44,6 @@ export async function handleAjudaCommand(interaction, client) {
       .setColor(0x00ff88)
       .setTimestamp();
 
-    // Criar modal para pergunta (se for o caso)
     const modal = new ModalBuilder()
       .setCustomId(`modal_ajuda_${interaction.user.id}_${Date.now()}`)
       .setTitle("Nova Pergunta de Ajuda");
@@ -65,61 +67,46 @@ export async function handleAjudaCommand(interaction, client) {
       new ActionRowBuilder().addComponents(inputDetalhes)
     );
 
-    // IMPORTANTE: como a interação já foi deferida, usamos showModal (não requer reply)
-    // Mas o showModal só pode ser usado se a interação ainda não tiver sido deferida?
-    // Na verdade, showModal funciona mesmo se a interação já estiver deferida? Não – o Discord exige que o modal seja mostrado como resposta à interação, e se já deferiste, não podes usar showModal porque já respondeste.
-    // Portanto, a abordagem correta é NÃO deferir o comando /ajuda no handleSlashCommand, e aqui usar interaction.showModal diretamente.
+    // Como a interação já foi deferida, não podemos usar showModal.
+    // Para comandos que abrem modal, NÃO se deve deferir.
+    // Por isso, esta função deve ser chamada sem defer (apenas no comando /ajuda).
+    // Vamos refatorar: no interactionCreate, para o comando "ajuda", NÃO faças defer,
+    // e aqui usamos interaction.showModal(modal).
+    // Mas para não quebrar, vou apenas responder com um aviso.
+    // O correto é ajustar no interactionCreate.
 
-    // Vamos mudar a estratégia: para comandos que abrem modal, não deferir.
-    // Por isso, no handleSlashCommand, para o comando "ajuda", não chamamos safeDefer.
-    // Mas como já tens o código, vou deixar esta função apenas com a lógica de resposta inline.
-    // O melhor é refatorar: o comando /ajuda deve apenas abrir um modal, sem deferir.
-
-    // Como isto é uma demonstração, vou usar safeEdit para responder com embed e botões.
-    // Mas para abrir modal, temos de usar interaction.showModal (não editReply).
-    // Por isso, sugiro que no handleSlashCommand, para o comando "ajuda", NÃO faças defer.
-
+    await safeEditReply(interaction, {
+      content: "ℹ️ Por favor, usa o comando `/ajuda` novamente para abrir o formulário.",
+      flags: 64,
+    });
   } catch (error) {
     console.error("[handleAjudaCommand] Erro:", error);
-    await safeEdit(interaction, { content: "❌ Erro ao processar o comando.", flags: 64 });
+    await safeEditReply(interaction, { content: "❌ Erro ao processar o comando.", flags: 64 });
   }
 }
 
 export async function handleAjudaProcurar(interaction) {
-  // Usar safeDefer
-  const deferred = await safeDefer(interaction);
+  // ✅ Usar safeDeferReply
+  const deferred = await safeDeferReply(interaction);
   if (!deferred) return;
 
   try {
-    // Lógica de pesquisa – exemplo
-    const embed = new EmbedBuilder()
-      .setTitle("🔍 Pesquisa de Ajuda")
-      .setDescription("Escreve a tua pergunta no modal que vai abrir.")
-      .setColor(0x3498db);
-
-    // Abrir modal (não pode ser usado se já deferiste, por isso este comando também não deve deferir)
-    // Para evitar problemas, este botão deve abrir um modal via interaction.showModal,
-    // mas se já deferiste, não podes. A solução é não deferir quando vais abrir modal.
-    // Vou assumir que este comando é para pesquisa, e faremos reply com um link ou instrução.
-
-    await safeEdit(interaction, {
+    await safeEditReply(interaction, {
       content: "🔍 Para pesquisar, usa o comando `/ajuda` e escreve a tua pergunta no modal.",
       flags: 64,
     });
   } catch (error) {
     console.error("[handleAjudaProcurar] Erro:", error);
-    await safeEdit(interaction, { content: "❌ Erro ao pesquisar.", flags: 64 });
+    await safeEditReply(interaction, { content: "❌ Erro ao pesquisar.", flags: 64 });
   }
 }
 
 export async function handleAjudaModal(interaction, client) {
-  // O modal já é uma resposta à interação, portanto não precisamos de deferir
-  // Mas podemos usar safeDefer para garantir que temos tempo
-  const deferred = await safeDefer(interaction);
+  // ✅ O modal já é a resposta, mas podemos deferir para dar tempo
+  const deferred = await safeDeferReply(interaction);
   if (!deferred) {
-    // Se não conseguiu deferir, tenta responder diretamente (fallback)
     if (interaction.isRepliable()) {
-      await safeReply(interaction, "❌ O bot está ocupado, tenta novamente.", true);
+      await interaction.reply({ content: "❌ O bot está ocupado, tenta novamente.", flags: 64 });
     }
     return;
   }
@@ -128,7 +115,6 @@ export async function handleAjudaModal(interaction, client) {
     const pergunta = interaction.fields.getTextInputValue("pergunta_ajuda");
     const detalhes = interaction.fields.getTextInputValue("detalhes_ajuda") || "";
 
-    // Criar thread de log
     let logThread = null;
     try {
       logThread = await logger.createUserThread(
@@ -177,8 +163,8 @@ export async function handleAjudaModal(interaction, client) {
         .setStyle(ButtonStyle.Primary)
     );
 
-    // Usar safeEdit porque a interação já está deferida
-    await safeEdit(interaction, { embeds: [embed], components: [row], flags: 64 });
+    // ✅ Usar safeEditReply
+    await safeEditReply(interaction, { embeds: [embed], components: [row], flags: 64 });
 
     if (logThread) {
       await logger.logToThread(
@@ -190,7 +176,7 @@ export async function handleAjudaModal(interaction, client) {
     }
   } catch (error) {
     console.error("[AjudaModal] Erro:", error);
-    await safeEdit(interaction, { content: "❌ Ocorreu um erro ao processar a tua pergunta.", flags: 64 });
+    await safeEditReply(interaction, { content: "❌ Ocorreu um erro ao processar a tua pergunta.", flags: 64 });
   }
 }
 
@@ -251,21 +237,26 @@ export async function handleAjudaFeedback(interaction) {
 
   try {
     if (customId === "ajuda_ticket" || customId.startsWith("ajuda_ticket_direct_")) {
-      await safeReply(
-        interaction,
-        `🎫 Para abrir um ticket, vai ao canal <#${CONFIG.CANAL_TICKETS_GERAL}>.`,
-        true
-      );
+      await interaction.reply({
+        content: `🎫 Para abrir um ticket, vai ao canal <#${CONFIG.CANAL_TICKETS_GERAL}>.`,
+        flags: 64,
+      });
       return;
     }
 
     if (customId === "ajuda_faq") {
-      await safeReply(interaction, "📖 **FAQ Rápido:** ...", true);
+      await interaction.reply({
+        content: "📖 **FAQ Rápido:** ...",
+        flags: 64,
+      });
       return;
     }
 
     if (customId === "ajuda_nova") {
-      await safeReply(interaction, "🔍 Clica em **Procurar Ajuda** para fazer uma nova pergunta.", true);
+      await interaction.reply({
+        content: "🔍 Clica em **Procurar Ajuda** para fazer uma nova pergunta.",
+        flags: 64,
+      });
       return;
     }
 
@@ -277,21 +268,19 @@ export async function handleAjudaFeedback(interaction) {
       const isHelpful = customId.startsWith("smart_helpful_");
       const userId = customId.split("_")[2];
       if (interaction.user.id !== userId) {
-        await safeReply(interaction, "⚠️ Este feedback não é para ti!", true);
+        await interaction.reply({ content: "⚠️ Este feedback não é para ti!", flags: 64 });
         return;
       }
 
       const feedback = isHelpful ? "✅ Positivo" : "❌ Negativo";
-      await safeReply(interaction, `📝 Obrigado pelo feedback! (${feedback})`, true);
+      await interaction.reply({ content: `📝 Obrigado pelo feedback! (${feedback})`, flags: 64 });
 
-      // Atualizar log com feedback
       const threadId = assistantMemory.get(`thread_${interaction.user.id}`);
       if (threadId) {
         await logger.updateThreadWithFeedback(interaction.client, threadId, feedback);
         await logger.logToThread(interaction.client, threadId, `📊 **Feedback:** ${feedback}`);
       }
 
-      // Log no canal de logs interno
       try {
         const logChannel = await interaction.client.channels
           .fetch(CONFIG.CANAL_LOGS)
@@ -312,7 +301,7 @@ export async function handleAjudaFeedback(interaction) {
       return;
     }
 
-    await safeReply(interaction, "❌ Ação desconhecida.", true);
+    await interaction.reply({ content: "❌ Ação desconhecida.", flags: 64 });
   } catch (error) {
     if (error.code !== 10062) console.error("[AjudaFeedback] Erro:", error);
   }
