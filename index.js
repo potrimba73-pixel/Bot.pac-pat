@@ -1,11 +1,17 @@
+// ============================================================
+// index.js - Ponto de entrada principal do PAC Bot
+// ============================================================
+
 import {
   Client,
   GatewayIntentBits,
   Partials,
   Events,
 } from "discord.js";
-import http from 'node:http';
-import { db, connectDB } from "./src/utils/db.js";
+import http from "node:http";
+import { db, connectDB, saveDB } from "./src/utils/db.js";
+
+// ===== HANDLERS PRINCIPAIS =====
 import { handleReady } from "./src/events/ready.js";
 import { handleGuildMemberAdd } from "./src/events/guildMemberAdd.js";
 import { handleGuildMemberRemove } from "./src/events/guildMemberRemove.js";
@@ -13,17 +19,35 @@ import { handleInteractionCreate } from "./src/events/interactionCreate.js";
 import { handleMessageCreate } from "./src/events/messageCreate.js";
 import { handleMessageDelete } from "./src/events/messageDelete.js";
 import { handleMessageUpdate } from "./src/events/messageUpdate.js";
-import { setExternalClient } from "./src/services/externalLogs.js";
 
-// ==================== VALIDAR ENV VARS ====================
+// ===== HANDLERS ADICIONAIS (IMPORTANTES) =====
+import guildMemberUpdateHandler from "./src/events/guildMemberUpdate.js";
+import voiceStateUpdateHandler from "./src/events/voiceStateUpdate.js";
+
+// ===== SERVIÇOS EXTERNOS =====
+import {
+  setExternalClient,
+  logExternalChannelCreate,
+  logExternalChannelDelete,
+  logExternalRoleCreate,
+  logExternalRoleDelete,
+  logExternalMemberBan,
+  logExternalMemberUnban,
+} from "./src/services/externalLogs.js";
+
+// ============================================================
+// 1. VALIDAÇÃO DAS VARIÁVEIS DE AMBIENTE
+// ============================================================
 const requiredEnv = ["TOKEN", "CLIENT_ID"];
-const missing = requiredEnv.filter(e => !process.env[e]);
+const missing = requiredEnv.filter((e) => !process.env[e]);
 if (missing.length > 0) {
-  console.error("Variaveis em falta:", missing.join(", "));
+  console.error("❌ Variáveis em falta:", missing.join(", "));
   process.exit(1);
 }
 
-// ==================== CLIENT SETUP ====================
+// ============================================================
+// 2. CONFIGURAÇÃO DO CLIENTE DISCORD
+// ============================================================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -37,144 +61,168 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message, Partials.GuildMember],
   sweepers: {
     messages: {
-      interval: 300,
-      lifetime: 1800,
+      interval: 300, // 5 minutos
+      lifetime: 1800, // 30 minutos
     },
   },
 });
 
-// ==================== CONNECT DATABASE ====================
-connectDB().catch(err => console.error("[DB] Erro ao conectar:", err));
+// ============================================================
+// 3. CONEXÃO À BASE DE DADOS (com espera)
+// ============================================================
+await connectDB().catch((err) =>
+  console.error("[DB] Erro ao conectar:", err)
+);
 
-// ==================== EVENTS ====================
+// ============================================================
+// 4. REGISTO DOS EVENTOS
+// ============================================================
+
+// ---- READY ----
 client.once(Events.ClientReady, () => {
   handleReady(client);
   setExternalClient(client);
 });
 
-client.on(Events.GuildMemberAdd, (member) => handleGuildMemberAdd(member, client));
+// ---- MEMBROS ----
+client.on(Events.GuildMemberAdd, (member) =>
+  handleGuildMemberAdd(member, client)
+);
+client.on(Events.GuildMemberRemove, (member) =>
+  handleGuildMemberRemove(member, client)
+);
 
-client.on(Events.GuildMemberRemove, (member) => handleGuildMemberRemove(member, client));
+// ---- ATUALIZAÇÃO DE MEMBRO (cargos/nickname) ----
+client.on(Events.GuildMemberUpdate, (oldMember, newMember) =>
+  guildMemberUpdateHandler.execute(oldMember, newMember, client)
+);
 
-client.on(Events.InteractionCreate, (interaction) => handleInteractionCreate(interaction, client));
+// ---- INTERAÇÕES (comandos, botões, menus, modais) ----
+client.on(Events.InteractionCreate, (interaction) =>
+  handleInteractionCreate(interaction, client)
+);
 
-client.on(Events.MessageCreate, (message) => handleMessageCreate(message, client));
+// ---- MENSAGENS ----
+client.on(Events.MessageCreate, (message) =>
+  handleMessageCreate(message, client)
+);
+client.on(Events.MessageDelete, (message) =>
+  handleMessageDelete(message, client)
+);
+client.on(Events.MessageUpdate, (oldMessage, newMessage) =>
+  handleMessageUpdate(oldMessage, newMessage, client)
+);
 
-client.on(Events.MessageDelete, (message) => handleMessageDelete(message, client));
+// ---- ESTADO DE VOZ ----
+client.on(Events.VoiceStateUpdate, (oldState, newState) =>
+  voiceStateUpdateHandler.execute(oldState, newState, client)
+);
 
-client.on(Events.MessageUpdate, (oldMessage, newMessage) => handleMessageUpdate(oldMessage, newMessage, client));
-
-// Voice state updates for external logging
-client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
-  if (oldState.channelId === newState.channelId) return;
-  try {
-    const { logExternalVoiceJoin, logExternalVoiceLeave } = await import("./src/services/externalLogs.js");
-    if (newState.channel) logExternalVoiceJoin(newState.member, newState.channel);
-    if (oldState.channel) logExternalVoiceLeave(oldState.member, oldState.channel);
-  } catch (e) {}
-});
-
-// Channel events for external logging
+// ---- LOGS EXTERNOS: CANAIS ----
 client.on(Events.ChannelCreate, async (channel) => {
   try {
-    const { logExternalChannelCreate } = await import("./src/services/externalLogs.js");
-    logExternalChannelCreate(channel);
-  } catch (e) {}
+    await logExternalChannelCreate(channel);
+  } catch (e) {
+    /* silencioso */
+  }
 });
-
 client.on(Events.ChannelDelete, async (channel) => {
   try {
-    const { logExternalChannelDelete } = await import("./src/services/externalLogs.js");
-    logExternalChannelDelete(channel);
-  } catch (e) {}
+    await logExternalChannelDelete(channel);
+  } catch (e) {
+    /* silencioso */
+  }
 });
 
-// Role events for external logging
+// ---- LOGS EXTERNOS: CARGOS ----
 client.on(Events.GuildRoleCreate, async (role) => {
   try {
-    const { logExternalRoleCreate } = await import("./src/services/externalLogs.js");
-    logExternalRoleCreate(role);
-  } catch (e) {}
+    await logExternalRoleCreate(role);
+  } catch (e) {
+    /* silencioso */
+  }
 });
-
 client.on(Events.GuildRoleDelete, async (role) => {
   try {
-    const { logExternalRoleDelete } = await import("./src/services/externalLogs.js");
-    logExternalRoleDelete(role);
-  } catch (e) {}
+    await logExternalRoleDelete(role);
+  } catch (e) {
+    /* silencioso */
+  }
 });
 
-// Member update for external logging
-client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
-  try {
-    const { logExternalMemberUpdate } = await import("./src/services/externalLogs.js");
-    logExternalMemberUpdate(oldMember, newMember);
-  } catch (e) {}
-});
-
-// Ban/Unban for external logging
+// ---- LOGS EXTERNOS: BANS ----
 client.on(Events.GuildBanAdd, async (ban) => {
   try {
-    const { logExternalMemberBan } = await import("./src/services/externalLogs.js");
-    logExternalMemberBan(ban);
-  } catch (e) {}
+    await logExternalMemberBan(ban);
+  } catch (e) {
+    /* silencioso */
+  }
 });
-
 client.on(Events.GuildBanRemove, async (ban) => {
   try {
-    const { logExternalMemberUnban } = await import("./src/services/externalLogs.js");
-    logExternalMemberUnban(ban.user, ban.guild);
-  } catch (e) {}
+    await logExternalMemberUnban(ban.user, ban.guild);
+  } catch (e) {
+    /* silencioso */
+  }
 });
 
-// ==================== ERROR HANDLING ====================
-client.on(Events.Error, (error) => {
-  console.error("Erro do cliente Discord:", error);
-});
-
-process.on('unhandledRejection', (error) => {
-  console.error("Unhandled Rejection:", error);
-});
-
-process.on('uncaughtException', (error) => {
-  console.error("Uncaught Exception:", error);
-});
-
-// ==================== WEB SERVER (RENDER) ====================
+// ============================================================
+// 5. SERVIDOR HTTP (para health checks no Render)
+// ============================================================
 const server = http.createServer((req, res) => {
-  const ticketsAbertos = Object.values(db.tickets || {}).filter(t => !t.closed).length;
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.write("PAC Bot Online!\n");
-  res.write("Uptime: " + Math.floor(process.uptime()) + "s\n");
-  res.write("Tickets abertos: " + ticketsAbertos + "\n");
+  const ticketsAbertos = Object.values(db.tickets || {}).filter(
+    (t) => !t.closed
+  ).length;
+
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.write("✅ PAC Bot Online!\n");
+  res.write(`⏱️ Uptime: ${Math.floor(process.uptime())}s\n`);
+  res.write(`🎫 Tickets abertos: ${ticketsAbertos}\n`);
   res.end();
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`[INDEX] Servidor HTTP a escutar na porta ${PORT}`);
+  console.log(`[INDEX] 🌐 Servidor HTTP a escutar na porta ${PORT}`);
 });
 
-// ==================== LOGIN (com tratamento de erro) ====================
+// ============================================================
+// 6. TRATAMENTO DE ERROS GLOBAIS
+// ============================================================
+client.on(Events.Error, (error) =>
+  console.error("[DISCORD] Erro no cliente:", error)
+);
+
+process.on("unhandledRejection", (error) =>
+  console.error("[INDEX] Unhandled Rejection:", error)
+);
+process.on("uncaughtException", (error) =>
+  console.error("[INDEX] Uncaught Exception:", error)
+);
+
+// ============================================================
+// 7. LOGIN (com async/await e tratamento robusto)
+// ============================================================
 (async () => {
   try {
-    console.log("[INDEX] A tentar login no Discord...");
+    console.log("[INDEX] 🔑 A iniciar sessão no Discord...");
     await client.login(process.env.TOKEN);
-    console.log("[INDEX] Login efetuado com sucesso!");
+    console.log("[INDEX] ✅ Login efetuado com sucesso!");
   } catch (error) {
-    console.error("[INDEX] Erro fatal no login:", error);
-    // Não termina o processo para que o servidor HTTP continue a responder (opcional)
-    // Mas se o login falhar, o bot não funcionará.
-    // Podes optar por process.exit(1) se preferires.
+    console.error("[INDEX] ❌ Erro fatal no login:", error);
+    // Mantém o servidor HTTP a funcionar mesmo se o login falhar,
+    // mas encerra o processo com código 1 para o Render reiniciar.
+    process.exit(1);
   }
 })();
 
-// ==================== TRATAR ERROS NÃO CAPTURADOS ====================
-process.on('unhandledRejection', (error) => {
-  console.error("[INDEX] Unhandled Rejection:", error);
-});
+// ============================================================
+// 8. SALVAMENTO PERIÓDICO DA BASE DE DADOS (opcional)
+// ============================================================
+setInterval(() => {
+  saveDB().catch((err) =>
+    console.error("[INDEX] Erro ao guardar DB periódico:", err)
+  );
+}, 5 * 60 * 1000); // a cada 5 minutos
 
-process.on('uncaughtException', (error) => {
-  console.error("[INDEX] Uncaught Exception:", error);
-});// ==================== LOGIN ====================
-client.login(process.env.TOKEN);
+console.log("[INDEX] 🚀 Bot iniciado com sucesso! (aguardando eventos...)");
