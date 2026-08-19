@@ -1,5 +1,5 @@
 // ============================================================
-// index.js - Ponto de entrada principal do PAC Bot
+// index.js - PAC Bot (versão 4.0) - com importação dinâmica
 // ============================================================
 
 import {
@@ -11,7 +11,7 @@ import {
 import http from "node:http";
 import { db, connectDB, saveDB } from "./src/utils/db.js";
 
-// ===== HANDLERS PRINCIPAIS =====
+// ===== HANDLERS PRINCIPAIS (estes sabemos que exportam funções nomeadas) =====
 import { handleReady } from "./src/events/ready.js";
 import { handleGuildMemberAdd } from "./src/events/guildMemberAdd.js";
 import { handleGuildMemberRemove } from "./src/events/guildMemberRemove.js";
@@ -19,10 +19,6 @@ import { handleInteractionCreate } from "./src/events/interactionCreate.js";
 import { handleMessageCreate } from "./src/events/messageCreate.js";
 import { handleMessageDelete } from "./src/events/messageDelete.js";
 import { handleMessageUpdate } from "./src/events/messageUpdate.js";
-
-// ===== HANDLERS ADICIONAIS (IMPORTANTES - CORRIGIDOS) =====
-import guildMemberUpdate from "./src/events/guildMemberUpdate.js";
-import voiceStateUpdate from "./src/events/voiceStateUpdate.js";
 
 // ===== SERVIÇOS EXTERNOS =====
 import {
@@ -75,7 +71,28 @@ await connectDB().catch((err) =>
 );
 
 // ============================================================
-// 4. REGISTO DOS EVENTOS
+// 4. CARREGAR HANDLERS DINÂMICOS (para evitar erro de exportação)
+// ============================================================
+let guildMemberUpdateHandler = null;
+let voiceStateUpdateHandler = null;
+
+try {
+  // Tenta importar com import dinâmico (funciona com qualquer formato)
+  const guildModule = await import("./src/events/guildMemberUpdate.js");
+  // Se o módulo exporta default, pega ele; senão, usa o módulo inteiro
+  guildMemberUpdateHandler = guildModule.default || guildModule;
+  
+  const voiceModule = await import("./src/events/voiceStateUpdate.js");
+  voiceStateUpdateHandler = voiceModule.default || voiceModule;
+  
+  console.log("[INDEX] ✅ Handlers dinâmicos carregados com sucesso.");
+} catch (err) {
+  console.error("[INDEX] ❌ Erro ao carregar handlers dinâmicos:", err.message);
+  process.exit(1);
+}
+
+// ============================================================
+// 5. REGISTO DOS EVENTOS
 // ============================================================
 
 // ---- READY ----
@@ -93,9 +110,13 @@ client.on(Events.GuildMemberRemove, (member) =>
 );
 
 // ---- ATUALIZAÇÃO DE MEMBRO (cargos/nickname) ----
-client.on(Events.GuildMemberUpdate, (oldMember, newMember) =>
-  guildMemberUpdate.execute(oldMember, newMember, client)
-);
+client.on(Events.GuildMemberUpdate, (oldMember, newMember) => {
+  if (guildMemberUpdateHandler && typeof guildMemberUpdateHandler.execute === "function") {
+    guildMemberUpdateHandler.execute(oldMember, newMember, client);
+  } else {
+    console.warn("[INDEX] guildMemberUpdateHandler não está disponível.");
+  }
+});
 
 // ---- INTERAÇÕES (comandos, botões, menus, modais) ----
 client.on(Events.InteractionCreate, (interaction) =>
@@ -114,60 +135,52 @@ client.on(Events.MessageUpdate, (oldMessage, newMessage) =>
 );
 
 // ---- ESTADO DE VOZ ----
-client.on(Events.VoiceStateUpdate, (oldState, newState) =>
-  voiceStateUpdate.execute(oldState, newState, client)
-);
+client.on(Events.VoiceStateUpdate, (oldState, newState) => {
+  if (voiceStateUpdateHandler && typeof voiceStateUpdateHandler.execute === "function") {
+    voiceStateUpdateHandler.execute(oldState, newState, client);
+  } else {
+    console.warn("[INDEX] voiceStateUpdateHandler não está disponível.");
+  }
+});
 
 // ---- LOGS EXTERNOS: CANAIS ----
 client.on(Events.ChannelCreate, async (channel) => {
   try {
     await logExternalChannelCreate(channel);
-  } catch (e) {
-    /* silencioso */
-  }
+  } catch (e) { /* silencioso */ }
 });
 client.on(Events.ChannelDelete, async (channel) => {
   try {
     await logExternalChannelDelete(channel);
-  } catch (e) {
-    /* silencioso */
-  }
+  } catch (e) { /* silencioso */ }
 });
 
 // ---- LOGS EXTERNOS: CARGOS ----
 client.on(Events.GuildRoleCreate, async (role) => {
   try {
     await logExternalRoleCreate(role);
-  } catch (e) {
-    /* silencioso */
-  }
+  } catch (e) { /* silencioso */ }
 });
 client.on(Events.GuildRoleDelete, async (role) => {
   try {
     await logExternalRoleDelete(role);
-  } catch (e) {
-    /* silencioso */
-  }
+  } catch (e) { /* silencioso */ }
 });
 
 // ---- LOGS EXTERNOS: BANS ----
 client.on(Events.GuildBanAdd, async (ban) => {
   try {
     await logExternalMemberBan(ban);
-  } catch (e) {
-    /* silencioso */
-  }
+  } catch (e) { /* silencioso */ }
 });
 client.on(Events.GuildBanRemove, async (ban) => {
   try {
     await logExternalMemberUnban(ban.user, ban.guild);
-  } catch (e) {
-    /* silencioso */
-  }
+  } catch (e) { /* silencioso */ }
 });
 
 // ============================================================
-// 5. SERVIDOR HTTP (para health checks no Render)
+// 6. SERVIDOR HTTP (para health checks no Render)
 // ============================================================
 const server = http.createServer((req, res) => {
   const ticketsAbertos = Object.values(db.tickets || {}).filter(
@@ -187,7 +200,7 @@ server.listen(PORT, () => {
 });
 
 // ============================================================
-// 6. TRATAMENTO DE ERROS GLOBAIS
+// 7. TRATAMENTO DE ERROS GLOBAIS
 // ============================================================
 client.on(Events.Error, (error) =>
   console.error("[DISCORD] Erro no cliente:", error)
@@ -201,7 +214,7 @@ process.on("uncaughtException", (error) =>
 );
 
 // ============================================================
-// 7. LOGIN (com async/await e tratamento robusto)
+// 8. LOGIN (com async/await e tratamento robusto)
 // ============================================================
 (async () => {
   try {
@@ -215,12 +228,12 @@ process.on("uncaughtException", (error) =>
 })();
 
 // ============================================================
-// 8. SALVAMENTO PERIÓDICO DA BASE DE DADOS (opcional)
+// 9. SALVAMENTO PERIÓDICO DA BASE DE DADOS
 // ============================================================
 setInterval(() => {
   saveDB().catch((err) =>
     console.error("[INDEX] Erro ao guardar DB periódico:", err)
   );
-}, 5 * 60 * 1000); // a cada 5 minutos
+}, 5 * 60 * 1000);
 
 console.log("[INDEX] 🚀 Bot iniciado com sucesso! (aguardando eventos...)");
