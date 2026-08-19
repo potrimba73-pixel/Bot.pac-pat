@@ -552,12 +552,18 @@ export async function handleInteractionCreate(
         interaction.commandName;
 
       if (command === "ajuda") {
-        if (
-          !(await safeDefer(interaction))
-        ) {
+        // ✅ CORREÇÃO: tentar deferir; se falhar, responder diretamente (se possível)
+        const deferred = await safeDefer(interaction);
+        if (!deferred) {
+          // Se não conseguiu deferir, tenta responder diretamente se ainda for possível
+          if (interaction.isRepliable()) {
+            await interaction.reply({
+              content: "❌ O bot demorou muito a responder. Tenta novamente.",
+              flags: 64
+            });
+          }
           return;
         }
-
         return handleAjudaCommand(
           interaction,
           client
