@@ -43,7 +43,7 @@ function sanitizeFileName(name) {
 // ============================================================
 const dateFormatter = new Intl.DateTimeFormat('pt-PT', {
   day: '2-digit', month: '2-digit', year: 'numeric',
-  hour: '2-digit', minute: '2-digit', second: '2-digit',
+  hour: '2-digit', minute: '2-digit',
   timeZone: TIMEZONE,
 });
 
@@ -70,114 +70,126 @@ function getDiscriminator(author) {
 }
 
 // ============================================================
-// UTIL: CONVERTER MARKDOWN PARA HTML (COM RECURSÃO)
+// RENDERIZADOR DE MARKDOWN DO DISCORD
 // ============================================================
 function renderMarkdown(text) {
   if (!text) return '';
+  let processed = escapeHtml(text);
 
-  let processed = text;
+  // 1. Emojis customizados do Discord
+  processed = processed.replace(/&lt;a?:([a-zA-Z0-9_]+):[0-9]+&gt;/g, ':$1:');
 
-  // 1. Substituir emojis personalizados do Discord por texto simples (para o HTML não quebrar)
-  processed = processed.replace(/<a?:([a-zA-Z0-9_]+):[0-9]+>/g, ':$1:');
+  // 2. Links em Markdown [Texto](URL)
+  processed = processed.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 
-  // 2. Links com texto no formato [Texto](URL) - PRIORIDADE MÁXIMA
-  processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, textContent, url) => {
-    const safeText = renderMarkdown(textContent);
-    return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${safeText}</a>`;
-  });
+  // 3. Links simples (URLs soltas)
+  processed = processed.replace(/(^|[^"])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
 
-  // 3. Links soltos (URLs normais sem colchetes)
-  processed = processed.replace(/(https?:\/\/[^\s]+)/g, (match) => {
-    return `<a href="${escapeHtml(match)}" target="_blank" rel="noopener noreferrer">${escapeHtml(match)}</a>`;
-  });
-
-  // 4. Negrito **texto**
-  processed = processed.replace(/\*\*([^*]+?)\*\*/g, (match, p1) => `<strong>${renderMarkdown(p1)}</strong>`);
-  
-  // 5. Itálico *texto*
-  processed = processed.replace(/\*([^*]+?)\*/g, (match, p1) => `<em>${renderMarkdown(p1)}</em>`);
-
-  // 6. Sublinhado __texto__
-  processed = processed.replace(/__([^_]+?)__/g, (match, p1) => `<u>${renderMarkdown(p1)}</u>`);
-
-  // 7. Riscado ~~texto~~
-  processed = processed.replace(/~~([^~]+?)~~/g, (match, p1) => `<s>${renderMarkdown(p1)}</s>`);
-
-  // 8. Quebras de linha
-  processed = processed.replace(/\r\n/g, '<br>').replace(/\n/g, '<br>');
+  // 4. Formatação básica
+  processed = processed.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
+  processed = processed.replace(/\*([^*]+?)\*/g, '<em>$1</em>');
+  processed = processed.replace(/__([^_]+?)__/g, '<u>$1</u>');
+  processed = processed.replace(/~~([^~]+?)~~/g, '<s>$1</s>');
+  processed = processed.replace(/\n/g, '<br>');
 
   return processed;
 }
 
 // ============================================================
-// EXTRAÇÃO DE TEXTO PARA HTML (com conversão de emojis e markdown)
+// PROCESSADOR DE EMBEDS ESTILO DISCORD / JOCKIE MUSIC
 // ============================================================
-function getMessageText(msg) {
-  const isJockie = msg.author.id === '412347553141751808';
-  let text = msg.content || '';
+function renderMessageContentHTML(msg) {
+  let html = '';
 
+  // Texto base da mensagem
+  if (msg.content) {
+    html += `<div class="text-content">${renderMarkdown(msg.content)}</div>`;
+  }
+
+  // Embeds
   if (msg.embeds?.length) {
     for (const embed of msg.embeds) {
-      if (isJockie && embed.description) {
-        // Playlist
-        if (
-          embed.title?.toLowerCase().includes('playlist') ||
-          embed.description.toLowerCase().includes('playlist')
-        ) {
-          let playlistName = '', tracks = '', length = '';
-          for (const field of embed.fields || []) {
-            const fname = field.name.toLowerCase();
-            if (fname.includes('playlist')) playlistName = field.value;
-            else if (fname.includes('tracks')) tracks = field.value;
-            else if (fname.includes('length') || fname.includes('duração')) length = field.value;
-          }
-          if (!playlistName && embed.description) {
-            const lines = embed.description.split('\n');
-            for (const line of lines) {
-              if (line.includes('Playlist') && !line.includes('Length')) playlistName = line.replace('Playlist', '').trim();
-              if (line.includes('Tracks')) tracks = line.replace(/.*Tracks\s*/, '').trim();
-              if (line.includes('Length')) length = line.replace(/.*Length\s*/, '').trim();
-            }
-          }
-          let result = '**Added Playlist**';
-          if (playlistName) result += `\n**Playlist:** ${playlistName}`;
-          if (tracks) result += `\n**Tracks:** ${tracks}`;
-          if (length) result += `\n**Length:** ${length}`;
-          if (embed.url) result += `\n🔗 ${embed.url}`;
-          text += (text ? '\n' : '') + result;
-          continue;
-        }
+      const desc = embed.description || '';
 
-        // Música - substitui 📺 por ▶️
-        if (embed.description.toLowerCase().includes('started playing')) {
-          let desc = embed.description;
-          desc = desc.replace(/📺\s*Started playing/g, '▶️ Started playing');
-          text += (text ? '\n' : '') + desc;
-          continue;
-        }
+      // 1. Estilo especial: Caixas "Started playing..." (Card estilo Spotify)
+      if (desc.toLowerCase().includes('started playing')) {
+        const match = desc.match(/\[(.*?)\]\((.*?)\)/);
+        const songTitle = match ? match[1] : desc.replace(/.*Started playing\s*/i, '');
+        const songUrl = match ? match[2] : '#';
+
+        html += `
+        <div class="music-card">
+          <svg class="spotify-icon" viewBox="0 0 24 24"><path fill="#1DB954" d="M12 0C5.376 0 0 5.376 0 12s5.376 12 12 12 12-5.376 12-12S18.624 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.899 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.019zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141 C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.18-.1.2-.84-.36-.18-.6.36-1.2.96-1.38 4.2-1.26 11.28-1.02 15.72 1.62.54.3.72 1.02.42 1.56-.3.42-1.02.6-1.56.3z"/></svg>
+          <span class="music-label">Started playing</span>
+          <a href="${escapeHtml(songUrl)}" target="_blank" class="music-title">${escapeHtml(songTitle)}</a>
+        </div>`;
+        continue;
       }
 
-      // Outros Embeds (Genérico)
-      let parts = [];
-      if (embed.title) parts.push(`**${embed.title}**`);
-      if (embed.description) parts.push(embed.description);
-      if (embed.fields) for (const field of embed.fields) parts.push(`**${field.name}:** ${field.value}`);
-      if (embed.url) parts.push(`🔗 ${embed.url}`);
-      if (embed.author?.name) parts.push(`Por ${embed.author.name}`);
-      if (embed.footer?.text) parts.push(embed.footer.text);
-      if (parts.length) text += (text ? '\n' : '') + parts.join('\n');
+      // 2. Estilo especial: Embed de Playlist (Ex: RAP TUGA)
+      const isPlaylist = embed.title?.toLowerCase().includes('playlist') || desc.toLowerCase().includes('playlist') || embed.fields?.some(f => f.name.toLowerCase().includes('playlist'));
+
+      if (isPlaylist) {
+        let playlistName = '', tracks = '', length = '';
+        for (const f of embed.fields || []) {
+          const fn = f.name.toLowerCase();
+          if (fn.includes('playlist')) playlistName = f.value;
+          if (fn.includes('tracks')) tracks = f.value;
+          if (fn.includes('length') || fn.includes('duração')) length = f.value;
+        }
+
+        const thumbnail = embed.thumbnail?.url || embed.image?.url || '';
+
+        html += `
+        <div class="embed-box">
+          <div class="embed-inner">
+            <div class="embed-details">
+              <div class="embed-title-header">Added Playlist</div>
+              <div class="embed-field-label">Playlist</div>
+              <div class="embed-field-value-link">${renderMarkdown(playlistName || embed.title || 'Playlist')}</div>
+              <div class="embed-grid">
+                <div>
+                  <div class="embed-field-label">Playlist Length</div>
+                  <div class="embed-field-value">${escapeHtml(length || '-')}</div>
+                </div>
+                <div>
+                  <div class="embed-field-label">Tracks</div>
+                  <div class="embed-field-value">${escapeHtml(tracks || '-')}</div>
+                </div>
+              </div>
+            </div>
+            ${thumbnail ? `<img src="${escapeHtml(thumbnail)}" class="embed-thumb" alt="Cover">` : ''}
+          </div>
+        </div>`;
+        continue;
+      }
+
+      // 3. Embed Genérico do Discord
+      const color = embed.color ? `#${embed.color.toString(16).padStart(6, '0')}` : '#202225';
+      html += `
+      <div class="embed-box" style="border-left-color: ${color};">
+        ${embed.title ? `<div class="embed-title-header">${renderMarkdown(embed.title)}</div>` : ''}
+        ${embed.description ? `<div class="text-content">${renderMarkdown(embed.description)}</div>` : ''}
+      </div>`;
     }
   }
 
-  if (!text && isJockie && msg.content) text = msg.content;
-  if (msg.attachments?.size) for (const [, att] of msg.attachments) text += (text ? '\n' : '') + `📎 ${att.name} (${att.url})`;
-  if (msg.stickers?.size) for (const sticker of msg.stickers.values()) text += (text ? '\n' : '') + `🖼️ Sticker: ${sticker.name}`;
+  // Anexos
+  if (msg.attachments?.size) {
+    for (const [, att] of msg.attachments) {
+      if (att.contentType?.startsWith('image/')) {
+        html += `<div class="attachment"><img src="${escapeHtml(att.url)}" alt="Anexo"></div>`;
+      } else {
+        html += `<div class="attachment"><a href="${escapeHtml(att.url)}" target="_blank" class="music-title">📎 ${escapeHtml(att.name)}</a></div>`;
+      }
+    }
+  }
 
-  return text || '(sem conteúdo)';
+  return html || '<div class="text-content">(sem conteúdo)</div>';
 }
 
 // ============================================================
-// EXTRAÇÃO DE TEXTO PARA TXT (CONTEÚDO BRUTO, SEM MODIFICAR EMOJIS NEM MARKDOWN)
+// EXTRAÇÃO DE TEXTO PARA TXT (RAW)
 // ============================================================
 function getTxtContentRaw(msg) {
   const isJockie = msg.author.id === '412347553141751808';
@@ -189,262 +201,277 @@ function getTxtContentRaw(msg) {
     for (const embed of msg.embeds) {
       if (isJockie) {
         if (embed.description) parts.push(embed.description);
-        if (embed.url && !embed.description?.includes(embed.url)) {
-          parts.push(embed.url);
-        }
+        if (embed.url && !embed.description?.includes(embed.url)) parts.push(embed.url);
         continue;
       }
-
       if (embed.title) parts.push(embed.title);
       if (embed.description) parts.push(embed.description);
       if (embed.fields) {
-        for (const field of embed.fields) {
-          parts.push(`**${field.name}:** ${field.value}`);
-        }
+        for (const field of embed.fields) parts.push(`${field.name}: ${field.value}`);
       }
-      if (embed.url) parts.push(embed.url);
-      if (embed.author?.name) parts.push(`Por ${embed.author.name}`);
-      if (embed.footer?.text) parts.push(embed.footer.text);
     }
   }
 
   if (msg.attachments?.size) {
-    for (const [, att] of msg.attachments) {
-      parts.push(`📎 ${att.name} (${att.url})`);
-    }
-  }
-  if (msg.stickers?.size) {
-    for (const sticker of msg.stickers.values()) {
-      parts.push(`🖼️ Sticker: ${sticker.name}`);
-    }
+    for (const [, att] of msg.attachments) parts.push(`📎 ${att.name} (${att.url})`);
   }
 
   return parts.join(' ').trim() || '(sem conteúdo)';
 }
 
 // ============================================================
-// GERAR HTML
+// GERAR HTML (DISCORD DARK MODE EXACTO)
 // ============================================================
 function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targetName) {
-  const guild = channel.guild;
-  const guildName = guild?.name || 'Servidor Desconhecido';
-  const channelName = channel.name;
-  const guildIcon = guild?.iconURL({ dynamic: true, size: 64 }) || '';
   const sorted = [...messages].sort((a, b) => a.createdAt - b.createdAt);
 
-  const msgsHtml = sorted.map((msg, index) => {
-    const avatar = msg.author.displayAvatarURL({ extension: 'png', size: 64 });
+  const msgsHtml = sorted.map((msg) => {
+    const avatar = msg.author.displayAvatarURL({ extension: 'png', size: 80 });
     const data = dateFormatter.format(msg.createdAt);
-    const rawText = getMessageText(msg);
-    const texto = renderMarkdown(rawText);
     const authorName = getDisplayName(msg);
+    const isBot = msg.author.bot;
 
-    const hue = (parseInt(msg.author.id.slice(0, 6), 16) % 360);
-    const authorColor = msg.author.bot ? '#5865F2' : `hsl(${hue}, 70%, 55%)`;
-    const botBadge = msg.author.bot ? '<span class="badge bot">BOT</span>' : '';
-    const appBadge = msg.author.bot ? '<span class="badge app">APP</span>' : '';
-    const rowClass = index % 2 === 0 ? 'message' : 'message alt';
-    // Borda lateral para embeds do Jockie
-    const isEmbed = msg.author.id === '412347553141751808' && msg.embeds?.length > 0;
-    const embedClass = isEmbed ? 'embed-border' : '';
+    // Badge oficial APP com visto ✓
+    const botBadgeHtml = isBot ? `
+      <span class="bot-tag">
+        <svg class="bot-check" viewBox="0 0 16 15" width="10" height="10"><path fill="currentColor" d="M6 11L2 7l1.4-1.4L6 8.2l6.6-6.6L14 3z"/></svg>
+        <span class="bot-text">APP</span>
+      </span>` : '';
+
+    const contentHtml = renderMessageContentHTML(msg);
 
     return `
-    <div class="${rowClass} ${embedClass}">
-      <img class="avatar" src="${avatar}" alt="Avatar" loading="lazy">
-      <div class="content">
-        <div class="header">
-          <span class="author" style="color: ${authorColor};">${escapeHtml(authorName)}</span>
-          ${botBadge} ${appBadge}
-          <span class="time">${data}</span>
+    <div class="chat-message">
+      <img class="user-avatar" src="${avatar}" alt="Avatar" loading="lazy">
+      <div class="message-body">
+        <div class="message-header">
+          <span class="username">${escapeHtml(authorName)}</span>
+          ${botBadgeHtml}
+          <span class="timestamp">${data}</span>
         </div>
-        <div class="text">${texto}</div>
+        <div class="message-content">
+          ${contentHtml}
+        </div>
       </div>
     </div>`;
   }).join('\n');
 
   return `<!DOCTYPE html>
 <html lang="pt">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Transcript - Limpeza</title>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transcript - #${escapeHtml(channel.name)}</title>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=gg+sans:wght@400;500;600;700&display=swap');
+
   * { margin: 0; padding: 0; box-sizing: border-box; }
+
   body {
-    background: #1e1f22;
+    background-color: #111214;
     color: #dbdee1;
-    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-    padding: 20px;
-    line-height: 1.5;
+    font-family: 'gg sans', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.375rem;
+    padding: 20px 0;
     display: flex;
     justify-content: center;
   }
-  .container {
-    max-width: 900px;
+
+  .chat-container {
     width: 100%;
-    background: #313338;
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+    max-width: 1000px;
+    background-color: #111214;
+    padding: 0 16px;
   }
-  .header {
-    background: #2b2d31;
-    padding: 16px 20px;
-    border-bottom: 1px solid #3a3c42;
+
+  .chat-message {
     display: flex;
-    align-items: center;
-    gap: 14px;
+    margin-bottom: 16px;
+    padding: 2px 0;
   }
-  .header .guild-icon {
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    background: #1e1f22;
-    border: 2px solid #3a3c42;
-    object-fit: cover;
-    flex-shrink: 0;
+
+  .chat-message:hover {
+    background-color: rgba(2, 2, 2, 0.08);
   }
-  .header .info { flex: 1; }
-  .header h1 {
-    color: #ffffff;
-    font-size: 18px;
-    font-weight: 600;
-    margin: 0;
-    letter-spacing: -0.2px;
-  }
-  .header p {
-    color: #949ba4;
-    font-size: 13px;
-    margin: 4px 0 0;
-  }
-  .header p strong { color: #dbdee1; font-weight: 600; }
-  .messages {
-    padding: 8px 12px;
-    background: #2b2d31;
-  }
-  .message {
-    display: flex;
-    gap: 14px;
-    padding: 8px 12px;
-    border-radius: 6px;
-    transition: background 0.1s;
-    position: relative;
-  }
-  .message.alt { background: rgba(255,255,255,0.02); }
-  .message:hover { background: rgba(255,255,255,0.04); }
-  .message.embed-border {
-    border-left: 4px solid #5865f2;
-    padding-left: 10px;
-    margin-left: 2px;
-  }
-  .avatar {
+
+  .user-avatar {
     width: 40px;
     height: 40px;
     border-radius: 50%;
+    margin-right: 16px;
+    margin-top: 2px;
     flex-shrink: 0;
-    margin-top: 4px;
-    border: 1px solid #3a3c42;
   }
-  .content { flex: 1; min-width: 0; }
-  .header {
+
+  .message-body {
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .message-header {
     display: flex;
-    align-items: baseline;
-    flex-wrap: wrap;
-    gap: 4px 8px;
-    margin-bottom: 2px;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
   }
-  .header .author {
+
+  .username {
     font-weight: 600;
-    font-size: 15px;
-    letter-spacing: -0.2px;
+    font-size: 1rem;
+    color: #f2f3f5;
   }
-  .badge {
-    font-size: 10px;
+
+  .bot-tag {
+    background-color: #5865f2;
+    color: #ffffff;
+    font-size: 0.625rem;
     font-weight: 700;
-    padding: 1px 6px;
-    border-radius: 4px;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: 15px;
+    line-height: 1;
+  }
+
+  .bot-check {
     display: inline-block;
   }
-  .badge.bot { background: #5865f2; color: #fff; }
-  .badge.app { background: #3ba55d; color: #fff; }
-  .header .time {
-    color: #72767d;
-    font-size: 11.5px;
-    font-weight: 400;
-    margin-left: auto;
-    white-space: nowrap;
+
+  .timestamp {
+    color: #949ba4;
+    font-size: 0.75rem;
+    font-weight: 500;
+    margin-left: 2px;
   }
-  .text {
-    margin-top: 2px;
-    font-size: 14px;
-    white-space: pre-wrap;
-    word-wrap: break-word;
+
+  .text-content {
     color: #dbdee1;
+    font-size: 0.9375rem;
+    word-wrap: break-word;
   }
-  .text a {
+
+  .text-content a {
     color: #00a8fc;
     text-decoration: none;
   }
-  .text a:hover { text-decoration: underline; }
-  .text strong { color: #ffffff; font-weight: 600; }
-  .text br + br { display: block; content: ''; margin-top: 4px; }
-  .footer {
-    background: #2b2d31;
-    padding: 12px 20px;
-    border-top: 1px solid #3a3c42;
+
+  .text-content a:hover {
+    text-decoration: underline;
+  }
+
+  .music-card {
+    display: inline-flex;
+    align-items: center;
+    background-color: #2b2d31;
+    border: 1px solid #1e1f22;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-top: 6px;
+    gap: 8px;
+    max-width: 100%;
+  }
+
+  .spotify-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+
+  .music-label {
+    color: #dbdee1;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .music-title {
+    color: #00a8fc;
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .music-title:hover {
+    text-decoration: underline;
+  }
+
+  .embed-box {
+    background-color: #2b2d31;
+    border-radius: 4px;
+    padding: 12px 16px;
+    margin-top: 6px;
+    max-width: 520px;
+    border-left: 4px solid #1e1f22;
+  }
+
+  .embed-inner {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    color: #72767d;
-    font-size: 12px;
+    gap: 16px;
   }
-  .footer .stats {
+
+  .embed-details {
+    flex: 1;
+  }
+
+  .embed-title-header {
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 0.9375rem;
+    margin-bottom: 8px;
+  }
+
+  .embed-field-label {
+    color: #ffffff;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    margin-top: 6px;
+  }
+
+  .embed-field-value-link a {
+    color: #00a8fc;
+    font-weight: 700;
+    font-size: 0.875rem;
+    text-decoration: none;
+  }
+
+  .embed-field-value-link a:hover {
+    text-decoration: underline;
+  }
+
+  .embed-grid {
     display: flex;
-    gap: 14px;
-    color: #949ba4;
+    gap: 24px;
+    margin-top: 8px;
   }
-  .footer .stats span {
-    background: #1e1f22;
-    padding: 2px 12px;
-    border-radius: 12px;
-    font-size: 11px;
-    border: 1px solid #3a3c42;
+
+  .embed-field-value {
+    color: #dbdee1;
+    font-size: 0.875rem;
+    margin-top: 2px;
   }
-  @media (max-width: 600px) {
-    .header { flex-direction: column; align-items: flex-start; }
-    .header .time { margin-left: 0; }
-    .message { padding: 6px 6px; gap: 10px; }
-    .avatar { width: 32px; height: 32px; }
+
+  .embed-thumb {
+    width: 80px;
+    height: 80px;
+    border-radius: 4px;
+    object-fit: cover;
+  }
+
+  .attachment img {
+    max-width: 100%;
+    max-height: 350px;
+    border-radius: 8px;
+    margin-top: 6px;
   }
 </style>
 </head>
 <body>
-<div class="container">
-  <div class="header">
-    ${guildIcon ? `<img class="guild-icon" src="${guildIcon}" alt="Ícone do servidor">` : '<div class="guild-icon" style="background:#2b2d31;"></div>'}
-    <div class="info">
-      <h1>🧹 Mensagens apagadas</h1>
-      <p>
-        <strong>Servidor:</strong> ${escapeHtml(guildName)} &bull;
-        <strong>Canal:</strong> #${escapeHtml(channelName)} &bull;
-        <strong>Staff:</strong> ${escapeHtml(staffName)} &bull;
-        <strong>Alvo:</strong> <@${targetId}> (${escapeHtml(targetName)}) &bull;
-        <strong>Data:</strong> ${dateFormatterShort.format(new Date())}
-      </p>
-    </div>
-  </div>
-  <div class="messages">
+  <div class="chat-container">
     ${msgsHtml}
   </div>
-  <div class="footer">
-    <div class="stats">
-      <span>📊 ${sorted.length} mensagens</span>
-      <span>👤 Alvo: <@${targetId}></span>
-    </div>
-    <div>Transcript gerado automaticamente • ${dateFormatterShort.format(new Date())}</div>
-  </div>
-</div>
 </body>
 </html>`;
 }
