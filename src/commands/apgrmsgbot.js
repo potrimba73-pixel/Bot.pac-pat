@@ -69,7 +69,7 @@ function getDisplayName(msg) {
 }
 
 // ============================================================
-// PARSER DE MARKDOWN & SPOTIFY
+// PARSER DE MARKDOWN & SPOTIFY & EMBEDS COMPLETOS
 // ============================================================
 function renderMarkdown(text) {
   if (!text) return '';
@@ -93,6 +93,82 @@ function extractSpotifyEmbed(text) {
   const match = text.match(spotifyRegex);
   if (!match) return null;
   return { type: match[1], id: match[2], fullUrl: match[0] };
+}
+
+function renderEmbedHTML(embed) {
+  const desc = embed.description || '';
+
+  // Tratamento especial para mensagens do tipo "Started playing" do Jockie Music
+  if (desc.toLowerCase().includes('started playing')) {
+    const match = desc.match(/\[(.*?)\]\((.*?)\)/);
+    let songTitle = match ? match[1] : desc.replace(/.*Started playing\s*/i, '');
+    const songUrl = match ? match[2] : '#';
+    songTitle = stripMarkdown(songTitle);
+
+    return `
+    <div class="spotify-started-card">
+      <svg class="spotify-logo" viewBox="0 0 24 24" width="18" height="18" fill="#1DB954">
+        <path d="M12 0C5.376 0 0 5.376 0 12s5.376 12 12 12 12-5.376 12-12S18.624 0 12 0zm5.521 17.341c-.217.357-.68.472-1.038.254-2.842-1.737-6.42-2.13-10.635-1.166-.402.093-.802-.16-.894-.562-.093-.403.16-.803.562-.895 4.616-1.055 8.567-.603 11.748 1.341.358.217.472.68.257 1.038zm1.472-3.272c-.273.444-.853.585-1.296.312-3.251-1.998-8.21-2.58-12.057-1.411-.5.152-1.026-.134-1.177-.633-.152-.5.134-1.027.633-1.178 4.402-1.336 9.882-.69 13.585 1.583.444.273.585.853.312 1.327zm.144-3.41c-3.899-2.315-10.334-2.528-14.1-1.385-.6.183-1.237-.16-1.42-.76-.183-.601.16-1.238.76-1.421 4.318-1.311 11.42-1.06 15.86 1.576.54.321.718 1.021.398 1.56-.322.541-1.021.718-1.498.43z"/>
+      </svg>
+      <span class="started-text">Started playing</span>
+      <a href="${escapeHtml(songUrl)}" target="_blank" class="started-link">${escapeHtml(songTitle)}</a>
+    </div>`;
+  }
+
+  const color = embed.color ? `#${embed.color.toString(16).padStart(6, '0')}` : '#2f3136';
+
+  let embedInner = '';
+
+  // Autor do Embed
+  if (embed.author?.name) {
+    embedInner += `<div class="embed-author">${renderMarkdown(embed.author.name)}</div>`;
+  }
+
+  // Título do Embed
+  if (embed.title) {
+    const titleHtml = embed.url 
+      ? `<a href="${escapeHtml(embed.url)}" target="_blank">${renderMarkdown(embed.title)}</a>`
+      : renderMarkdown(embed.title);
+    embedInner += `<div class="embed-title">${titleHtml}</div>`;
+  }
+
+  // Descrição do Embed
+  if (embed.description) {
+    embedInner += `<div class="text-content">${renderMarkdown(embed.description)}</div>`;
+  }
+
+  // Fields (Campos como Playlist Length, Tracks, etc.)
+  if (embed.fields?.length) {
+    let fieldsHtml = '<div class="embed-fields">';
+    for (const field of embed.fields) {
+      fieldsHtml += `
+        <div class="embed-field ${field.inline ? 'inline' : ''}">
+          <div class="field-name">${renderMarkdown(field.name)}</div>
+          <div class="field-value">${renderMarkdown(field.value)}</div>
+        </div>`;
+    }
+    fieldsHtml += '</div>';
+    embedInner += fieldsHtml;
+  }
+
+  // Thumbnail (Capa do álbum / imagem à direita)
+  let thumbnailHtml = '';
+  if (embed.thumbnail?.url) {
+    thumbnailHtml = `<img class="embed-thumbnail" src="${escapeHtml(embed.thumbnail.url)}" alt="Thumbnail">`;
+  }
+
+  // Footer
+  if (embed.footer?.text) {
+    embedInner += `<div class="embed-footer">${renderMarkdown(embed.footer.text)}</div>`;
+  }
+
+  return `
+  <div class="embed-box" style="border-left: 4px solid ${color};">
+    <div class="embed-body">
+      <div class="embed-main">${embedInner}</div>
+      ${thumbnailHtml}
+    </div>
+  </div>`;
 }
 
 function renderMessageContentHTML(msg) {
@@ -126,31 +202,7 @@ function renderMessageContentHTML(msg) {
 
   if (msg.embeds?.length) {
     for (const embed of msg.embeds) {
-      const desc = embed.description || '';
-
-      if (desc.toLowerCase().includes('started playing')) {
-        const match = desc.match(/\[(.*?)\]\((.*?)\)/);
-        let songTitle = match ? match[1] : desc.replace(/.*Started playing\s*/i, '');
-        const songUrl = match ? match[2] : '#';
-        songTitle = stripMarkdown(songTitle);
-
-        html += `
-        <div class="spotify-started-card">
-          <svg class="spotify-logo" viewBox="0 0 24 24" width="18" height="18" fill="#1DB954">
-            <path d="M12 0C5.376 0 0 5.376 0 12s5.376 12 12 12 12-5.376 12-12S18.624 0 12 0zm5.521 17.341c-.217.357-.68.472-1.038.254-2.842-1.737-6.42-2.13-10.635-1.166-.402.093-.802-.16-.894-.562-.093-.403.16-.803.562-.895 4.616-1.055 8.567-.603 11.748 1.341.358.217.472.68.257 1.038zm1.472-3.272c-.273.444-.853.585-1.296.312-3.251-1.998-8.21-2.58-12.057-1.411-.5.152-1.026-.134-1.177-.633-.152-.5.134-1.027.633-1.178 4.402-1.336 9.882-.69 13.585 1.583.444.273.585.853.312 1.327zm.144-3.41c-3.899-2.315-10.334-2.528-14.1-1.385-.6.183-1.237-.16-1.42-.76-.183-.601.16-1.238.76-1.421 4.318-1.311 11.42-1.06 15.86 1.576.54.321.718 1.021.398 1.56-.322.541-1.021.718-1.498.43z"/>
-          </svg>
-          <span class="started-text">Started playing</span>
-          <a href="${escapeHtml(songUrl)}" target="_blank" class="started-link">${escapeHtml(songTitle)}</a>
-        </div>`;
-        continue;
-      }
-
-      const color = embed.color ? `#${embed.color.toString(16).padStart(6, '0')}` : '#2f3136';
-      html += `
-      <div class="embed-box" style="border-left: 4px solid ${color};">
-        ${embed.title ? `<div class="embed-title">${renderMarkdown(embed.title)}</div>` : ''}
-        ${embed.description ? `<div class="text-content">${renderMarkdown(embed.description)}</div>` : ''}
-      </div>`;
+      html += renderEmbedHTML(embed);
     }
   }
 
@@ -174,6 +226,11 @@ function getTxtContentRaw(msg) {
     for (const embed of msg.embeds) {
       if (embed.title) parts.push(stripMarkdown(embed.title));
       if (embed.description) parts.push(stripMarkdown(embed.description));
+      if (embed.fields?.length) {
+        for (const f of embed.fields) {
+          parts.push(`${stripMarkdown(f.name)}: ${stripMarkdown(f.value)}`);
+        }
+      }
     }
   }
   if (msg.attachments?.size) {
@@ -314,6 +371,32 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
   .text-content a { color: #00a8fc; text-decoration: none; }
   .text-content a:hover { text-decoration: underline; }
 
+  /* ESTILOS DE EMBED ESTILO DISCORD */
+  .embed-box {
+    background: #2b2d31;
+    padding: 12px;
+    margin-top: 6px;
+    border-radius: 4px;
+    max-width: 520px;
+  }
+  .embed-body {
+    display: flex;
+    gap: 16px;
+    justify-content: space-between;
+  }
+  .embed-main { flex: 1; }
+  .embed-author { font-size: 0.8rem; font-weight: 600; color: #b5bac1; margin-bottom: 4px; }
+  .embed-title { font-size: 0.95rem; font-weight: 700; color: #fff; margin-bottom: 6px; }
+  .embed-title a { color: #00a8fc; text-decoration: none; }
+  .embed-title a:hover { text-decoration: underline; }
+  .embed-fields { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .embed-field { flex: 1 1 100%; }
+  .embed-field.inline { flex: 1 1 30%; min-width: 100px; }
+  .field-name { font-size: 0.8rem; font-weight: 700; color: #b5bac1; margin-bottom: 2px; }
+  .field-value { font-size: 0.85rem; color: #dbdee1; }
+  .embed-thumbnail { width: 80px; height: 80px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+  .embed-footer { font-size: 0.75rem; color: #949ba4; margin-top: 8px; }
+
   .spotify-started-card {
     background: #1e1f22;
     border: 1px solid #2b2d31;
@@ -330,8 +413,6 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetIdsStr, 
   .started-text { color: #949ba4; font-size: 0.85rem; font-weight: 500; }
   .started-link { color: #00a8fc; font-weight: 600; text-decoration: none; font-size: 0.85rem; }
   .started-link:hover { text-decoration: underline; }
-
-  .embed-box { background: #111214; padding: 8px 12px; margin-top: 6px; border-radius: 4px; }
   
   .footer-bar {
     background-color: #2b2d31;
@@ -400,7 +481,6 @@ function generateTxt(messages, channel, staffName, motivo, targetNamesStr) {
 // COMANDO PRINCIPAL
 // ============================================================
 export async function execute(interaction, client) {
-  // 1. Responder de imediato (Ephemeral) para garantir que a interação não expira (Error 10062)
   try {
     if (!interaction.deferred && !interaction.replied) {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -456,7 +536,6 @@ export async function execute(interaction, client) {
     let totalLidas = 0;
     const MAX_MENSAGENS_PARA_LER = 1000;
 
-    // 2. Busca no histórico filtrando mensagens válidas
     while (targetMessages.size < quantidadeDesejada && totalLidas < MAX_MENSAGENS_PARA_LER) {
       const opts = { limit: 100 };
       if (lastId) opts.before = lastId;
@@ -467,7 +546,6 @@ export async function execute(interaction, client) {
       totalLidas += batch.size;
       lastId = batch.last().id;
 
-      // Filtra mensagens dos alvos, EXCLUINDO mensagens do sistema ou do próprio bot enviadas na mesma interação
       const filtradas = batch.filter(msg => targetIds.includes(msg.author.id) && !msg.system);
 
       for (const [id, msg] of filtradas) {
@@ -485,7 +563,6 @@ export async function execute(interaction, client) {
       });
     }
 
-    // 3. Eliminação das mensagens
     const now = Date.now();
     const bulkable = targetMessages.filter(m => (now - m.createdTimestamp) < 1209600000);
     const rest = targetMessages.filter(m => !bulkable.has(m.id));
@@ -512,7 +589,6 @@ export async function execute(interaction, client) {
       } catch {}
     }
 
-    // 4. Criação dos Ficheiros de Transcript
     const msgArray = Array.from(targetMessages.values());
     const timestamp = Date.now();
     const safeChannelName = sanitizeFileName(channel.name);
@@ -537,7 +613,6 @@ export async function execute(interaction, client) {
       .setColor(0x5865F2)
       .setTimestamp();
 
-    // 5. Enviar o resultado APENAS UMA VEZ na resposta do comando
     await interaction.editReply({
       content: `✅ **${deletedCount}** mensagem(ns) apagada(s) com sucesso.`,
       embeds: [embed],
