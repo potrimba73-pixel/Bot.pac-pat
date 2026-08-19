@@ -1,5 +1,35 @@
 // ==================== FAQ DATABASE ====================
 export const FAQ_DATABASE = {
+    // ✅ NOVA ENTRADA: CÂMARA 0 (prioridade alta)
+    "camara0": {
+        keywords: ["camara", "camera", "0", "configurar camara", "camara 0", "camera 0", "console", "developer", "config.cfg", "modo desenvolvedor", "ativar camara", "camera livre", "tecla 0", "numpad", "teleportar", "g_developer", "g_console"],
+        titulo: "🎥 Como ativar e usar a Câmara 0 (câmara livre) no ETS2/ATS",
+        resposta: (cfg) => `**📹 Como ativar a Câmara 0 no ETS2/ATS**
+
+**1️⃣ Ativar o Console e o Modo Desenvolvedor**
+• Vai a: \`Documentos \\ Euro Truck Simulator 2\` (ou \`American Truck Simulator\`)
+• Abre o ficheiro \`config.cfg\` com o Bloco de Notas
+• Procura por:
+  \`uset g_developer "0"\` → muda para \`uset g_developer "1"\`
+  \`uset g_console "0"\` → muda para \`uset g_console "1"\`
+• Guarda e fecha o ficheiro
+
+**2️⃣ Dentro do jogo**
+• Pressiona a tecla **0** (zero, em cima das letras) para ativar a câmara livre.
+• Usa o **Teclado Numérico (Numpad)** para movimentar:
+  • **8 / 5** – Frente / Trás
+  • **4 / 6** – Esquerda / Direita
+  • **9 / 3** – Subir / Descer
+  • **Mouse** – Olhar para os lados
+  • **Scroll do Mouse** – Aumenta/diminui a velocidade da câmara
+
+**3️⃣ Teletransportar o caminhão**
+• Leva a câmara até ao local desejado (bem perto do chão).
+• Pressiona **Ctrl + F9** para teletransportar o caminhão.
+
+📺 **Tutorial em vídeo:** https://www.youtube.com/watch?v=aqmX0DuzalA`
+    },
+
     "servidor": {
         keywords: ["servidor", "entrar", "comboio", "id", "steam", "workshop", "regras", "condução", "jogar", "server"],
         titulo: "🎮 Como entrar no servidor da PAC",
@@ -16,6 +46,7 @@ export const FAQ_DATABASE = {
 
 ⚠️ Precisas de mais ajuda? Clica em **🎫 Abrir ticket** em baixo!`
     },
+
     "recrutamento": {
         keywords: ["recrutamento", "juntar", "pat", "trucky", "candidatar", "empresa", "vtc", "truckers", "membro"],
         titulo: "🚛 Juntar-se à Portugal Alfa Truckers",
@@ -27,13 +58,14 @@ export const FAQ_DATABASE = {
 • Cumprir quilometragem mínima: 15.000 KM/mês (≈ 500 km/dia)
 • Foco no ranking nacional respeitando os 0 aos 100 km/h
 
-📲 **Trucky:** [Download aqui](https://truckyapp.com)
+📲 **Trucky:** [Download aqui](https://hub.truckyapp.com/)
 📝 **Candidatura:** <#${cfg.CANAL_TICKETS_RECRUTAMENTO}>
 
 ⏳ **Aviso:** Não cumprimento dos requisitos em 60 dias pode resultar no desligamento. Após esse período, podes continuar nas outras atividades do Discord.
 
 🎉 Boa sorte e bem-vindo à estrada!`
     },
+
     "ets2la": {
         keywords: ["ets2la", "configurar", "la", "lane", "assist", "ets2 la", "ets la"],
         titulo: "⚙️ Configurar ETS2LA",
@@ -48,6 +80,7 @@ export const FAQ_DATABASE = {
 
 Se precisares de ajuda específica, abre ticket!`
     },
+
     "mods": {
         keywords: ["mods", "mod", "atualização", "trucksmp", "workshop", "plugin", "addon"],
         titulo: "📦 Mods e Atualizações",
@@ -62,6 +95,7 @@ Se precisares de ajuda específica, abre ticket!`
 
 Se o jogo crashar após atualização, aguarda pela compatibilização!`
     },
+
     "vr": {
         keywords: ["vr", "quest", "meta", "óculos", "realidade virtual", "quest 3", "quest 3s"],
         titulo: "🥽 VR - Meta Quest 3/3S",
@@ -74,12 +108,17 @@ O vídeo acima explica a configuração base completa.
 
 ⚠️ Gráficos no Meta Quest 3/3S dependem muito da configuração do PC. Verifica drivers atualizados!`
     },
+
     "trucky": {
         keywords: ["trucky", "app", "aplicação", "tracker", "logbook", "registo"],
         titulo: "📲 Trucky App",
         resposta: (cfg) => `📲 **Trucky** é essencial para gerir e monitorizar toda a atividade da empresa.
 
-🔗 **Download:** [truckyapp.com](https://truckyapp.com)
+🔗 **Download:** [hub.truckyapp.com](https://hub.truckyapp.com/)
+
+📺 **Como instalar:** https://www.youtube.com/watch?v=jiGT1pBiLWs
+
+📺 **Como solicitar vaga:** https://www.youtube.com/watch?v=5Te6tmE2tWM
 
 ✅ **O que fazer:**
 • Instala a app
@@ -91,6 +130,7 @@ O vídeo acima explica a configuração base completa.
 
 ❓ Dúvidas? Abre ticket em <#${cfg.CANAL_TICKETS_RECRUTAMENTO}>`
     },
+
     "geral": {
         keywords: ["ajuda", "duvida", "dúvida", "help", "suporte", "problema", "erro"],
         titulo: "🆘 Central de Ajuda",
@@ -115,12 +155,12 @@ export function encontrarRespostaFAQ(pergunta) {
         let score = 0;
 
         data.keywords.forEach(kw => {
-            if (pergunta.includes(kw.toLowerCase())) score += 5;
+            if (pergunta.toLowerCase().includes(kw.toLowerCase())) score += 5;
         });
 
         const textoCompleto = (data.titulo + " placeholder").toLowerCase();
         palavras.forEach(palavra => {
-            if (textoCompleto.includes(palavra)) score += 2;
+            if (textoCompleto.includes(palavra.toLowerCase())) score += 2;
         });
 
         if (score > melhorScore) {
