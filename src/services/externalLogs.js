@@ -1,9 +1,20 @@
-import { EmbedBuilder } from "discord.js";
+import {
+  EmbedBuilder,
+  AuditLogEvent,
+  ChannelType,
+  PermissionsBitField,
+} from "discord.js";
 import { CONFIG } from "../config/index.js";
+
+/**
+ * External Discord logging service
+ * --------------------------------
+ * Mantém os nomes das funções existentes para compatibilidade
+ * com o resto do bot e adiciona logs mais detalhados.
+ */
 
 let externalClient = null;
 
-// Canais no servidor externo
 const EXTERNAL_CHANNELS = {
   MEMBER_LOGS: "1510402716008972520",
   MESSAGE_LOGS: "1511421322134163547",
@@ -11,391 +22,2323 @@ const EXTERNAL_CHANNELS = {
   COMMUNITY_LOGS: "1510402518629482587",
 };
 
+const COLORS = {
+  SUCCESS: 0x57f287,
+  INFO: 0x5865f2,
+  WARNING: 0xfee75c,
+  DANGER: 0xed4245,
+  ORANGE: 0xfaa61a,
+  CYAN: 0x00b8d9,
+  PURPLE: 0x9b59b6,
+  GREY: 0x747f8d,
+};
+
+const MAX_FIELD = 1024;
+const MAX_DESCRIPTION = 4096;
+const MAX_EMBED_FIELDS = 25;
+const AUDIT_LOOKBACK_MS = 8_000;
+
+/* ============================================================
+ * HELPERS
+ * ============================================================ */
+
+function truncate(value, max = MAX_FIELD, fallback = "*Nenhum*") {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+
+  const text = String(value);
+
+  if (text.length <= max) {
+    return text;
+  }
+
+  return `${text.slice(0, Math.max(0, max - 15))}\n… *(truncado)*`;
+}
+
+function code(value, max = MAX_FIELD, fallback = "N/A") {
+  const text = truncate(
+    value,
+    Math.max(1, max - 2),
+    fallback
+  ).replace(/`/g, "ˋ");
+
+  return `\`${text}\``;
+}
+
+function userLabel(user) {
+  if (!user) {
+    return "❓ Desconhecido";
+  }
+
+  return `<@${user.id}> | ${code(
+    user.tag ?? user.username ?? user.id
+  )}`;
+}
+
+function channelLabel(channel) {
+  if (!channel) {
+    return "❓ Desconhecido";
+  }
+
+  if (channel.id) {
+    return `<#${channel.id}> | ${code(
+      channel.name ?? channel.id
+    )}`;
+  }
+
+  return code(channel.name);
+}
+
+function roleLabel(role) {
+  if (!role) {
+    return "❓ Desconhecido";
+  }
+
+  return `<@&${role.id}> | ${code(
+    role.name ?? role.id
+  )}`;
+}
+
+function createBaseEmbed(
+  title,
+  color = COLORS.INFO,
+  timestamp = true
+) {
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setColor(color);
+
+  if (timestamp) {
+    embed.setTimestamp();
+  }
+
+  return embed;
+}
+
+function setFooter(embed, id, label = "ID") {
+  if (id) {
+    embed.setFooter({
+      text: `${label}: ${id}`,
+    });
+  }
+
+  return embed;
+}
+
+function safeAvatarURL(user) {
+  try {
+    return user?.displayAvatarURL?.({
+      size: 256,
+    }) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function setUserThumbnail(embed, user) {
+  const url = safeAvatarURL(user);
+
+  if (url) {
+    embed.setThumbnail(url);
+  }
+
+  return embed;
+}
+
+function formatMessageContent(content) {
+  if (!content) {
+    return "*Vazio / embed / anexo / sticker*";
+  }
+
+  return truncate(content);
+}
+
+function formatAttachment(attachment) {
+  if (!attachment) {
+    return null;
+  }
+
+  const name = attachment.name ?? "ficheiro";
+  const url = attachment.url ?? "";
+
+  if (url) {
+    return `📎 [${truncate(name, 120)}](${url})`;
+  }
+
+  return `📎 ${code(name, 180)}`;
+}
+
+function formatAttachments(attachments) {
+  if (!attachments?.size) {
+    return "*Nenhum*";
+  }
+
+  const lines = [...attachments.values()]
+    .map(formatAttachment)
+    .filter(Boolean);
+
+  return truncate(lines.join("\n"));
+}
+
+function getChannelTypeName(type) {
+  const names = {
+    [ChannelType.GuildText]: "Texto",
+    [ChannelType.GuildVoice]: "Voz",
+    [ChannelType.GuildCategory]: "Categoria",
+    [ChannelType.GuildAnnouncement]: "Anúncios",
+    [ChannelType.AnnouncementThread]: "Thread de anúncios",
+    [ChannelType.PublicThread]: "Thread pública",
+    [ChannelType.PrivateThread]: "Thread privada",
+    [ChannelType.GuildStageVoice]: "Stage",
+    [ChannelType.GuildForum]: "Fórum",
+    [ChannelType.GuildMedia]: "Media",
+  };
+
+  return names[type] ?? String(type ?? "Desconhecido");
+}
+
+function rolePermissionNames(role) {
+  if (!role?.permissions) {
+    return [];
+  }
+
+  try {
+    const names = [];
+
+    for (const [name, bit] of Object.entries(
+      PermissionsBitField.Flags
+    )) {
+      if (role.permissions.has(bit)) {
+        names.push(name);
+      }
+    }
+
+    return names;
+  } catch {
+    return [];
+  }
+}
+
+function channelSnapshot(channel) {
+  return {
+    name: channel?.name ?? null,
+    type: getChannelTypeName(channel?.type),
+    parentId: channel?.parentId ?? null,
+    position:
+      channel?.rawPosition ??
+      channel?.position ??
+      null,
+    topic: channel?.topic ?? null,
+    nsfw:
+      typeof channel?.nsfw === "boolean"
+        ? channel.nsfw
+        : null,
+    rateLimitPerUser:
+      channel?.rateLimitPerUser ?? null,
+    bitrate: channel?.bitrate ?? null,
+    userLimit: channel?.userLimit ?? null,
+  };
+}
+
+function diff(label, before, after) {
+  if (before === after) {
+    return null;
+  }
+
+  return `**${label}:** ${code(
+    before ?? "Nenhum"
+  )} → ${code(after ?? "Nenhum")}`;
+}
+
+function addDiffs(embed, changes, name = "🔄 Alterações") {
+  const valid = changes.filter(Boolean);
+
+  if (!valid.length) {
+    return false;
+  }
+
+  embed.addFields({
+    name,
+    value: truncate(valid.join("\n")),
+    inline: false,
+  });
+
+  return true;
+}
+
+async function getExternalChannel(channelId) {
+  if (!externalClient || !channelId) {
+    return null;
+  }
+
+  try {
+    const channel =
+      await externalClient.channels.fetch(channelId);
+
+    if (
+      !channel?.isTextBased?.() ||
+      typeof channel.send !== "function"
+    ) {
+      console.warn(
+        `[ExternalLogs] Canal ${channelId} não é enviável.`
+      );
+
+      return null;
+    }
+
+    return channel;
+  } catch (error) {
+    console.error(
+      `[ExternalLogs] Não foi possível obter o canal ${channelId}:`,
+      error?.message
+    );
+
+    return null;
+  }
+}
+
+async function sendLog(channelId, payload) {
+  const channel = await getExternalChannel(channelId);
+
+  if (!channel) {
+    return false;
+  }
+
+  try {
+    await channel.send(payload);
+    return true;
+  } catch (error) {
+    console.error(
+      `[ExternalLogs] Erro ao enviar log para ${channelId}:`,
+      error?.message
+    );
+
+    return false;
+  }
+}
+
+/**
+ * Procura o executor no Audit Log.
+ *
+ * Não assume que o autor foi quem apagou/modificou algo
+ * quando não é possível determinar o executor.
+ */
+async function findAuditExecutor(
+  guild,
+  type,
+  {
+    targetId = null,
+    channelId = null,
+    maxAge = AUDIT_LOOKBACK_MS,
+  } = {}
+) {
+  if (!guild?.fetchAuditLogs) {
+    return null;
+  }
+
+  try {
+    const logs = await guild.fetchAuditLogs({
+      limit: 10,
+      type,
+    });
+
+    const now = Date.now();
+
+    for (const entry of logs.entries.values()) {
+      if (!entry?.executor) {
+        continue;
+      }
+
+      if (
+        now - entry.createdTimestamp >
+        maxAge
+      ) {
+        continue;
+      }
+
+      const entryTargetId =
+        entry.target?.id ??
+        entry.targetId ??
+        null;
+
+      const entryChannelId =
+        entry.extra?.channel?.id ??
+        entry.extra?.channelId ??
+        null;
+
+      if (
+        targetId &&
+        entryTargetId &&
+        entryTargetId !== targetId
+      ) {
+        continue;
+      }
+
+      if (
+        channelId &&
+        entryChannelId &&
+        entryChannelId !== channelId
+      ) {
+        continue;
+      }
+
+      return entry;
+    }
+  } catch {
+    /*
+     * Pode acontecer se o bot não tiver View Audit Log.
+     * Não queremos que isso derrube o sistema de logs.
+     */
+  }
+
+  return null;
+}
+
+function executorLabel(
+  entry,
+  fallback = "❓ Não identificado"
+) {
+  if (!entry?.executor) {
+    return fallback;
+  }
+
+  return `<@${entry.executor.id}> | ${code(
+    entry.executor.tag ??
+      entry.executor.username ??
+      entry.executor.id
+  )}`;
+}
+
+function messagePayload(embed, files = []) {
+  const payload = {
+    embeds: [embed],
+  };
+
+  if (files.length) {
+    payload.files = files;
+  }
+
+  return payload;
+}
+
+/* ============================================================
+ * SETUP
+ * ============================================================ */
+
 export function setExternalClient(client) {
   externalClient = client;
 }
 
 export async function setupExternalLogChannels(guild) {
-  // Auto-setup dos canais (opcional)
-  console.log("[ExternalLogs] Canais de log configurados");
+  if (!externalClient) {
+    console.warn(
+      "[ExternalLogs] Cliente externo ainda não foi configurado."
+    );
+
+    return false;
+  }
+
+  console.log(
+    `[ExternalLogs] Canais de log configurados para ${
+      guild?.name ?? "servidor"
+    }.`
+  );
+
+  return true;
 }
 
-async function getExternalChannel(channelId) {
-  if (!externalClient || !channelId) return null;
-  return externalClient.channels.fetch(channelId).catch(() => null);
-}
+/* ============================================================
+ * MESSAGE EVENTS
+ * ============================================================ */
 
-function createBaseEmbed(title, color, timestamp = true) {
-  const embed = new EmbedBuilder()
-    .setTitle(title)
-    .setColor(color);
-  if (timestamp) embed.setTimestamp();
-  return embed;
-}
-
-// ========== MESSAGE EVENTS ==========
 export async function logExternalMessageDelete(message) {
   try {
-    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.MESSAGE_LOGS);
-    if (!logChannel) return;
+    const guild = message?.guild;
 
-    let deleter = null;
-    let deleterDisplay = "🤖 Bot / Sistema";
+    const channel = await getExternalChannel(
+      EXTERNAL_CHANNELS.MESSAGE_LOGS
+    );
 
-    // Tenta descobrir quem apagou via Audit Log
-    try {
-      const auditLogs = await message.guild.fetchAuditLogs({ 
-        limit: 1, 
-        type: 72  // MESSAGE_DELETE
+    if (!channel) {
+      return;
+    }
+
+    const entry = await findAuditExecutor(
+      guild,
+      AuditLogEvent.MessageDelete,
+      {
+        targetId:
+          message?.author?.id ?? null,
+
+        channelId:
+          message?.channel?.id ?? null,
+      }
+    );
+
+    const isSelfDelete =
+      Boolean(entry?.executor) &&
+      entry.executor.id === message?.author?.id;
+
+    const deletedBy = entry
+      ? executorLabel(entry)
+      : "❓ Não identificado";
+
+    const actionText = entry
+      ? isSelfDelete
+        ? "apagou a própria mensagem"
+        : "apagou uma mensagem"
+      : "teve uma mensagem apagada";
+
+    const embed = createBaseEmbed(
+      "🗑️ Mensagem Apagada",
+      COLORS.DANGER
+    ).setDescription(
+      `${
+        message?.author
+          ? userLabel(message.author)
+          : "❓ Utilizador desconhecido"
+      } **${actionText}**`
+    );
+
+    embed.addFields(
+      {
+        name: "👤 Utilizador",
+        value: message?.author
+          ? userLabel(message.author)
+          : "❓ Desconhecido",
+        inline: true,
+      },
+      {
+        name: "🧹 Apagado por",
+        value: deletedBy,
+        inline: true,
+      },
+      {
+        name: "📍 Canal",
+        value: channelLabel(message?.channel),
+        inline: true,
+      },
+      {
+        name: "📝 Mensagem",
+        value: formatMessageContent(
+          message?.content
+        ),
+        inline: false,
+      },
+      {
+        name: "📎 Anexos",
+        value: formatAttachments(
+          message?.attachments
+        ),
+        inline: false,
+      }
+    );
+
+    if (message?.stickers?.size) {
+      embed.addFields({
+        name: "🎨 Stickers",
+        value: truncate(
+          [...message.stickers.values()]
+            .map(sticker => sticker.name)
+            .join(", ")
+        ),
+        inline: false,
       });
-      const entry = auditLogs.entries.first();
-      
-      // Verifica se o log corresponde a esta mensagem (mesmo canal e intervalo curto)
-      if (entry && 
-          entry.target.id === message.author?.id && 
-          entry.extra?.channel?.id === message.channel.id &&
-          Date.now() - entry.createdTimestamp < 2000) {
-        deleter = entry.executor;
+    }
+
+    embed.addFields(
+      {
+        name: "👤 Utilizador ID",
+        value: code(message?.author?.id),
+        inline: true,
+      },
+      {
+        name: "📍 Canal ID",
+        value: code(message?.channel?.id),
+        inline: true,
+      },
+      {
+        name: "💬 Mensagem ID",
+        value: code(message?.id),
+        inline: true,
       }
-    } catch (e) {
-      // Sem permissões ou erro – ignorar
+    );
+
+    setFooter(
+      embed,
+      message?.id,
+      "Mensagem ID"
+    );
+
+    await channel.send(
+      messagePayload(embed)
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro ao logar delete:",
+      error?.message
+    );
+  }
+}
+
+export async function logExternalMessageUpdate(
+  oldMessage,
+  newMessage
+) {
+  try {
+    if (!newMessage?.guild) {
+      return;
     }
 
-    if (deleter) {
-      deleterDisplay = `<@${deleter.id}> | \`${deleter.tag}\``;
-    } else {
-      // Fallback: se não houver executor, assume que foi o próprio autor
-      if (message.author) {
-        deleterDisplay = `👤 Autor (\`${message.author.tag}\`)`;
+    let old = oldMessage;
+    let current = newMessage;
+
+    if (old?.partial) {
+      try {
+        old = await old.fetch();
+      } catch {
+        // Mantém os dados disponíveis.
       }
-      // Caso contrário, mantém "Bot / Sistema"
     }
 
-    const embed = createBaseEmbed("🗑️ Mensagem Apagada", 0xff0000)
-      .addFields(
-        { name: "👤 Autor", value: message.author ? `<@${message.author.id}> | \`${message.author.tag}\`` : "Desconhecido", inline: true },
-        { name: "🧹 Apagado por", value: deleterDisplay, inline: true },
-        { name: "📍 Canal", value: `<#${message.channel.id}>`, inline: true },
-        { name: "📝 Conteúdo", value: message.content?.substring(0, 1024) || "*Vazio/Embed/Anexo*", inline: false }
-      )
-      .setFooter({ text: `ID: ${message.id}` });
-
-    if (message.attachments.size > 0) {
-      const attachmentNames = Array.from(message.attachments.values()).map(a => a.name).join(", ");
-      embed.addFields({ name: "📎 Anexos", value: attachmentNames.substring(0, 1024), inline: false });
+    if (current?.partial) {
+      try {
+        current = await current.fetch();
+      } catch {
+        // Mantém os dados disponíveis.
+      }
     }
 
-    await logChannel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("[ExternalLogs] Erro ao logar delete:", err.message);
-  }
-}
+    const oldContent =
+      old?.content ?? "";
 
-export async function logExternalMessageUpdate(oldMessage, newMessage) {
-  try {
-    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.MESSAGE_LOGS);
-    if (!logChannel) return;
+    const newContent =
+      current?.content ?? "";
 
-    const embed = createBaseEmbed("✏️ Mensagem Editada", 0xffff00)
-      .addFields(
-        { name: "👤 Autor", value: `<@${newMessage.author.id}> | \`${newMessage.author.tag}\``, inline: true },
-        { name: "📍 Canal", value: `<#${newMessage.channel.id}>`, inline: true },
-        { name: "📝 Antes", value: oldMessage.content?.substring(0, 1024) || "*Vazio*", inline: false },
-        { name: "📝 Depois", value: newMessage.content?.substring(0, 1024) || "*Vazio*", inline: false }
-      )
-      .setFooter({ text: `ID: ${newMessage.id}` });
-
-    await logChannel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("[ExternalLogs] Erro ao logar update:", err.message);
-  }
-}
-
-// Alias para compatibilidade (se algum ficheiro usar logMessageDelete)
-export { logExternalMessageDelete as logMessageDelete };
-
-// ========== MEMBER EVENTS ==========
-export async function logExternalMemberJoin(member) {
-  try {
-    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.MEMBER_LOGS);
-    if (!logChannel) return;
-
-    const embed = createBaseEmbed("📥 Novo Membro Entrou", 0x00ff00)
-      .setDescription(`**${member.user.tag}** juntou-se ao servidor.`)
-      .addFields(
-        { name: "👤 Utilizador", value: `<@${member.id}>`, inline: true },
-        { name: "📝 Nome", value: `\`${member.user.tag}\``, inline: true },
-        { name: "🆔 ID", value: `\`${member.id}\``, inline: true }
-      )
-      .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-      .setFooter({ text: `ID: ${member.id}` });
-
-    await logChannel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("[ExternalLogs] Erro ao logar entrada:", err.message);
-  }
-}
-
-export async function logExternalMemberLeave(member) {
-  try {
-    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.MEMBER_LOGS);
-    if (!logChannel) return;
-
-    const embed = createBaseEmbed("👋 Membro Saiu", 0xff0000)
-      .setDescription(`**${member.user.tag}** saiu do servidor.`)
-      .addFields(
-        { name: "👤 Utilizador", value: `<@${member.id}> | \`${member.user.tag}\``, inline: false },
-        { name: "🆔 ID", value: `\`${member.id}\``, inline: true },
-        { name: "🏠 Servidor", value: `\`${member.guild.name}\``, inline: true }
-      )
-      .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-      .setFooter({ text: `ID: ${member.id}` });
-
-    await logChannel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("[ExternalLogs] Erro ao logar saída:", err.message);
-  }
-}
-
-// ========== MEMBER UPDATES ==========
-export async function logExternalMemberUpdate(oldMember, newMember) {
-  try {
-    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.MEMBER_UPDATES);
-    if (!logChannel) return;
-
-    const changes = [];
-
-    if (oldMember.nickname !== newMember.nickname) {
-      changes.push(`📝 **Nickname:** \`${oldMember.nickname || "Nenhum"}\` → \`${newMember.nickname || "Nenhum"}\``);
+    /*
+     * Só criamos log se o conteúdo mudou.
+     * Alterações internas de embeds/metadados podem não
+     * ser relevantes para o sistema de logs.
+     */
+    if (oldContent === newContent) {
+      return;
     }
 
-    const oldRoles = oldMember.roles.cache.filter(r => r.id !== newMember.guild.id);
-    const newRoles = newMember.roles.cache.filter(r => r.id !== newMember.guild.id);
-    const addedRoles = newRoles.filter(r => !oldRoles.has(r.id));
-    const removedRoles = oldRoles.filter(r => !newRoles.has(r.id));
-
-    if (addedRoles.size > 0) {
-      const rolesText = addedRoles.map(r => `<@&${r.id}> (\`${r.name}\`)`).join(", ");
-      changes.push(`➕ **Cargos adicionados:** ${rolesText}`);
-    }
-    if (removedRoles.size > 0) {
-      const rolesText = removedRoles.map(r => `<@&${r.id}> (\`${r.name}\`)`).join(", ");
-      changes.push(`➖ **Cargos removidos:** ${rolesText}`);
-    }
-
-    if (oldMember.avatar !== newMember.avatar) {
-      changes.push("🖼️ **Avatar do servidor atualizado**");
-    }
-
-    if (changes.length === 0) return;
-
-    const embed = createBaseEmbed("📝 Membro Atualizado", 0xffff00)
-      .setDescription(`<@${newMember.id}> | \`${newMember.user.tag}\` foi atualizado.`)
-      .addFields({ name: "Alterações", value: changes.join("\n"), inline: false })
-      .setThumbnail(newMember.user.displayAvatarURL({ dynamic: true }))
-      .setFooter({ text: `ID: ${newMember.id}` });
-
-    await logChannel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("[ExternalLogs] Erro ao logar update:", err.message);
-  }
-}
-
-// ========== VOICE EVENTS ==========
-export async function logExternalVoiceJoin(member, channel) {
-  try {
-    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.MEMBER_LOGS);
-    if (!logChannel) return;
-
-    const embed = createBaseEmbed("🔊 Entrou em Canal de Voz", 0x00ff00)
-      .setDescription(`<@${member.id}> | \`${member.user.tag}\` entrou em **${channel.name}**.`)
-      .addFields(
-        { name: "👤 Utilizador", value: `<@${member.id}>`, inline: true },
-        { name: "📍 Canal", value: `<#${channel.id}>`, inline: true }
-      )
-      .setFooter({ text: `ID: ${member.id}` });
-
-    await logChannel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("[ExternalLogs] Erro ao logar voice join:", err.message);
-  }
-}
-
-export async function logExternalVoiceLeave(member, channel) {
-  try {
-    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.MEMBER_LOGS);
-    if (!logChannel) return;
-
-    const embed = createBaseEmbed("🔊 Saiu de Canal de Voz", 0xff6600)
-      .setDescription(`<@${member.id}> | \`${member.user.tag}\` saiu de **${channel.name}**.`)
-      .addFields(
-        { name: "👤 Utilizador", value: `<@${member.id}>`, inline: true },
-        { name: "📍 Canal", value: `<#${channel.id}>`, inline: true }
-      )
-      .setFooter({ text: `ID: ${member.id}` });
-
-    await logChannel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("[ExternalLogs] Erro ao logar voice leave:", err.message);
-  }
-}
-
-// ========== CHANNEL EVENTS ==========
-export async function logExternalChannelCreate(channel) {
-  try {
-    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.COMMUNITY_LOGS);
-    if (!logChannel) return;
-
-    const embed = createBaseEmbed("📁 Canal Criado", 0x00ff00)
-      .setDescription(`**#${channel.name}** foi criado.`)
-      .addFields(
-        { name: "Tipo", value: `\`${channel.type.toString()}\``, inline: true },
-        { name: "🆔 ID", value: `\`${channel.id}\``, inline: true }
-      )
-      .setFooter({ text: `ID: ${channel.id}` });
-
-    await logChannel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("[ExternalLogs] Erro ao logar channel create:", err.message);
-  }
-}
-
-export async function logExternalChannelDelete(channel) {
-  try {
-    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.COMMUNITY_LOGS);
-    if (!logChannel) return;
-
-    const embed = createBaseEmbed("🗑️ Canal Apagado", 0xff0000)
-      .setDescription(`**#${channel.name}** foi apagado.`)
-      .addFields(
-        { name: "Tipo", value: `\`${channel.type.toString()}\``, inline: true },
-        { name: "🆔 ID", value: `\`${channel.id}\``, inline: true }
-      )
-      .setFooter({ text: `ID: ${channel.id}` });
-
-    await logChannel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("[ExternalLogs] Erro ao logar channel delete:", err.message);
-  }
-}
-
-// ========== ROLE EVENTS ==========
-export async function logExternalRoleCreate(role) {
-  try {
-    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.COMMUNITY_LOGS);
-    if (!logChannel) return;
-
-    const embed = createBaseEmbed("🏷️ Cargo Criado", 0x00ff00)
-      .setDescription(`**@${role.name}** foi criado.`)
-      .addFields(
-        { name: "Cor", value: `\`${role.hexColor}\``, inline: true },
-        { name: "🆔 ID", value: `\`${role.id}\``, inline: true }
-      )
-      .setFooter({ text: `ID: ${role.id}` });
-
-    await logChannel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("[ExternalLogs] Erro ao logar role create:", err.message);
-  }
-}
-
-export async function logExternalRoleDelete(role) {
-  try {
-    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.COMMUNITY_LOGS);
-    if (!logChannel) return;
-
-    const embed = createBaseEmbed("🗑️ Cargo Apagado", 0xff0000)
-      .setDescription(`**@${role.name}** foi apagado.`)
-      .addFields({ name: "🆔 ID", value: `\`${role.id}\``, inline: true })
-      .setFooter({ text: `ID: ${role.id}` });
-
-    await logChannel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("[ExternalLogs] Erro ao logar role delete:", err.message);
-  }
-}
-
-// ========== BAN/UNBAN ==========
-export async function logExternalMemberBan(ban) {
-  try {
-    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.COMMUNITY_LOGS);
-    if (!logChannel) return;
-
-    const embed = createBaseEmbed("🔨 Membro Banido", 0xff0000)
-      .setDescription(`<@${ban.user.id}> | \`${ban.user.tag}\` foi banido.`)
-      .addFields(
-        { name: "🆔 ID", value: `\`${ban.user.id}\``, inline: true },
-        { name: "🏠 Servidor", value: `\`${ban.guild.name}\``, inline: true }
-      )
-      .setFooter({ text: `ID: ${ban.user.id}` });
-
-    await logChannel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("[ExternalLogs] Erro ao logar ban:", err.message);
-  }
-}
-
-export async function logExternalMemberUnban(user, guild) {
-  try {
-    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.COMMUNITY_LOGS);
-    if (!logChannel) return;
-
-    const embed = createBaseEmbed("🔓 Membro Desbanido", 0x00ff00)
-      .setDescription(`<@${user.id}> | \`${user.tag}\` foi desbanido.`)
-      .addFields({ name: "🆔 ID", value: `\`${user.id}\``, inline: true })
-      .setFooter({ text: `ID: ${user.id}` });
-
-    await logChannel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("[ExternalLogs] Erro ao logar unban:", err.message);
-  }
-}
-
-// ========== RULES ACCEPTANCE ==========
-export async function logExternalRulesAccepted(member, guildName, rolesAdded = []) {
-  try {
-    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.MEMBER_UPDATES);
-    if (!logChannel) return;
-
-    const embed = createBaseEmbed("📜 Regras Aceites", 0x00ff88)
-      .setDescription(`<@${member.id}> | \`${member.user.tag}\` aceitou as regras.`)
-      .addFields(
-        { name: "👤 Utilizador", value: `<@${member.id}>`, inline: true },
-        { name: "🏠 Servidor", value: `\`${guildName}\``, inline: true },
-        { name: "🆔 ID", value: `\`${member.id}\``, inline: true }
+    const logChannel =
+      await getExternalChannel(
+        EXTERNAL_CHANNELS.MESSAGE_LOGS
       );
 
-    if (rolesAdded.length > 0) {
-      embed.addFields({ name: "✅ Cargos atribuídos", value: rolesAdded.join(", "), inline: false });
-    } else {
-      embed.addFields({ name: "⚠️ Aviso", value: "Nenhum cargo foi atribuído automaticamente.", inline: false });
+    if (!logChannel) {
+      return;
     }
 
-    embed.setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-      .setFooter({ text: `ID: ${member.id}` });
+    const embed = createBaseEmbed(
+      "📝 Mensagem Editada",
+      COLORS.WARNING
+    ).setDescription(
+      `${
+        current?.author
+          ? userLabel(current.author)
+          : "❓ Utilizador"
+      } **editou uma mensagem de texto**`
+    );
 
-    await logChannel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("[ExternalLogs] Erro ao logar regras aceites:", err.message);
+    embed.addFields(
+      {
+        name: "👤 Utilizador",
+        value: current?.author
+          ? userLabel(current.author)
+          : "❓ Desconhecido",
+        inline: true,
+      },
+      {
+        name: "📍 Canal",
+        value: channelLabel(
+          current?.channel
+        ),
+        inline: true,
+      },
+      {
+        name: "💬 Mensagem",
+        value: code(current?.id),
+        inline: true,
+      },
+      {
+        name: "📝 Antiga mensagem",
+        value: formatMessageContent(
+          oldContent
+        ),
+        inline: false,
+      },
+      {
+        name: "📝 Nova mensagem",
+        value: formatMessageContent(
+          newContent
+        ),
+        inline: false,
+      }
+    );
+
+    if (current?.attachments?.size) {
+      embed.addFields({
+        name: "📎 Anexos atuais",
+        value: formatAttachments(
+          current.attachments
+        ),
+        inline: false,
+      });
+    }
+
+    embed.addFields(
+      {
+        name: "👤 Utilizador ID",
+        value: code(
+          current?.author?.id
+        ),
+        inline: true,
+      },
+      {
+        name: "📍 Canal ID",
+        value: code(
+          current?.channel?.id
+        ),
+        inline: true,
+      },
+      {
+        name: "💬 Mensagem ID",
+        value: code(current?.id),
+        inline: true,
+      }
+    );
+
+    setFooter(
+      embed,
+      current?.id,
+      "Mensagem ID"
+    );
+
+    await logChannel.send(
+      messagePayload(embed)
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro ao logar update:",
+      error?.message
+    );
   }
 }
 
-// ========== SEARCH LOG ==========
-export async function logExternalSearch(user, query, results) {
+/*
+ * Aliases para compatibilidade com código antigo.
+ */
+export {
+  logExternalMessageDelete as logMessageDelete,
+  logExternalMessageUpdate as logMessageUpdate,
+};
+
+/* ============================================================
+ * MEMBER EVENTS
+ * ============================================================ */
+
+export async function logExternalMemberJoin(
+  member
+) {
   try {
-    const logChannel = await getExternalChannel(EXTERNAL_CHANNELS.MESSAGE_LOGS);
-    if (!logChannel) return;
+    const embed = createBaseEmbed(
+      "📥 Membro Entrou",
+      COLORS.SUCCESS
+    ).setDescription(
+      `${userLabel(member?.user)} **entrou no servidor**.`
+    );
 
-    const embed = createBaseEmbed("🔍 Pesquisa Realizada", 0x0099ff)
-      .setDescription(`<@${user.id}> | \`${user.tag}\` fez uma pesquisa.`)
-      .addFields(
-        { name: "Query", value: `\`\`\`${query.substring(0, 1024)}\`\`\``, inline: false },
-        { name: "Resultados", value: results ? String(results) : "Nenhum", inline: true }
-      )
-      .setFooter({ text: `ID: ${user.id}` });
+    const createdTimestamp =
+      member?.user?.createdTimestamp;
 
-    await logChannel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("[ExternalLogs] Erro ao logar pesquisa:", err.message);
+    const accountAge = createdTimestamp
+      ? `<t:${Math.floor(
+          createdTimestamp / 1000
+        )}:R>`
+      : "Desconhecida";
+
+    const memberCount =
+      member?.guild?.memberCount
+        ? `#${member.guild.memberCount}`
+        : "N/A";
+
+    embed.addFields(
+      {
+        name: "👤 Utilizador",
+        value: userLabel(member?.user),
+        inline: true,
+      },
+      {
+        name: "🔢 Entrada",
+        value: code(memberCount),
+        inline: true,
+      },
+      {
+        name: "📅 Conta criada",
+        value: accountAge,
+        inline: true,
+      },
+      {
+        name: "🆔 ID",
+        value: code(member?.id),
+        inline: true,
+      },
+      {
+        name: "🏠 Servidor",
+        value: code(member?.guild?.name),
+        inline: true,
+      }
+    );
+
+    setUserThumbnail(
+      embed,
+      member?.user
+    );
+
+    setFooter(
+      embed,
+      member?.id
+    );
+
+    await sendLog(
+      EXTERNAL_CHANNELS.MEMBER_LOGS,
+      {
+        embeds: [embed],
+      }
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro ao logar entrada:",
+      error?.message
+    );
   }
 }
+
+export async function logExternalMemberLeave(
+  member
+) {
+  try {
+    const guild = member?.guild;
+
+    const kickEntry =
+      await findAuditExecutor(
+        guild,
+        AuditLogEvent.MemberKick,
+        {
+          targetId: member?.id,
+        }
+      );
+
+    const banEntry =
+      await findAuditExecutor(
+        guild,
+        AuditLogEvent.MemberBanAdd,
+        {
+          targetId: member?.id,
+        }
+      );
+
+    let title = "👋 Membro Saiu";
+    let color = COLORS.DANGER;
+    let action =
+      "saiu do servidor";
+
+    let executor = null;
+
+    if (kickEntry) {
+      title = "👢 Membro Expulso";
+      color = COLORS.ORANGE;
+      action =
+        "foi expulso do servidor";
+      executor = kickEntry;
+    } else if (banEntry) {
+      title = "🔨 Membro Banido";
+      color = COLORS.DANGER;
+      action =
+        "foi banido do servidor";
+      executor = banEntry;
+    }
+
+    const embed = createBaseEmbed(
+      title,
+      color
+    ).setDescription(
+      `${userLabel(member?.user)} **${action}**.`
+    );
+
+    embed.addFields(
+      {
+        name: "👤 Utilizador",
+        value: userLabel(member?.user),
+        inline: true,
+      },
+      {
+        name: "🆔 ID",
+        value: code(member?.id),
+        inline: true,
+      },
+      {
+        name: "🧑‍⚖️ Executado por",
+        value: executorLabel(executor),
+        inline: true,
+      },
+      {
+        name: "🏠 Servidor",
+        value: code(guild?.name),
+        inline: true,
+      }
+    );
+
+    if (executor?.reason) {
+      embed.addFields({
+        name: "📋 Motivo",
+        value: truncate(
+          executor.reason
+        ),
+        inline: false,
+      });
+    }
+
+    setUserThumbnail(
+      embed,
+      member?.user
+    );
+
+    setFooter(
+      embed,
+      member?.id
+    );
+
+    await sendLog(
+      EXTERNAL_CHANNELS.MEMBER_LOGS,
+      {
+        embeds: [embed],
+      }
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro ao logar saída:",
+      error?.message
+    );
+  }
+}
+
+export async function logExternalMemberUpdate(
+  oldMember,
+  newMember
+) {
+  try {
+    const changes = [];
+
+    if (
+      oldMember?.nickname !==
+      newMember?.nickname
+    ) {
+      changes.push(
+        `📝 **Nickname:** ${code(
+          oldMember?.nickname ??
+            "Nenhum"
+        )} → ${code(
+          newMember?.nickname ??
+            "Nenhum"
+        )}`
+      );
+    }
+
+    if (
+      oldMember?.user?.username !==
+      newMember?.user?.username
+    ) {
+      changes.push(
+        `👤 **Username:** ${code(
+          oldMember?.user?.username
+        )} → ${code(
+          newMember?.user?.username
+        )}`
+      );
+    }
+
+    if (
+      oldMember?.avatar !==
+      newMember?.avatar
+    ) {
+      changes.push(
+        "🖼️ **Avatar do servidor atualizado**"
+      );
+    }
+
+    if (
+      oldMember?.user?.avatar !==
+      newMember?.user?.avatar
+    ) {
+      changes.push(
+        "🖼️ **Avatar global atualizado**"
+      );
+    }
+
+    if (
+      oldMember?.user?.globalName !==
+      newMember?.user?.globalName
+    ) {
+      changes.push(
+        `🏷️ **Nome global:** ${code(
+          oldMember?.user?.globalName ??
+            "Nenhum"
+        )} → ${code(
+          newMember?.user?.globalName ??
+            "Nenhum"
+        )}`
+      );
+    }
+
+    const oldRoles =
+      oldMember?.roles?.cache
+        ?.filter(
+          role =>
+            role.id !==
+            newMember.guild.id
+        ) ??
+      new Map();
+
+    const newRoles =
+      newMember?.roles?.cache
+        ?.filter(
+          role =>
+            role.id !==
+            newMember.guild.id
+        ) ??
+      new Map();
+
+    const addedRoles =
+      newRoles.filter(
+        role =>
+          !oldRoles.has(role.id)
+      );
+
+    const removedRoles =
+      oldRoles.filter(
+        role =>
+          !newRoles.has(role.id)
+      );
+
+    if (addedRoles.size) {
+      changes.push(
+        `➕ **Cargos adicionados:** ${truncate(
+          [...addedRoles.values()]
+            .map(roleLabel)
+            .join(", ")
+        )}`
+      );
+    }
+
+    if (removedRoles.size) {
+      changes.push(
+        `➖ **Cargos removidos:** ${truncate(
+          [...removedRoles.values()]
+            .map(roleLabel)
+            .join(", ")
+        )}`
+      );
+    }
+
+    if (
+      oldMember?.communicationDisabledUntilTimestamp !==
+      newMember?.communicationDisabledUntilTimestamp
+    ) {
+      const until =
+        newMember?.communicationDisabledUntilTimestamp;
+
+      changes.push(
+        until
+          ? `⏳ **Timeout:** aplicado até <t:${Math.floor(
+              until / 1000
+            )}:F>`
+          : "⏳ **Timeout:** removido"
+      );
+    }
+
+    if (!changes.length) {
+      return;
+    }
+
+    const entry =
+      await findAuditExecutor(
+        newMember?.guild,
+        AuditLogEvent.MemberUpdate,
+        {
+          targetId: newMember?.id,
+        }
+      );
+
+    const embed = createBaseEmbed(
+      "📝 Membro Atualizado",
+      COLORS.WARNING
+    ).setDescription(
+      `${userLabel(newMember?.user)} **foi atualizado**.`
+    );
+
+    embed.addFields(
+      {
+        name: "👤 Utilizador",
+        value: userLabel(newMember?.user),
+        inline: true,
+      },
+      {
+        name: "🆔 ID",
+        value: code(newMember?.id),
+        inline: true,
+      },
+      {
+        name: "🧑‍⚖️ Executado por",
+        value: executorLabel(entry),
+        inline: true,
+      }
+    );
+
+    addDiffs(
+      embed,
+      changes
+    );
+
+    setUserThumbnail(
+      embed,
+      newMember?.user
+    );
+
+    setFooter(
+      embed,
+      newMember?.id
+    );
+
+    await sendLog(
+      EXTERNAL_CHANNELS.MEMBER_UPDATES,
+      {
+        embeds: [embed],
+      }
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro ao logar update de membro:",
+      error?.message
+    );
+  }
+}
+
+/* ============================================================
+ * VOICE EVENTS
+ * ============================================================ */
+
+export async function logExternalVoiceJoin(
+  member,
+  channel
+) {
+  try {
+    const embed = createBaseEmbed(
+      "🔊 Entrou em Canal de Voz",
+      COLORS.SUCCESS
+    ).setDescription(
+      `${userLabel(member?.user)} **entrou em** ${channelLabel(channel)}.`
+    );
+
+    embed.addFields(
+      {
+        name: "👤 Utilizador",
+        value: userLabel(member?.user),
+        inline: true,
+      },
+      {
+        name: "🔊 Canal",
+        value: channelLabel(channel),
+        inline: true,
+      },
+      {
+        name: "🆔 Utilizador ID",
+        value: code(member?.id),
+        inline: true,
+      }
+    );
+
+    setUserThumbnail(
+      embed,
+      member?.user
+    );
+
+    setFooter(
+      embed,
+      member?.id
+    );
+
+    await sendLog(
+      EXTERNAL_CHANNELS.MEMBER_LOGS,
+      {
+        embeds: [embed],
+      }
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro ao logar voice join:",
+      error?.message
+    );
+  }
+}
+
+export async function logExternalVoiceLeave(
+  member,
+  channel
+) {
+  try {
+    const embed = createBaseEmbed(
+      "🔊 Saiu de Canal de Voz",
+      COLORS.ORANGE
+    ).setDescription(
+      `${userLabel(member?.user)} **saiu de** ${channelLabel(channel)}.`
+    );
+
+    embed.addFields(
+      {
+        name: "👤 Utilizador",
+        value: userLabel(member?.user),
+        inline: true,
+      },
+      {
+        name: "🔊 Canal",
+        value: channelLabel(channel),
+        inline: true,
+      },
+      {
+        name: "🆔 Utilizador ID",
+        value: code(member?.id),
+        inline: true,
+      }
+    );
+
+    setUserThumbnail(
+      embed,
+      member?.user
+    );
+
+    setFooter(
+      embed,
+      member?.id
+    );
+
+    await sendLog(
+      EXTERNAL_CHANNELS.MEMBER_LOGS,
+      {
+        embeds: [embed],
+      }
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro ao logar voice leave:",
+      error?.message
+    );
+  }
+}
+
+export async function logExternalVoiceMove(
+  member,
+  oldChannel,
+  newChannel
+) {
+  try {
+    const embed = createBaseEmbed(
+      "🔀 Mudança de Canal de Voz",
+      COLORS.CYAN
+    ).setDescription(
+      `${userLabel(member?.user)} **mudou de canal de voz**.`
+    );
+
+    embed.addFields(
+      {
+        name: "👤 Utilizador",
+        value: userLabel(member?.user),
+        inline: true,
+      },
+      {
+        name: "⬅️ De",
+        value: channelLabel(oldChannel),
+        inline: true,
+      },
+      {
+        name: "➡️ Para",
+        value: channelLabel(newChannel),
+        inline: true,
+      }
+    );
+
+    setUserThumbnail(
+      embed,
+      member?.user
+    );
+
+    setFooter(
+      embed,
+      member?.id
+    );
+
+    await sendLog(
+      EXTERNAL_CHANNELS.MEMBER_LOGS,
+      {
+        embeds: [embed],
+      }
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro ao logar voice move:",
+      error?.message
+    );
+  }
+}
+
+/* ============================================================
+ * CHANNEL EVENTS
+ * ============================================================ */
+
+export async function logExternalChannelCreate(
+  channel
+) {
+  try {
+    const embed = createBaseEmbed(
+      "📁 Canal Criado",
+      COLORS.SUCCESS
+    ).setDescription(
+      `**#${channel?.name ?? "desconhecido"}** foi criado.`
+    );
+
+    embed.addFields(
+      {
+        name: "📁 Canal",
+        value: channelLabel(channel),
+        inline: true,
+      },
+      {
+        name: "📌 Tipo",
+        value: code(
+          getChannelTypeName(
+            channel?.type
+          )
+        ),
+        inline: true,
+      },
+      {
+        name: "🆔 ID",
+        value: code(channel?.id),
+        inline: true,
+      },
+      {
+        name: "📂 Categoria",
+        value: channel?.parent
+          ? channelLabel(
+              channel.parent
+            )
+          : "*Nenhuma*",
+        inline: false,
+      }
+    );
+
+    if (channel?.topic) {
+      embed.addFields({
+        name: "📝 Tópico",
+        value: truncate(
+          channel.topic
+        ),
+        inline: false,
+      });
+    }
+
+    setFooter(
+      embed,
+      channel?.id,
+      "Canal ID"
+    );
+
+    await sendLog(
+      EXTERNAL_CHANNELS.COMMUNITY_LOGS,
+      {
+        embeds: [embed],
+      }
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro ao logar channel create:",
+      error?.message
+    );
+  }
+}
+
+export async function logExternalChannelDelete(
+  channel
+) {
+  try {
+    const entry =
+      await findAuditExecutor(
+        channel?.guild,
+        AuditLogEvent.ChannelDelete,
+        {
+          targetId: channel?.id,
+        }
+      );
+
+    const embed = createBaseEmbed(
+      "🗑️ Canal Apagado",
+      COLORS.DANGER
+    ).setDescription(
+      `**#${channel?.name ?? "desconhecido"}** foi apagado.`
+    );
+
+    embed.addFields(
+      {
+        name: "📁 Canal",
+        value: `#${truncate(
+          channel?.name ??
+            "desconhecido",
+          200
+        )}`,
+        inline: true,
+      },
+      {
+        name: "📌 Tipo",
+        value: code(
+          getChannelTypeName(
+            channel?.type
+          )
+        ),
+        inline: true,
+      },
+      {
+        name: "🆔 ID",
+        value: code(channel?.id),
+        inline: true,
+      },
+      {
+        name: "🧑‍⚖️ Apagado por",
+        value: executorLabel(entry),
+        inline: false,
+      }
+    );
+
+    if (channel?.parent) {
+      embed.addFields({
+        name: "📂 Categoria",
+        value: channelLabel(
+          channel.parent
+        ),
+        inline: false,
+      });
+    }
+
+    setFooter(
+      embed,
+      channel?.id,
+      "Canal ID"
+    );
+
+    await sendLog(
+      EXTERNAL_CHANNELS.COMMUNITY_LOGS,
+      {
+        embeds: [embed],
+      }
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro ao logar channel delete:",
+      error?.message
+    );
+  }
+}
+
+export async function logExternalChannelUpdate(
+  oldChannel,
+  newChannel
+) {
+  try {
+    const before =
+      channelSnapshot(oldChannel);
+
+    const after =
+      channelSnapshot(newChannel);
+
+    const changes = [
+      diff(
+        "Nome",
+        before.name,
+        after.name
+      ),
+
+      diff(
+        "Tipo",
+        before.type,
+        after.type
+      ),
+
+      diff(
+        "Categoria",
+        before.parentId,
+        after.parentId
+      ),
+
+      diff(
+        "Posição",
+        before.position,
+        after.position
+      ),
+
+      diff(
+        "Tópico",
+        before.topic,
+        after.topic
+      ),
+
+      diff(
+        "NSFW",
+        before.nsfw,
+        after.nsfw
+      ),
+
+      diff(
+        "Slowmode",
+        before.rateLimitPerUser,
+        after.rateLimitPerUser
+      ),
+
+      diff(
+        "Bitrate",
+        before.bitrate,
+        after.bitrate
+      ),
+
+      diff(
+        "Limite de utilizadores",
+        before.userLimit,
+        after.userLimit
+      ),
+    ];
+
+    if (!changes.some(Boolean)) {
+      return;
+    }
+
+    const entry =
+      await findAuditExecutor(
+        newChannel?.guild,
+        AuditLogEvent.ChannelUpdate,
+        {
+          targetId: newChannel?.id,
+        }
+      );
+
+    const embed = createBaseEmbed(
+      "📝 Canal Atualizado",
+      COLORS.WARNING
+    ).setDescription(
+      `**#${newChannel?.name ?? "desconhecido"}** foi atualizado.`
+    );
+
+    embed.addFields(
+      {
+        name: "📁 Canal",
+        value: channelLabel(newChannel),
+        inline: true,
+      },
+      {
+        name: "🆔 ID",
+        value: code(newChannel?.id),
+        inline: true,
+      },
+      {
+        name: "🧑‍⚖️ Alterado por",
+        value: executorLabel(entry),
+        inline: true,
+      }
+    );
+
+    addDiffs(
+      embed,
+      changes
+    );
+
+    setFooter(
+      embed,
+      newChannel?.id,
+      "Canal ID"
+    );
+
+    await sendLog(
+      EXTERNAL_CHANNELS.COMMUNITY_LOGS,
+      {
+        embeds: [embed],
+      }
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro ao logar channel update:",
+      error?.message
+    );
+  }
+}
+
+/* ============================================================
+ * ROLE EVENTS
+ * ============================================================ */
+
+export async function logExternalRoleCreate(
+  role
+) {
+  try {
+    const embed = createBaseEmbed(
+      "🏷️ Cargo Criado",
+      COLORS.SUCCESS
+    ).setDescription(
+      `**@${role?.name ?? "desconhecido"}** foi criado.`
+    );
+
+    const permissions =
+      rolePermissionNames(role);
+
+    embed.addFields(
+      {
+        name: "🏷️ Nome",
+        value: code(role?.name),
+        inline: true,
+      },
+      {
+        name: "🎨 Cor",
+        value: code(role?.hexColor),
+        inline: true,
+      },
+      {
+        name: "📢 Mentionable",
+        value: code(
+          role?.mentionable
+            ? "Sim"
+            : "Não"
+        ),
+        inline: true,
+      },
+      {
+        name: "👁️ Separado",
+        value: code(
+          role?.hoist
+            ? "Sim"
+            : "Não"
+        ),
+        inline: true,
+      },
+      {
+        name: "🆔 ID",
+        value: code(role?.id),
+        inline: true,
+      },
+      {
+        name: "🔐 Permissões",
+        value: permissions.length
+          ? truncate(
+              permissions.join(", ")
+            )
+          : "*Nenhuma*",
+        inline: false,
+      }
+    );
+
+    setFooter(
+      embed,
+      role?.id,
+      "Role ID"
+    );
+
+    await sendLog(
+      EXTERNAL_CHANNELS.COMMUNITY_LOGS,
+      {
+        embeds: [embed],
+      }
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro ao logar role create:",
+      error?.message
+    );
+  }
+}
+
+export async function logExternalRoleDelete(
+  role
+) {
+  try {
+    const entry =
+      await findAuditExecutor(
+        role?.guild,
+        AuditLogEvent.RoleDelete,
+        {
+          targetId: role?.id,
+        }
+      );
+
+    const embed = createBaseEmbed(
+      "🗑️ Cargo Apagado",
+      COLORS.DANGER
+    ).setDescription(
+      `**@${role?.name ?? "desconhecido"}** foi apagado.`
+    );
+
+    embed.addFields(
+      {
+        name: "🏷️ Nome",
+        value: code(role?.name),
+        inline: true,
+      },
+      {
+        name: "🎨 Cor",
+        value: code(role?.hexColor),
+        inline: true,
+      },
+      {
+        name: "🆔 ID",
+        value: code(role?.id),
+        inline: true,
+      },
+      {
+        name: "🧑‍⚖️ Apagado por",
+        value: executorLabel(entry),
+        inline: false,
+      }
+    );
+
+    setFooter(
+      embed,
+      role?.id,
+      "Role ID"
+    );
+
+    await sendLog(
+      EXTERNAL_CHANNELS.COMMUNITY_LOGS,
+      {
+        embeds: [embed],
+      }
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro ao logar role delete:",
+      error?.message
+    );
+  }
+}
+
+export async function logExternalRoleUpdate(
+  oldRole,
+  newRole
+) {
+  try {
+    const changes = [
+      diff(
+        "Nome",
+        oldRole?.name,
+        newRole?.name
+      ),
+
+      diff(
+        "Cor",
+        oldRole?.hexColor,
+        newRole?.hexColor
+      ),
+
+      diff(
+        "Mentionable",
+        oldRole?.mentionable
+          ? "Sim"
+          : "Não",
+        newRole?.mentionable
+          ? "Sim"
+          : "Não"
+      ),
+
+      diff(
+        "Separado",
+        oldRole?.hoist
+          ? "Sim"
+          : "Não",
+        newRole?.hoist
+          ? "Sim"
+          : "Não"
+      ),
+
+      diff(
+        "Posição",
+        oldRole?.position,
+        newRole?.position
+      ),
+    ];
+
+    const oldPermissions =
+      new Set(
+        rolePermissionNames(
+          oldRole
+        )
+      );
+
+    const newPermissions =
+      new Set(
+        rolePermissionNames(
+          newRole
+        )
+      );
+
+    const addedPermissions =
+      [...newPermissions].filter(
+        permission =>
+          !oldPermissions.has(
+            permission
+          )
+      );
+
+    const removedPermissions =
+      [...oldPermissions].filter(
+        permission =>
+          !newPermissions.has(
+            permission
+          )
+      );
+
+    if (addedPermissions.length) {
+      changes.push(
+        `🔐 **Permissões adicionadas:** ${truncate(
+          addedPermissions.join(", ")
+        )}`
+      );
+    }
+
+    if (removedPermissions.length) {
+      changes.push(
+        `🔐 **Permissões removidas:** ${truncate(
+          removedPermissions.join(", ")
+        )}`
+      );
+    }
+
+    if (!changes.some(Boolean)) {
+      return;
+    }
+
+    const entry =
+      await findAuditExecutor(
+        newRole?.guild,
+        AuditLogEvent.RoleUpdate,
+        {
+          targetId: newRole?.id,
+        }
+      );
+
+    const embed = createBaseEmbed(
+      "📝 Cargo Atualizado",
+      COLORS.WARNING
+    ).setDescription(
+      `**@${newRole?.name ?? "desconhecido"}** foi atualizado.`
+    );
+
+    embed.addFields(
+      {
+        name: "🏷️ Cargo",
+        value: roleLabel(newRole),
+        inline: true,
+      },
+      {
+        name: "🆔 ID",
+        value: code(newRole?.id),
+        inline: true,
+      },
+      {
+        name: "🧑‍⚖️ Alterado por",
+        value: executorLabel(entry),
+        inline: true,
+      }
+    );
+
+    addDiffs(
+      embed,
+      changes
+    );
+
+    setFooter(
+      embed,
+      newRole?.id,
+      "Role ID"
+    );
+
+    await sendLog(
+      EXTERNAL_CHANNELS.COMMUNITY_LOGS,
+      {
+        embeds: [embed],
+      }
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro ao logar role update:",
+      error?.message
+    );
+  }
+}
+
+/* ============================================================
+ * BAN / UNBAN / KICK
+ * ============================================================ */
+
+export async function logExternalMemberBan(
+  ban
+) {
+  try {
+    const entry =
+      await findAuditExecutor(
+        ban?.guild,
+        AuditLogEvent.MemberBanAdd,
+        {
+          targetId: ban?.user?.id,
+        }
+      );
+
+    const embed = createBaseEmbed(
+      "🔨 Membro Banido",
+      COLORS.DANGER
+    ).setDescription(
+      `${userLabel(ban?.user)} **foi banido do servidor**.`
+    );
+
+    embed.addFields(
+      {
+        name: "👤 Utilizador",
+        value: userLabel(ban?.user),
+        inline: true,
+      },
+      {
+        name: "🆔 ID",
+        value: code(ban?.user?.id),
+        inline: true,
+      },
+      {
+        name: "🧑‍⚖️ Banido por",
+        value: executorLabel(entry),
+        inline: true,
+      },
+      {
+        name: "🏠 Servidor",
+        value: code(ban?.guild?.name),
+        inline: true,
+      }
+    );
+
+    if (entry?.reason) {
+      embed.addFields({
+        name: "📋 Motivo",
+        value: truncate(
+          entry.reason
+        ),
+        inline: false,
+      });
+    }
+
+    setUserThumbnail(
+      embed,
+      ban?.user
+    );
+
+    setFooter(
+      embed,
+      ban?.user?.id
+    );
+
+    await sendLog(
+      EXTERNAL_CHANNELS.COMMUNITY_LOGS,
+      {
+        embeds: [embed],
+      }
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro ao logar ban:",
+      error?.message
+    );
+  }
+}
+
+export async function logExternalMemberUnban(
+  user,
+  guild
+) {
+  try {
+    const entry =
+      await findAuditExecutor(
+        guild,
+        AuditLogEvent.MemberBanRemove,
+        {
+          targetId: user?.id,
+        }
+      );
+
+    const embed = createBaseEmbed(
+      "🔓 Membro Desbanido",
+      COLORS.SUCCESS
+    ).setDescription(
+      `${userLabel(user)} **foi desbanido**.`
+    );
+
+    embed.addFields(
+      {
+        name: "👤 Utilizador",
+        value: userLabel(user),
+        inline: true,
+      },
+      {
+        name: "🆔 ID",
+        value: code(user?.id),
+        inline: true,
+      },
+      {
+        name: "🧑‍⚖️ Desbanido por",
+        value: executorLabel(entry),
+        inline: true,
+      },
+      {
+        name: "🏠 Servidor",
+        value: code(guild?.name),
+        inline: true,
+      }
+    );
+
+    setUserThumbnail(
+      embed,
+      user
+    );
+
+    setFooter(
+      embed,
+      user?.id
+    );
+
+    await sendLog(
+      EXTERNAL_CHANNELS.COMMUNITY_LOGS,
+      {
+        embeds: [embed],
+      }
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro ao logar unban:",
+      error?.message
+    );
+  }
+}
+
+export async function logExternalMemberKick(
+  member,
+  reason = null
+) {
+  try {
+    const entry =
+      await findAuditExecutor(
+        member?.guild,
+        AuditLogEvent.MemberKick,
+        {
+          targetId: member?.id,
+        }
+      );
+
+    const embed = createBaseEmbed(
+      "👢 Membro Expulso",
+      COLORS.ORANGE
+    ).setDescription(
+      `${userLabel(member?.user)} **foi expulso do servidor**.`
+    );
+
+    embed.addFields(
+      {
+        name: "👤 Utilizador",
+        value: userLabel(member?.user),
+        inline: true,
+      },
+      {
+        name: "🆔 ID",
+        value: code(member?.id),
+        inline: true,
+      },
+      {
+        name: "🧑‍⚖️ Expulso por",
+        value: executorLabel(entry),
+        inline: true,
+      }
+    );
+
+    if (reason || entry?.reason) {
+      embed.addFields({
+        name: "📋 Motivo",
+        value: truncate(
+          reason ?? entry?.reason
+        ),
+        inline: false,
+      });
+    }
+
+    setUserThumbnail(
+      embed,
+      member?.user
+    );
+
+    setFooter(
+      embed,
+      member?.id
+    );
+
+    await sendLog(
+      EXTERNAL_CHANNELS.COMMUNITY_LOGS,
+      {
+        embeds: [embed],
+      }
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro ao logar kick:",
+      error?.message
+    );
+  }
+}
+
+/* ============================================================
+ * RULES / SEARCH
+ * ============================================================ */
+
+export async function logExternalRulesAccepted(
+  member,
+  guildName,
+  rolesAdded = []
+) {
+  try {
+    const embed = createBaseEmbed(
+      "📜 Regras Aceites",
+      COLORS.SUCCESS
+    ).setDescription(
+      `${userLabel(member?.user)} **aceitou as regras**.`
+    );
+
+    embed.addFields(
+      {
+        name: "👤 Utilizador",
+        value: userLabel(member?.user),
+        inline: true,
+      },
+      {
+        name: "🏠 Servidor",
+        value: code(guildName),
+        inline: true,
+      },
+      {
+        name: "🆔 ID",
+        value: code(member?.id),
+        inline: true,
+      },
+      {
+        name: "✅ Cargos atribuídos",
+        value: rolesAdded?.length
+          ? truncate(
+              rolesAdded.join(", ")
+            )
+          : "⚠️ Nenhum cargo foi atribuído automaticamente.",
+        inline: false,
+      }
+    );
+
+    setUserThumbnail(
+      embed,
+      member?.user
+    );
+
+    setFooter(
+      embed,
+      member?.id
+    );
+
+    await sendLog(
+      EXTERNAL_CHANNELS.MEMBER_UPDATES,
+      {
+        embeds: [embed],
+      }
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro ao logar regras aceites:",
+      error?.message
+    );
+  }
+}
+
+export async function logExternalSearch(
+  user,
+  query,
+  results
+) {
+  try {
+    const embed = createBaseEmbed(
+      "🔍 Pesquisa Realizada",
+      COLORS.INFO
+    ).setDescription(
+      `${userLabel(user)} **realizou uma pesquisa**.`
+    );
+
+    embed.addFields(
+      {
+        name: "🔎 Query",
+        value: truncate(
+          query
+            ? `\`\`\`\n${String(
+                query
+              ).slice(0, 1000)}\n\`\`\``
+            : "*Vazia*"
+        ),
+        inline: false,
+      },
+      {
+        name: "📊 Resultados",
+        value: code(
+          results ?? "Nenhum"
+        ),
+        inline: true,
+      },
+      {
+        name: "🆔 Utilizador ID",
+        value: code(user?.id),
+        inline: true,
+      }
+    );
+
+    setUserThumbnail(
+      embed,
+      user
+    );
+
+    setFooter(
+      embed,
+      user?.id
+    );
+
+    await sendLog(
+      EXTERNAL_CHANNELS.MESSAGE_LOGS,
+      {
+        embeds: [embed],
+      }
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro ao logar pesquisa:",
+      error?.message
+    );
+  }
+}
+
+/* ============================================================
+ * GENERIC LOGGER
+ * ============================================================ */
+
+export async function logExternalGeneric({
+  channelId =
+    EXTERNAL_CHANNELS.COMMUNITY_LOGS,
+
+  title,
+
+  description,
+
+  color = COLORS.INFO,
+
+  fields = [],
+
+  footerId = null,
+
+  thumbnailUser = null,
+} = {}) {
+  try {
+    if (!title) {
+      return false;
+    }
+
+    const embed = createBaseEmbed(
+      title,
+      color
+    );
+
+    if (description) {
+      embed.setDescription(
+        truncate(
+          description,
+          MAX_DESCRIPTION
+        )
+      );
+    }
+
+    if (fields.length) {
+      embed.addFields(
+        fields
+          .filter(
+            field =>
+              field?.name &&
+              field?.value
+          )
+          .slice(
+            0,
+            MAX_EMBED_FIELDS
+          )
+          .map(field => ({
+            name: truncate(
+              field.name,
+              256
+            ),
+
+            value: truncate(
+              field.value
+            ),
+
+            inline: Boolean(
+              field.inline
+            ),
+          }))
+      );
+    }
+
+    if (thumbnailUser) {
+      setUserThumbnail(
+        embed,
+        thumbnailUser
+      );
+    }
+
+    if (footerId) {
+      setFooter(
+        embed,
+        footerId
+      );
+    }
+
+    return await sendLog(
+      channelId,
+      {
+        embeds: [embed],
+      }
+    );
+  } catch (error) {
+    console.error(
+      "[ExternalLogs] Erro no log genérico:",
+      error?.message
+    );
+
+    return false;
+  }
+}
+
+/* ============================================================
+ * EXPORTS
+ * ============================================================ */
+
+export {
+  EXTERNAL_CHANNELS,
+  COLORS as EXTERNAL_LOG_COLORS,
+};
