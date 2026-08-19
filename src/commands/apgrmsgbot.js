@@ -53,70 +53,49 @@ const dateFormatterShort = new Intl.DateTimeFormat('pt-PT', {
 });
 
 // ============================================================
-// [NOVO] FUNÇÃO ROBUSTA DE FORMATAÇÃO DE TEXTO
+// [NOVA FUNÇÃO] CONVERTE MARKDOWN DO DISCORD DIRETAMENTE PARA HTML
 // ============================================================
-function formatText(rawText) {
-  if (!rawText) return '';
+function renderMarkdown(text) {
+  if (!text) return '';
 
-  const placeholders = [];
+  let processed = text;
 
-  // 1. Substituir Links (URLs) primeiro
-  let processed = rawText.replace(/(https?:\/\/[^\s]+)/g, (match) => {
-    const id = placeholders.length;
-    placeholders.push(`<a href="${escapeHtml(match)}" target="_blank" rel="noopener noreferrer">${escapeHtml(match)}</a>`);
-    return `{__LINK_PH__${id}}`;
+  // 1. Substituir emojis personalizados do Discord (ex: <:spotify:837...>) por texto para evitar imagens quebradas no HTML
+  processed = processed.replace(/<a?:([a-zA-Z0-9_]+):[0-9]+>/g, ':$1:');
+
+  // 2. Processar Links do Discord [texto](url) primeiro
+  processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, textContent, url) => {
+    return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(textContent)}</a>`;
   });
 
-  // 2. Substituir Negrito (**texto**)
-  processed = processed.replace(/\*\*([^*]+?)\*\*/g, (match, p1) => {
-    const id = placeholders.length;
-    placeholders.push(`<strong>${escapeHtml(p1)}</strong>`);
-    return `{__BOLD_PH__${id}}`;
+  // 3. Links soltos (https://...) que não estão em formato [](url)
+  processed = processed.replace(/(https?:\/\/[^\s]+)/g, (match) => {
+    return `<a href="${escapeHtml(match)}" target="_blank" rel="noopener noreferrer">${escapeHtml(match)}</a>`;
   });
 
-  // 3. Substituir Itálico (*texto*) 
-  processed = processed.replace(/\*([^*]+?)\*/g, (match, p1) => {
-    const id = placeholders.length;
-    placeholders.push(`<em>${escapeHtml(p1)}</em>`);
-    return `{__ITALIC_PH__${id}}`;
-  });
+  // 4. Negrito **texto**
+  processed = processed.replace(/\*\*([^*]+?)\*\*/g, (match, p1) => `<strong>${escapeHtml(p1)}</strong>`);
+  
+  // 5. Itálico *texto*
+  processed = processed.replace(/\*([^*]+?)\*/g, (match, p1) => `<em>${escapeHtml(p1)}</em>`);
 
-  // 4. Substituir Sublinhado (__texto__)
-  processed = processed.replace(/__([^_]+?)__/g, (match, p1) => {
-    const id = placeholders.length;
-    placeholders.push(`<u>${escapeHtml(p1)}</u>`);
-    return `{__UNDERLINE_PH__${id}}`;
-  });
+  // 6. Sublinhado __texto__
+  processed = processed.replace(/__([^_]+?)__/g, (match, p1) => `<u>${escapeHtml(p1)}</u>`);
 
-  // 5. Substituir Riscado (~~texto~~)
-  processed = processed.replace(/~~([^~]+?)~~/g, (match, p1) => {
-    const id = placeholders.length;
-    placeholders.push(`<s>${escapeHtml(p1)}</s>`);
-    return `{__STRIKE_PH__${id}}`;
-  });
-
-  // 6. Escapar o resto do texto (proteção contra XSS)
-  let texto = escapeHtml(processed);
-
-  // 7. Substituir os placeholders de volta pelo HTML real
-  for (let i = 0; i < placeholders.length; i++) {
-    // Usamos regex especificas para cada tipo de placeholder
-    texto = texto.replace(new RegExp(`\\{__LINK_PH__${i}\\}`, 'g'), placeholders[i]);
-    texto = texto.replace(new RegExp(`\\{__BOLD_PH__${i}\\}`, 'g'), placeholders[i]);
-    texto = texto.replace(new RegExp(`\\{__ITALIC_PH__${i}\\}`, 'g'), placeholders[i]);
-    texto = texto.replace(new RegExp(`\\{__UNDERLINE_PH__${i}\\}`, 'g'), placeholders[i]);
-    texto = texto.replace(new RegExp(`\\{__STRIKE_PH__${i}\\}`, 'g'), placeholders[i]);
-  }
+  // 7. Riscado ~~texto~~
+  processed = processed.replace(/~~([^~]+?)~~/g, (match, p1) => `<s>${escapeHtml(p1)}</s>`);
 
   // 8. Quebras de linha
-  texto = texto.replace(/\r\n/g, '<br>').replace(/\n/g, '<br>');
+  processed = processed.replace(/\r\n/g, '<br>').replace(/\n/g, '<br>');
 
-  return texto;
+  return processed;
 }
 
 // ============================================================
-// EXTRAIR TEXTO DA MENSAGEM
+// FUNÇÕES DE EXTRAÇÃO DE TEXTO
 // ============================================================
+
+// [PARA HTML] Extrai e organiza o conteúdo, removendo formatações de link cruas para o HTML
 function getMessageText(msg) {
   const isJockie = msg.author.id === '412347553141751808';
   let text = msg.content || '';
@@ -225,6 +204,55 @@ function getMessageText(msg) {
   return text || '(sem conteúdo)';
 }
 
+// [PARA TXT] Extrai o texto CRU exatamente como aparece no Discord, sem processar Markdown ou Links
+function getTxtContent(msg) {
+  const isJockie = msg.author.id === '412347553141751808';
+  let parts = [];
+
+  // 1. Adicionar o conteúdo de texto puro
+  if (msg.content) parts.push(msg.content);
+
+  // 2. Processar os Embeds de forma CRUA
+  if (msg.embeds?.length) {
+    for (const embed of msg.embeds) {
+      // Se for o Jockie, preservamos a descrição original que contém [**Título**](URL)
+      if (isJockie) {
+        if (embed.description) parts.push(embed.description);
+        if (embed.url && !embed.description?.includes(embed.url)) {
+          parts.push(embed.url);
+        }
+        continue; // Não processa os outros campos do embed para o Jockie, para não duplicar
+      }
+
+      // Para outros bots ou embeds normais, concatena tudo sem escapar
+      if (embed.title) parts.push(embed.title);
+      if (embed.description) parts.push(embed.description);
+      if (embed.fields) {
+        for (const field of embed.fields) {
+          parts.push(`**${field.name}:** ${field.value}`);
+        }
+      }
+      if (embed.url) parts.push(embed.url);
+      if (embed.author?.name) parts.push(`Por ${embed.author.name}`);
+      if (embed.footer?.text) parts.push(embed.footer.text);
+    }
+  }
+
+  // 3. Anexos e Stickers
+  if (msg.attachments?.size) {
+    for (const [, att] of msg.attachments) {
+      parts.push(`📎 ${att.name} (${att.url})`);
+    }
+  }
+  if (msg.stickers?.size) {
+    for (const sticker of msg.stickers.values()) {
+      parts.push(`🖼️ Sticker: ${sticker.name}`);
+    }
+  }
+
+  return parts.join(' ').trim() || '(sem conteúdo)';
+}
+
 // ============================================================
 // GERAR HTML
 // ============================================================
@@ -239,7 +267,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
     const avatar = msg.author.displayAvatarURL({ extension: 'png', size: 64 });
     const data = dateFormatter.format(msg.createdAt);
     const rawText = getMessageText(msg);
-    const texto = formatText(rawText); // Aplica a nova formatação
+    const texto = renderMarkdown(rawText);
 
     const hue = (parseInt(msg.author.id.slice(0, 6), 16) % 360);
     const authorColor = msg.author.bot ? '#5865F2' : `hsl(${hue}, 70%, 55%)`;
@@ -326,16 +354,28 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
 }
 
 // ============================================================
-// GERAR TXT
+// GERAR TXT (COM O FORMATO EXATO QUE VOCÊ PEDIU)
 // ============================================================
 function generateTxt(messages, channel, staffName, motivo, targetId, targetName) {
   const sorted = [...messages].sort((a, b) => a.createdAt - b.createdAt);
-  const lines = [
-    '🧹 MENSAGENS APAGADAS', '================================', `Canal: ${channel.name}`,
-    `Staff: ${staffName}`, `Motivo: ${motivo}`, `Alvo: ${targetId} (${targetName})`,
-    `Quantidade: ${sorted.length}`, `Data: ${dateFormatterShort.format(new Date())}`, '================================\n'
-  ];
-  for (const msg of sorted) lines.push(`[${dateFormatter.format(msg.createdAt)}] ${msg.author.username}: ${getMessageText(msg)}`);
+
+  const lines = [];
+  lines.push('🧹 MENSAGENS APAGADAS');
+  lines.push('================================');
+  lines.push(`Canal: #${channel.name}`);
+  lines.push(`Staff: ${staffName}`);
+  lines.push(`Motivo: ${motivo}`);
+  lines.push(`Alvo: ${targetId} (${targetName})`);
+  lines.push(`Quantidade: ${sorted.length}`);
+  lines.push(`Data: ${dateFormatterShort.format(new Date())}`);
+  lines.push('================================\n');
+
+  for (const msg of sorted) {
+    const data = dateFormatter.format(msg.createdAt);
+    const text = getTxtContent(msg);
+    lines.push(`[${data}] ${msg.author.username}: ${text}`);
+  }
+
   return lines.join('\n');
 }
 
@@ -361,10 +401,9 @@ async function askConfirmation(interaction, quantidade) {
 }
 
 // ============================================================
-// COMANDO PRINCIPAL (COM CORREÇÃO DO ERRO 10062)
+// COMANDO PRINCIPAL
 // ============================================================
 export async function execute(interaction, client) {
-  // 1. Verificação rápida de permissão
   if (!interaction.member.permissions.has('ManageMessages')) {
     return interaction.reply({ content: '❌ Precisas da permissão **Gerenciar Mensagens**.', flags: 64 });
   }
@@ -376,7 +415,7 @@ export async function execute(interaction, client) {
   }
 
   // ============================================================
-  // [CORREÇÃO DO ERRO 10062]: Defer reply IMEDIATAMENTE! (Antes de buscar users)
+  // Prevenir erro 10062: Defer reply IMEDIATAMENTE
   // ============================================================
   try {
     await interaction.deferReply({ flags: 64 });
@@ -385,9 +424,6 @@ export async function execute(interaction, client) {
     return; 
   }
 
-  // ============================================================
-  // A partir daqui, tudo é feito com .editReply() e NÃO com .reply()
-  // ============================================================
   try {
     const targetUser = interaction.options.getUser('membro');
     const targetIdRaw = interaction.options.getString('alvo-id');
@@ -410,7 +446,6 @@ export async function execute(interaction, client) {
     const motivo = interaction.options.getString('motivo') || 'Limpeza de mensagens';
     const formato = interaction.options.getString('formato') || 'ambos';
 
-    // 4. Buscar mensagens
     let collected = new Collection();
     let lastId = null;
     const maxFetch = Math.min(quantidade, 1000);
@@ -443,7 +478,6 @@ export async function execute(interaction, client) {
       if (!(await askConfirmation(interaction, totalFound))) return interaction.editReply({ content: '❌ Operação cancelada.' });
     }
 
-    // 7. Apagar mensagens
     const now = Date.now();
     const bulkable = targetMessages.filter(m => (now - m.createdTimestamp) < 1209600000);
     const rest = targetMessages.filter(m => !bulkable.has(m.id));
@@ -455,7 +489,6 @@ export async function execute(interaction, client) {
     }
     for (const msg of rest.values()) { try { await msg.delete(); deletedCount++; } catch { failedCount++; } }
 
-    // 8. Gerar ficheiros
     const msgArray = Array.from(targetMessages.values());
     const timestamp = Date.now();
     const safeChannelName = sanitizeFileName(channel.name);
@@ -471,14 +504,12 @@ export async function execute(interaction, client) {
       files.push(new AttachmentBuilder(Buffer.from(txt, 'utf-8'), { name: `${baseName}.txt` }));
     }
 
-    // 9. Enviar no canal
     const embed = new EmbedBuilder()
       .setTitle('🧹 Mensagens apagadas')
       .setDescription(`📊 **Quantidade:** ${deletedCount}${failedCount > 0 ? ` (${failedCount} falhas)` : ''}\n👤 **Alvo:** <@${targetId}>\n📅 **Data:** ${dateFormatterShort.format(new Date())}\n👮 **Staff:** <@${interaction.user.id}>\nℹ️ **Motivo:** ${motivo}`)
       .setColor(0xFF0000).setFooter({ text: 'Transcript gerado automaticamente' }).setTimestamp();
     await channel.send({ embeds: [embed], files });
 
-    // 10. Log
     if (LOG_CHANNEL_ID) {
       const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
       if (logChannel) {
