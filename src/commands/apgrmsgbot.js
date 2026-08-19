@@ -226,7 +226,7 @@ function getMessageText(msg) {
 }
 
 // ============================================================
-// GERAR HTML (com estrutura visual limpa)
+// GERAR HTML (com estrutura visual limpa E markdown/Links)
 // ============================================================
 function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targetName) {
   const guild = channel.guild;
@@ -239,9 +239,61 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
   const msgsHtml = sorted.map((msg, index) => {
     const avatar = msg.author.displayAvatarURL({ extension: 'png', size: 64 });
     const data = dateFormatter.format(msg.createdAt);
-    const rawText = getMessageText(msg);
-    // Converter quebras de linha para <br> para manter a formatação
-    const texto = escapeHtml(rawText).replace(/\n/g, '<br>');
+    let rawText = getMessageText(msg);
+
+    // ============================================================
+    // [NOVO] Processamento de Markdown e Links
+    // ============================================================
+    let processed = rawText;
+    const placeholders = [];
+
+    // 1. Negrito (**texto**)
+    processed = processed.replace(/\*\*([^*]+?)\*\*/g, (match, p1) => {
+      const id = placeholders.length;
+      placeholders.push(`<strong>${escapeHtml(p1)}</strong>`);
+      return `{__HTML_PLACEHOLDER__${id}__}`;
+    });
+
+    // 2. Itálico (*texto*)
+    processed = processed.replace(/\*([^*]+?)\*/g, (match, p1) => {
+      const id = placeholders.length;
+      placeholders.push(`<em>${escapeHtml(p1)}</em>`);
+      return `{__HTML_PLACEHOLDER__${id}__}`;
+    });
+
+    // 3. Sublinhado (__texto__)
+    processed = processed.replace(/__([^_]+?)__/g, (match, p1) => {
+      const id = placeholders.length;
+      placeholders.push(`<u>${escapeHtml(p1)}</u>`);
+      return `{__HTML_PLACEHOLDER__${id}__}`;
+    });
+
+    // 4. Riscado (~~texto~~)
+    processed = processed.replace(/~~([^~]+?)~~/g, (match, p1) => {
+      const id = placeholders.length;
+      placeholders.push(`<s>${escapeHtml(p1)}</s>`);
+      return `{__HTML_PLACEHOLDER__${id}__}`;
+    });
+
+    // 5. Links clicáveis (URLs)
+    processed = processed.replace(/(https?:\/\/[^\s]+)/g, (match) => {
+      const id = placeholders.length;
+      // Cria o link, escapando a URL para garantir segurança
+      placeholders.push(`<a href="${escapeHtml(match)}" target="_blank" rel="noopener noreferrer">${escapeHtml(match)}</a>`);
+      return `{__HTML_PLACEHOLDER__${id}__}`;
+    });
+
+    // 6. Escapar o resto do texto (protege contra XSS, exceto os placeholders)
+    let texto = escapeHtml(processed);
+
+    // 7. Recolocar as tags seguras nos placeholders
+    for (let i = 0; i < placeholders.length; i++) {
+      texto = texto.replace(`{__HTML_PLACEHOLDER__${i}__}`, placeholders[i]);
+    }
+
+    // 8. Converter quebras de linha para <br>
+    texto = texto.replace(/\n/g, '<br>');
+    // ============================================================
 
     const hue = (parseInt(msg.author.id.slice(0, 6), 16) % 360);
     const authorColor = msg.author.bot ? '#5865F2' : `hsl(${hue}, 70%, 55%)`;
@@ -264,6 +316,7 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
     </div>`;
   }).join('\n');
 
+  // (O resto do HTML e CSS permanece igual ao seu código original)
   return `<!DOCTYPE html>
 <html lang="pt">
 <head>
@@ -392,6 +445,14 @@ function generatePrettyHTML(messages, channel, staffName, motivo, targetId, targ
       white-space: pre-wrap;
       word-wrap: break-word;
       color: #dbdee1;
+    }
+    /* Estilo dos links clicáveis */
+    .text a {
+      color: #00a8fc;
+      text-decoration: none;
+    }
+    .text a:hover {
+      text-decoration: underline;
     }
     .text br + br {
       display: block;
