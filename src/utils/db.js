@@ -1,38 +1,49 @@
 // ============================================================
-// utils/db.js - Sistema de Base de Dados (MongoDB + JSON Fallback)
+// utils/db.js - Sistema de Base de Dados
+// MongoDB + JSON Fallback + Cache + Backup + Atomic Save
 // ============================================================
 
 import { MongoClient } from "mongodb";
 import { CONFIG } from "../config/index.js";
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
 
 // ============================================================
 // CONFIGURAÇÕES
 // ============================================================
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const DB_PATH = path.resolve(process.cwd(), "db.json");
 const BACKUP_PATH = path.resolve(process.cwd(), "db.backup.json");
+const TEMP_PATH = `${DB_PATH}.tmp`;
+
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000;
+
+const RECONNECT_BASE_DELAY = 5000;
+const RECONNECT_MAX_DELAY = 60000;
 
 // ============================================================
 // ESTADO
 // ============================================================
+
 let client = null;
 let mongoDB = null;
 let useMongo = false;
-let reconnectInterval = null;
+
+let reconnectTimeout = null;
+let reconnectAttempts = 0;
+
 let isSaving = false;
-let saveQueue = [];
+let saveRequested = false;
+let savePromise = null;
+
+let isInitialized = false;
 
 // ============================================================
 // CACHE EM MEMÓRIA
 // ============================================================
-let cache = {
+
+const cache = {
   tickets: {},
   avaliacoes: {},
   acceptedRules: [],
@@ -40,466 +51,1104 @@ let cache = {
   messages: {},
   painelsHash: {},
   mapaConfig: {},
-  ticketsCount: 0,
 };
 
 // ============================================================
-// FUNÇÕES DE LOG
+// LOG
 // ============================================================
+
 function logDB(message, type = "info") {
   const prefix = {
     info: "ℹ️",
     success: "✅",
     warning: "⚠️",
     error: "❌",
-    debug: "🔍"
+    debug: "🔍",
   };
+
   console.log(`[DB] ${prefix[type] || "ℹ️"} ${message}`);
 }
 
 // ============================================================
-// JSON FALLBACK
+// HELPERS
 // ============================================================
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function getTicketsCount() {
+  return Object.keys(cache.tickets).length;
+}
+
+function normalizeCache(data = {}) {
+  return {
+    tickets:
+      data.tickets &&
+      typeof data.tickets === "object" &&
+      !Array.isArray(data.tickets)
+        ? data.tickets
+        : {},
+
+    avaliacoes:
+      data.avaliacoes &&
+      typeof data.avaliacoes === "object" &&
+      !Array.isArray(data.avaliacoes)
+        ? data.avaliacoes
+        : {},
+
+    acceptedRules: Array.isArray(data.acceptedRules)
+      ? data.acceptedRules
+      : [],
+
+    acceptedRulesAt:
+      data.acceptedRulesAt &&
+      typeof data.acceptedRulesAt === "object" &&
+      !Array.isArray(data.acceptedRulesAt)
+        ? data.acceptedRulesAt
+        : {},
+
+    messages:
+      data.messages &&
+      typeof data.messages === "object" &&
+      !Array.isArray(data.messages)
+        ? data.messages
+        : {},
+
+    painelsHash:
+      data.painelsHash &&
+      typeof data.painelsHash === "object" &&
+      !Array.isArray(data.painelsHash)
+        ? data.painelsHash
+        : {},
+
+    mapaConfig:
+      data.mapaConfig &&
+      typeof data.mapaConfig === "object" &&
+      !Array.isArray(data.mapaConfig)
+        ? data.mapaConfig
+        : {},
+  };
+}
+
+function applyCache(data) {
+  const normalized = normalizeCache(data);
+
+  cache.tickets = normalized.tickets;
+  cache.avaliacoes = normalized.avaliacoes;
+  cache.acceptedRules = normalized.acceptedRules;
+  cache.acceptedRulesAt = normalized.acceptedRulesAt;
+  cache.messages = normalized.messages;
+  cache.painelsHash = normalized.painelsHash;
+  cache.mapaConfig = normalized.mapaConfig;
+}
+
+// ============================================================
+// JSON - LEITURA
+// ============================================================
+
+function readJSONFile(filePath) {
+  const raw = fs.readFileSync(filePath, "utf-8");
+
+  if (!raw.trim()) {
+    throw new Error("Ficheiro JSON vazio.");
+  }
+
+  return JSON.parse(raw);
+}
+
+// ============================================================
+// JSON - LOAD
+// ============================================================
+
 function loadJSON() {
   try {
-    if (fs.existsSync(DB_PATH)) {
-      const data = JSON.parse(fs.readFileSync(DB_PATH, "utf-8"));
-      
-      cache.tickets = data.tickets || {};
-      cache.avaliacoes = data.avaliacoes || {};
-      cache.acceptedRules = data.acceptedRules || [];
-      cache.acceptedRulesAt = data.acceptedRulesAt || {};
-      cache.messages = data.messages || {};
-      cache.painelsHash = data.painelsHash || {};
-      cache.mapaConfig = data.mapaConfig || {};
-      cache.ticketsCount = Object.keys(cache.tickets).length;
-      
-      logDB(`📂 JSON carregado: ${cache.ticketsCount} tickets`, "info");
-    } else {
-      logDB("📂 Ficheiro JSON não encontrado, a criar novo.", "warning");
+    if (!fs.existsSync(DB_PATH)) {
+      logDB("📂 db.json não encontrado, a criar novo.", "warning");
+
+      applyCache({});
       saveJSON();
+
+      return true;
     }
-  } catch (e) {
-    logDB(`Erro ao carregar JSON: ${e.message}`, "error");
-    
-    if (fs.existsSync(BACKUP_PATH)) {
-      try {
-        logDB("🔄 A tentar restaurar backup...", "warning");
-        const backupData = JSON.parse(fs.readFileSync(BACKUP_PATH, "utf-8"));
-        cache.tickets = backupData.tickets || {};
-        cache.avaliacoes = backupData.avaliacoes || {};
-        cache.acceptedRules = backupData.acceptedRules || [];
-        cache.acceptedRulesAt = backupData.acceptedRulesAt || {};
-        cache.messages = backupData.messages || {};
-        cache.painelsHash = backupData.painelsHash || {};
-        cache.mapaConfig = backupData.mapaConfig || {};
-        cache.ticketsCount = Object.keys(cache.tickets).length;
-        logDB(`✅ Backup restaurado: ${cache.ticketsCount} tickets`, "success");
-      } catch (backupError) {
-        logDB(`Erro ao restaurar backup: ${backupError.message}`, "error");
-      }
+
+    const data = readJSONFile(DB_PATH);
+
+    applyCache(data);
+
+    logDB(
+      `📂 JSON carregado: ${getTicketsCount()} tickets`,
+      "success"
+    );
+
+    return true;
+  } catch (error) {
+    logDB(
+      `Erro ao carregar db.json: ${error.message}`,
+      "error"
+    );
+
+    // --------------------------------------------------------
+    // BACKUP
+    // --------------------------------------------------------
+
+    if (!fs.existsSync(BACKUP_PATH)) {
+      logDB("Nenhum backup disponível.", "warning");
+
+      applyCache({});
+      return false;
+    }
+
+    try {
+      logDB("🔄 A tentar restaurar backup...", "warning");
+
+      const backupData = readJSONFile(BACKUP_PATH);
+
+      applyCache(backupData);
+
+      logDB(
+        `✅ Backup restaurado: ${getTicketsCount()} tickets`,
+        "success"
+      );
+
+      // Recriar db.json a partir do backup
+      saveJSON();
+
+      return true;
+    } catch (backupError) {
+      logDB(
+        `Erro ao restaurar backup: ${backupError.message}`,
+        "error"
+      );
+
+      applyCache({});
+      return false;
     }
   }
 }
+
+// ============================================================
+// JSON - SAVE ATÓMICO
+// ============================================================
 
 function saveJSON() {
   try {
+    const serialized = JSON.stringify(cache, null, 2);
+
+    // --------------------------------------------------------
+    // Escrever primeiro para ficheiro temporário
+    // --------------------------------------------------------
+
+    fs.writeFileSync(TEMP_PATH, serialized, "utf-8");
+
+    // --------------------------------------------------------
+    // Backup do ficheiro atual
+    // --------------------------------------------------------
+
     if (fs.existsSync(DB_PATH)) {
-      fs.copyFileSync(DB_PATH, BACKUP_PATH);
+      try {
+        fs.copyFileSync(DB_PATH, BACKUP_PATH);
+      } catch (backupError) {
+        logDB(
+          `Aviso ao criar backup: ${backupError.message}`,
+          "warning"
+        );
+      }
     }
-    fs.writeFileSync(DB_PATH, JSON.stringify(cache, null, 2));
-  } catch (e) {
-    logDB(`Erro ao guardar JSON: ${e.message}`, "error");
+
+    // --------------------------------------------------------
+    // Substituição atómica
+    // --------------------------------------------------------
+
+    fs.renameSync(TEMP_PATH, DB_PATH);
+
+    return true;
+  } catch (error) {
+    logDB(
+      `Erro ao guardar JSON: ${error.message}`,
+      "error"
+    );
+
+    // Limpar temporário se necessário
+    try {
+      if (fs.existsSync(TEMP_PATH)) {
+        fs.unlinkSync(TEMP_PATH);
+      }
+    } catch {
+      // Ignorar erro de limpeza
+    }
+
+    return false;
   }
 }
 
 // ============================================================
-// MONGODB - CONEXÃO
+// MONGODB - CONNECT
 // ============================================================
+
 export async function connectDB() {
-  if (!CONFIG.MONGODB_URI || CONFIG.MONGODB_URI === "") {
-    logDB("MONGODB_URI não configurada, a usar JSON.", "warning");
+  if (!CONFIG.MONGODB_URI?.trim()) {
+    logDB(
+      "MONGODB_URI não configurada. A usar JSON.",
+      "warning"
+    );
+
     loadJSON();
-    return;
+    isInitialized = true;
+
+    return false;
+  }
+
+  // Evitar múltiplas conexões simultâneas
+  if (mongoDB && useMongo) {
+    return true;
   }
 
   try {
+    // Fechar cliente anterior
+    if (client) {
+      try {
+        await client.close();
+      } catch {
+        // Ignorar
+      }
+
+      client = null;
+      mongoDB = null;
+    }
+
     client = new MongoClient(CONFIG.MONGODB_URI, {
       maxPoolSize: 10,
       minPoolSize: 2,
+
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
       connectTimeoutMS: 10000,
+
       retryWrites: true,
       retryReads: true,
+
+      maxIdleTimeMS: 60000,
     });
 
-    client.on("error", (err) => {
-      logDB(`MongoDB error: ${err.message}`, "error");
-      useMongo = false;
-      scheduleReconnect();
+    client.on("error", (error) => {
+      logDB(
+        `MongoDB error: ${error.message}`,
+        "error"
+      );
+
+      handleMongoFailure();
     });
 
     client.on("close", () => {
-      logDB("MongoDB connection closed.", "warning");
-      useMongo = false;
-      scheduleReconnect();
-    });
+      logDB(
+        "Ligação MongoDB fechada.",
+        "warning"
+      );
 
-    client.on("reconnect", () => {
-      logDB("MongoDB reconectado!", "success");
-      useMongo = true;
+      handleMongoFailure();
     });
 
     await client.connect();
+
     mongoDB = client.db("pacpat_bot");
-    useMongo = true;
 
     await mongoDB.command({ ping: 1 });
-    logDB("MongoDB conectado com sucesso!", "success");
+
+    useMongo = true;
+    reconnectAttempts = 0;
+
+    logDB(
+      "MongoDB conectado com sucesso!",
+      "success"
+    );
 
     await loadMongoToCache();
     await createIndexes();
 
+    isInitialized = true;
+
+    return true;
   } catch (error) {
-    logDB(`Erro ao conectar MongoDB: ${error.message}`, "error");
-    logDB("A usar JSON como fallback.", "warning");
+    logDB(
+      `Erro ao conectar MongoDB: ${error.message}`,
+      "error"
+    );
+
+    useMongo = false;
+    mongoDB = null;
+
+    // JSON continua a ser fonte local
     loadJSON();
+
     scheduleReconnect();
+
+    isInitialized = true;
+
+    return false;
   }
 }
 
 // ============================================================
-// MONGODB - ÍNDICES (CORRIGIDO)
+// MONGODB - FAILURE
 // ============================================================
-async function createIndexes() {
-  if (!mongoDB) return;
-  
-  try {
-    const ticketsCol = mongoDB.collection("tickets");
-    
-    // ⚠️ IMPORTANTE: O campo _id já é único por padrão no MongoDB
-    // Não criar índices únicos no _id ou em campos que já são únicos
-    
-    // ✅ Índices para consultas comuns
-    await ticketsCol.createIndex({ userId: 1 });
-    await ticketsCol.createIndex({ channelId: 1 });
-    await ticketsCol.createIndex({ closed: 1 });
-    await ticketsCol.createIndex({ type: 1 });
-    await ticketsCol.createIndex({ openedAt: -1 });
-    
-    // ✅ Índices compostos para consultas mais rápidas
-    await ticketsCol.createIndex({ userId: 1, closed: 1 });
-    await ticketsCol.createIndex({ type: 1, closed: 1 });
-    await ticketsCol.createIndex({ closed: 1, openedAt: -1 });
-    
-    logDB("✅ Índices MongoDB criados/verificados", "debug");
-  } catch (e) {
-    // Ignorar erros de índices que já existem
-    if (e.code !== 86) { // 86 = IndexAlreadyExists
-      logDB(`⚠️ Erro ao criar índices: ${e.message}`, "warning");
-    }
+
+function handleMongoFailure() {
+  if (!useMongo) {
+    scheduleReconnect();
+    return;
   }
+
+  useMongo = false;
+  mongoDB = null;
+
+  scheduleReconnect();
 }
 
 // ============================================================
 // MONGODB - RECONNECT
 // ============================================================
+
 function scheduleReconnect() {
-  if (reconnectInterval) return;
-  
-  logDB("Reconnect agendado em 30s...", "warning");
-  reconnectInterval = setTimeout(async () => {
-    reconnectInterval = null;
-    logDB("A tentar reconectar MongoDB...", "info");
-    await connectDB();
-  }, 30000);
+  if (reconnectTimeout) return;
+
+  reconnectAttempts++;
+
+  const delayMs = Math.min(
+    RECONNECT_BASE_DELAY *
+      Math.pow(2, reconnectAttempts - 1),
+    RECONNECT_MAX_DELAY
+  );
+
+  logDB(
+    `Reconexão MongoDB agendada em ${Math.round(
+      delayMs / 1000
+    )}s...`,
+    "warning"
+  );
+
+  reconnectTimeout = setTimeout(async () => {
+    reconnectTimeout = null;
+
+    logDB(
+      "🔄 A tentar reconectar MongoDB...",
+      "info"
+    );
+
+    const connected = await connectDB();
+
+    if (!connected) {
+      scheduleReconnect();
+    }
+  }, delayMs);
 }
 
 // ============================================================
-// MONGODB - CARREGAR PARA CACHE
+// MONGODB - LOAD CACHE
 // ============================================================
+
 async function loadMongoToCache() {
   if (!mongoDB) return;
 
   try {
-    const ticketsCol = mongoDB.collection("tickets");
-    const tickets = await ticketsCol.find({}).toArray();
-    for (const t of tickets) {
-      cache.tickets[t.id] = t;
+    // Limpar cache antes de sincronizar
+    applyCache({});
+
+    // --------------------------------------------------------
+    // TICKETS
+    // --------------------------------------------------------
+
+    const tickets = await mongoDB
+      .collection("tickets")
+      .find({})
+      .toArray();
+
+    for (const ticket of tickets) {
+      if (ticket.id) {
+        cache.tickets[String(ticket.id)] = ticket;
+      }
     }
 
-    const avalCol = mongoDB.collection("avaliacoes");
-    const avaliacoes = await avalCol.find({}).toArray();
-    for (const a of avaliacoes) {
-      cache.avaliacoes[a.ticketId] = a.avaliacoes;
+    // --------------------------------------------------------
+    // AVALIAÇÕES
+    // --------------------------------------------------------
+
+    const avaliacoes = await mongoDB
+      .collection("avaliacoes")
+      .find({})
+      .toArray();
+
+    for (const item of avaliacoes) {
+      if (item.ticketId) {
+        cache.avaliacoes[String(item.ticketId)] =
+          item.avaliacoes ?? [];
+      }
     }
 
-    const rulesCol = mongoDB.collection("acceptedRules");
-    const rules = await rulesCol.findOne({ _id: "rules" });
+    // --------------------------------------------------------
+    // REGRAS
+    // --------------------------------------------------------
+
+    const rules = await mongoDB
+      .collection("acceptedRules")
+      .findOne({ _id: "rules" });
+
     if (rules) {
-      cache.acceptedRules = rules.users || [];
-      cache.acceptedRulesAt = rules.acceptedAt || {};
+      cache.acceptedRules = Array.isArray(rules.users)
+        ? rules.users
+        : [];
+
+      cache.acceptedRulesAt =
+        rules.acceptedAt &&
+        typeof rules.acceptedAt === "object"
+          ? rules.acceptedAt
+          : {};
     }
 
-    const msgCol = mongoDB.collection("messages");
-    const messages = await msgCol.findOne({ _id: "panels" });
+    // --------------------------------------------------------
+    // MENSAGENS / PAINÉIS
+    // --------------------------------------------------------
+
+    const messages = await mongoDB
+      .collection("messages")
+      .findOne({ _id: "panels" });
+
     if (messages) {
       cache.messages = messages.data || {};
       cache.painelsHash = messages.painelsHash || {};
     }
 
-    const mapCol = mongoDB.collection("mapaConfig");
-    const mapa = await mapCol.findOne({ _id: "config" });
+    // --------------------------------------------------------
+    // MAPA
+    // --------------------------------------------------------
+
+    const mapa = await mongoDB
+      .collection("mapaConfig")
+      .findOne({ _id: "config" });
+
     if (mapa) {
       cache.mapaConfig = mapa.data || {};
     }
 
-    cache.ticketsCount = Object.keys(cache.tickets).length;
-    logDB(`📊 MongoDB cache: ${cache.ticketsCount} tickets`, "info");
+    logDB(
+      `📊 Cache sincronizado: ${getTicketsCount()} tickets`,
+      "success"
+    );
+  } catch (error) {
+    logDB(
+      `Erro ao carregar MongoDB: ${error.message}`,
+      "error"
+    );
 
-  } catch (e) {
-    logDB(`Erro ao carregar MongoDB: ${e.message}`, "error");
+    throw error;
   }
 }
 
 // ============================================================
-// MONGODB - GUARDAR (OTIMIZADO COM BULK WRITE)
+// MONGODB - INDEXES
 // ============================================================
-export async function saveDB() {
-  if (isSaving) {
-    return new Promise((resolve) => {
-      saveQueue.push(resolve);
-    });
-  }
 
-  isSaving = true;
+async function createIndexes() {
+  if (!mongoDB) return;
 
   try {
-    saveJSON();
+    const tickets = mongoDB.collection("tickets");
 
-    if (useMongo && mongoDB) {
-      await saveToMongoDB();
-    }
+    await Promise.all([
+      tickets.createIndex({ userId: 1 }),
+      tickets.createIndex({ channelId: 1 }),
+      tickets.createIndex({ type: 1 }),
+      tickets.createIndex({ closed: 1 }),
+      tickets.createIndex({ openedAt: -1 }),
 
-    return true;
-  } catch (e) {
-    logDB(`Erro ao guardar: ${e.message}`, "error");
-    return false;
-  } finally {
-    isSaving = false;
-    
-    if (saveQueue.length > 0) {
-      const resolvers = [...saveQueue];
-      saveQueue = [];
-      for (const resolve of resolvers) {
-        resolve();
-      }
-    }
+      tickets.createIndex({
+        userId: 1,
+        closed: 1,
+      }),
+
+      tickets.createIndex({
+        type: 1,
+        closed: 1,
+      }),
+
+      tickets.createIndex({
+        closed: 1,
+        openedAt: -1,
+      }),
+    ]);
+
+    // Índices para documentos usados com upsert
+    await mongoDB
+      .collection("avaliacoes")
+      .createIndex(
+        { ticketId: 1 },
+        { unique: true }
+      );
+
+    logDB(
+      "Índices MongoDB verificados/criados.",
+      "debug"
+    );
+  } catch (error) {
+    logDB(
+      `Erro ao criar índices: ${error.message}`,
+      "warning"
+    );
   }
 }
+
+// ============================================================
+// SAVE DB - COALESCING / QUEUE
+// ============================================================
+
+export async function saveDB() {
+  saveRequested = true;
+
+  if (savePromise) {
+    return savePromise;
+  }
+
+  savePromise = (async () => {
+    try {
+      while (saveRequested) {
+        saveRequested = false;
+        isSaving = true;
+
+        // ----------------------------------------------------
+        // JSON é sempre persistido
+        // ----------------------------------------------------
+
+        const jsonSaved = saveJSON();
+
+        if (!jsonSaved) {
+          logDB(
+            "Falha ao guardar JSON.",
+            "error"
+          );
+        }
+
+        // ----------------------------------------------------
+        // MongoDB
+        // ----------------------------------------------------
+
+        if (useMongo && mongoDB) {
+          try {
+            await saveToMongoDB();
+          } catch (error) {
+            logDB(
+              `MongoDB indisponível: ${error.message}`,
+              "warning"
+            );
+
+            useMongo = false;
+            mongoDB = null;
+
+            scheduleReconnect();
+          }
+        }
+      }
+
+      return true;
+    } catch (error) {
+      logDB(
+        `Erro crítico ao guardar: ${error.message}`,
+        "error"
+      );
+
+      return false;
+    } finally {
+      isSaving = false;
+    }
+  })();
+
+  try {
+    return await savePromise;
+  } finally {
+    savePromise = null;
+  }
+}
+
+// ============================================================
+// MONGODB - SAVE
+// ============================================================
 
 async function saveToMongoDB() {
-  try {
-    const operations = [];
+  if (!mongoDB) {
+    throw new Error("MongoDB não disponível.");
+  }
 
-    const ticketsCol = mongoDB.collection("tickets");
-    const ticketOps = Object.entries(cache.tickets).map(([id, ticket]) => ({
+  // ----------------------------------------------------------
+  // TICKETS
+  // ----------------------------------------------------------
+
+  const ticketOps = Object.entries(cache.tickets).map(
+    ([id, ticket]) => ({
       updateOne: {
-        filter: { id: id },
-        update: { $set: ticket },
-        upsert: true
-      }
-    }));
-    
-    if (ticketOps.length > 0) {
-      operations.push({ collection: "tickets", ops: ticketOps });
-    }
+        filter: { id },
+        update: {
+          $set: {
+            ...ticket,
+            id,
+          },
+        },
+        upsert: true,
+      },
+    })
+  );
 
-    const avalCol = mongoDB.collection("avaliacoes");
-    const avalOps = Object.entries(cache.avaliacoes).map(([ticketId, avaliacoes]) => ({
+  // ----------------------------------------------------------
+  // AVALIAÇÕES
+  // ----------------------------------------------------------
+
+  const avalOps = Object.entries(cache.avaliacoes).map(
+    ([ticketId, avaliacoes]) => ({
       updateOne: {
-        filter: { ticketId: ticketId },
-        update: { $set: { ticketId, avaliacoes } },
-        upsert: true
-      }
-    }));
-    
-    if (avalOps.length > 0) {
-      operations.push({ collection: "avaliacoes", ops: avalOps });
-    }
+        filter: { ticketId },
+        update: {
+          $set: {
+            ticketId,
+            avaliacoes,
+          },
+        },
+        upsert: true,
+      },
+    })
+  );
 
-    await Promise.all(operations.map(async ({ collection, ops }) => {
-      const col = mongoDB.collection(collection);
-      await col.bulkWrite(ops, { ordered: false });
-    }));
+  // ----------------------------------------------------------
+  // BULK OPERATIONS
+  // ----------------------------------------------------------
 
-    const rulesCol = mongoDB.collection("acceptedRules");
-    await rulesCol.updateOne(
+  const bulkPromises = [];
+
+  if (ticketOps.length > 0) {
+    bulkPromises.push(
+      mongoDB
+        .collection("tickets")
+        .bulkWrite(ticketOps, {
+          ordered: false,
+        })
+    );
+  }
+
+  if (avalOps.length > 0) {
+    bulkPromises.push(
+      mongoDB
+        .collection("avaliacoes")
+        .bulkWrite(avalOps, {
+          ordered: false,
+        })
+    );
+  }
+
+  await Promise.all(bulkPromises);
+
+  // ----------------------------------------------------------
+  // ACCEPTED RULES
+  // ----------------------------------------------------------
+
+  await mongoDB
+    .collection("acceptedRules")
+    .updateOne(
       { _id: "rules" },
-      { 
-        $set: { 
+      {
+        $set: {
           users: cache.acceptedRules,
           acceptedAt: cache.acceptedRulesAt,
-          updatedAt: new Date().toISOString()
-        }
+          updatedAt: new Date(),
+        },
       },
       { upsert: true }
     );
 
-    const msgCol = mongoDB.collection("messages");
-    await msgCol.updateOne(
+  // ----------------------------------------------------------
+  // MESSAGES / PANELS
+  // ----------------------------------------------------------
+
+  await mongoDB
+    .collection("messages")
+    .updateOne(
       { _id: "panels" },
-      { 
-        $set: { 
+      {
+        $set: {
           data: cache.messages,
           painelsHash: cache.painelsHash,
-          updatedAt: new Date().toISOString()
-        }
+          updatedAt: new Date(),
+        },
       },
       { upsert: true }
     );
 
-    const mapCol = mongoDB.collection("mapaConfig");
-    await mapCol.updateOne(
+  // ----------------------------------------------------------
+  // MAPA CONFIG
+  // ----------------------------------------------------------
+
+  await mongoDB
+    .collection("mapaConfig")
+    .updateOne(
       { _id: "config" },
-      { 
-        $set: { 
+      {
+        $set: {
           data: cache.mapaConfig,
-          updatedAt: new Date().toISOString()
-        }
+          updatedAt: new Date(),
+        },
       },
       { upsert: true }
     );
 
-    logDB("💾 MongoDB atualizado (bulk write)", "debug");
-
-  } catch (e) {
-    logDB(`Erro ao guardar no MongoDB: ${e.message}`, "error");
-    useMongo = false;
-    throw e;
-  }
+  logDB(
+    "💾 MongoDB atualizado.",
+    "debug"
+  );
 }
 
 // ============================================================
-// FUNÇÕES DE UTILIDADE
+// CLEAN OLD TICKETS
 // ============================================================
 
 export async function cleanOldTickets(daysOld = 30) {
-  const cutoff = Date.now() - (daysOld * 24 * 60 * 60 * 1000);
+  if (
+    !Number.isFinite(daysOld) ||
+    daysOld < 1
+  ) {
+    throw new Error(
+      "daysOld deve ser um número maior que 0."
+    );
+  }
+
+  const cutoff =
+    Date.now() -
+    daysOld * 24 * 60 * 60 * 1000;
+
   let cleaned = 0;
 
-  for (const [id, ticket] of Object.entries(cache.tickets)) {
-    if (ticket.closed && new Date(ticket.closedAt).getTime() < cutoff) {
+  for (const [id, ticket] of Object.entries(
+    cache.tickets
+  )) {
+    if (!ticket?.closed) continue;
+
+    const closedAt = new Date(ticket.closedAt);
+
+    if (
+      Number.isNaN(closedAt.getTime())
+    ) {
+      continue;
+    }
+
+    if (closedAt.getTime() < cutoff) {
       delete cache.tickets[id];
+
+      // Remover avaliações associadas
+      delete cache.avaliacoes[id];
+
       cleaned++;
     }
   }
 
   if (cleaned > 0) {
-    logDB(`🧹 ${cleaned} tickets antigos removidos`, "info");
+    logDB(
+      `🧹 ${cleaned} tickets antigos removidos.`,
+      "info"
+    );
+
     await saveDB();
   }
 
   return cleaned;
 }
 
+// ============================================================
+// STATS
+// ============================================================
+
 export function getDBStats() {
   const tickets = Object.values(cache.tickets);
-  const openTickets = tickets.filter(t => !t.closed);
-  const closedTickets = tickets.filter(t => t.closed);
-  
+
+  let openTickets = 0;
+  let closedTickets = 0;
+
+  for (const ticket of tickets) {
+    if (ticket?.closed) {
+      closedTickets++;
+    } else {
+      openTickets++;
+    }
+  }
+
   return {
     totalTickets: tickets.length,
-    openTickets: openTickets.length,
-    closedTickets: closedTickets.length,
-    acceptedRules: cache.acceptedRules.length,
-    avaliacoes: Object.keys(cache.avaliacoes).length,
+    openTickets,
+    closedTickets,
+
+    acceptedRules:
+      cache.acceptedRules.length,
+
+    avaliacoes:
+      Object.keys(cache.avaliacoes).length,
+
     usingMongo: useMongo,
-    cacheSize: JSON.stringify(cache).length,
+
+    initialized: isInitialized,
+
+    saving: isSaving,
+
+    cacheSize:
+      Buffer.byteLength(
+        JSON.stringify(cache),
+        "utf8"
+      ),
   };
 }
 
+// ============================================================
+// EXPORT CACHE
+// ============================================================
+
 export function exportCache() {
-  return JSON.stringify(cache, null, 2);
+  return JSON.stringify(
+    clone(cache),
+    null,
+    2
+  );
 }
 
-export function importCache(data) {
+// ============================================================
+// IMPORT CACHE
+// ============================================================
+
+export async function importCache(data) {
   try {
-    const parsed = typeof data === 'string' ? JSON.parse(data) : data;
-    cache.tickets = parsed.tickets || {};
-    cache.avaliacoes = parsed.avaliacoes || {};
-    cache.acceptedRules = parsed.acceptedRules || [];
-    cache.acceptedRulesAt = parsed.acceptedRulesAt || {};
-    cache.messages = parsed.messages || {};
-    cache.painelsHash = parsed.painelsHash || {};
-    cache.mapaConfig = parsed.mapaConfig || {};
-    cache.ticketsCount = Object.keys(cache.tickets).length;
-    saveDB();
+    const parsed =
+      typeof data === "string"
+        ? JSON.parse(data)
+        : data;
+
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed)
+    ) {
+      throw new Error(
+        "Dados inválidos."
+      );
+    }
+
+    applyCache(parsed);
+
+    const saved = await saveDB();
+
+    if (!saved) {
+      throw new Error(
+        "Não foi possível persistir os dados."
+      );
+    }
+
+    logDB(
+      `📥 Cache importado: ${getTicketsCount()} tickets.`,
+      "success"
+    );
+
     return true;
-  } catch (e) {
-    logDB(`Erro ao importar dados: ${e.message}`, "error");
+  } catch (error) {
+    logDB(
+      `Erro ao importar dados: ${error.message}`,
+      "error"
+    );
+
     return false;
   }
 }
 
 // ============================================================
-// GETTER/SETTER (compatível com código antigo)
+// GETTER / SETTER
+// Compatibilidade com código antigo
 // ============================================================
+
 export const db = {
-  get tickets() { return cache.tickets; },
-  set tickets(val) { 
-    cache.tickets = val; 
-    cache.ticketsCount = Object.keys(val).length;
-    saveDB(); 
+  get tickets() {
+    return cache.tickets;
   },
-  
-  get avaliacoes() { return cache.avaliacoes; },
-  set avaliacoes(val) { 
-    cache.avaliacoes = val; 
-    saveDB(); 
+
+  set tickets(value) {
+    if (
+      !value ||
+      typeof value !== "object" ||
+      Array.isArray(value)
+    ) {
+      throw new TypeError(
+        "db.tickets deve ser um objeto."
+      );
+    }
+
+    cache.tickets = value;
+    saveDB();
   },
-  
-  get acceptedRules() { return cache.acceptedRules; },
-  set acceptedRules(val) { 
-    cache.acceptedRules = val; 
-    saveDB(); 
+
+  get avaliacoes() {
+    return cache.avaliacoes;
   },
-  
-  get acceptedRulesAt() { return cache.acceptedRulesAt; },
-  set acceptedRulesAt(val) { 
-    cache.acceptedRulesAt = val; 
-    saveDB(); 
+
+  set avaliacoes(value) {
+    if (
+      !value ||
+      typeof value !== "object" ||
+      Array.isArray(value)
+    ) {
+      throw new TypeError(
+        "db.avaliacoes deve ser um objeto."
+      );
+    }
+
+    cache.avaliacoes = value;
+    saveDB();
   },
-  
-  get messages() { return cache.messages; },
-  set messages(val) { 
-    cache.messages = val; 
-    saveDB(); 
+
+  get acceptedRules() {
+    return cache.acceptedRules;
   },
-  
-  get painelsHash() { return cache.painelsHash; },
-  set painelsHash(val) { 
-    cache.painelsHash = val; 
-    saveDB(); 
+
+  set acceptedRules(value) {
+    if (!Array.isArray(value)) {
+      throw new TypeError(
+        "db.acceptedRules deve ser um array."
+      );
+    }
+
+    cache.acceptedRules = value;
+    saveDB();
   },
-  
-  get mapaConfig() { return cache.mapaConfig; },
-  set mapaConfig(val) { 
-    cache.mapaConfig = val; 
-    saveDB(); 
+
+  get acceptedRulesAt() {
+    return cache.acceptedRulesAt;
+  },
+
+  set acceptedRulesAt(value) {
+    if (
+      !value ||
+      typeof value !== "object" ||
+      Array.isArray(value)
+    ) {
+      throw new TypeError(
+        "db.acceptedRulesAt deve ser um objeto."
+      );
+    }
+
+    cache.acceptedRulesAt = value;
+    saveDB();
+  },
+
+  get messages() {
+    return cache.messages;
+  },
+
+  set messages(value) {
+    if (
+      !value ||
+      typeof value !== "object" ||
+      Array.isArray(value)
+    ) {
+      throw new TypeError(
+        "db.messages deve ser um objeto."
+      );
+    }
+
+    cache.messages = value;
+    saveDB();
+  },
+
+  get painelsHash() {
+    return cache.painelsHash;
+  },
+
+  set painelsHash(value) {
+    if (
+      !value ||
+      typeof value !== "object" ||
+      Array.isArray(value)
+    ) {
+      throw new TypeError(
+        "db.painelsHash deve ser um objeto."
+      );
+    }
+
+    cache.painelsHash = value;
+    saveDB();
+  },
+
+  get mapaConfig() {
+    return cache.mapaConfig;
+  },
+
+  set mapaConfig(value) {
+    if (
+      !value ||
+      typeof value !== "object" ||
+      Array.isArray(value)
+    ) {
+      throw new TypeError(
+        "db.mapaConfig deve ser um objeto."
+      );
+    }
+
+    cache.mapaConfig = value;
+    saveDB();
   },
 };
 
 // ============================================================
+// SHUTDOWN GRACEFUL
+// ============================================================
+
+export async function closeDB() {
+  logDB(
+    "🛑 A fechar sistema de base de dados...",
+    "info"
+  );
+
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout);
+    reconnectTimeout = null;
+  }
+
+  // Garantir persistência final
+  await saveDB();
+
+  if (client) {
+    try {
+      await client.close();
+
+      logDB(
+        "MongoDB desligado corretamente.",
+        "success"
+      );
+    } catch (error) {
+      logDB(
+        `Erro ao fechar MongoDB: ${error.message}`,
+        "warning"
+      );
+    }
+  }
+
+  client = null;
+  mongoDB = null;
+  useMongo = false;
+}
+
+// ============================================================
 // EXPORTAÇÕES
 // ============================================================
-export default { 
-  db, 
-  saveDB, 
-  connectDB, 
-  cleanOldTickets, 
+
+export default {
+  db,
+  saveDB,
+  connectDB,
+  closeDB,
+  cleanOldTickets,
   getDBStats,
   exportCache,
-  importCache
+  importCache,
 };
