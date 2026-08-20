@@ -38,26 +38,73 @@ const MAX_DESCRIPTION = 4096;
 const MAX_EMBED_FIELDS = 25;
 const AUDIT_LOOKBACK_MS = 8_000;
 
-// ===== DEDUPLICAÇÃO =====
-const processedDeletes = new Map();
-const DEDUP_WINDOW_MS = 2000; // 2 segundos
+// ===== DEDUPLICAÇÃO GERAL =====
+const processedEvents = new Map();
+const DEDUP_WINDOW_MS = 2000;
 
-function isDuplicateMessageDelete(messageId) {
-  if (!messageId) return false;
+function isDuplicateEvent(key) {
+  if (!key) return false;
   const now = Date.now();
-  const last = processedDeletes.get(messageId);
-  if (last && (now - last) < DEDUP_WINDOW_MS) {
-    return true;
-  }
-  processedDeletes.set(messageId, now);
-  // Limpeza periódica (opcional)
-  if (processedDeletes.size > 1000) {
+  const last = processedEvents.get(key);
+  if (last && (now - last) < DEDUP_WINDOW_MS) return true;
+  processedEvents.set(key, now);
+  // Limpeza periódica
+  if (processedEvents.size > 2000) {
     const old = now - 60000;
-    for (const [id, time] of processedDeletes) {
-      if (time < old) processedDeletes.delete(id);
+    for (const [k, t] of processedEvents) {
+      if (t < old) processedEvents.delete(k);
     }
   }
   return false;
+}
+
+// ===== CACHE DE CONVITES =====
+const inviteCache = new Map(); // memberId -> { code, inviterId, inviterTag, url }
+
+async function updateInviteCache(member) {
+  try {
+    const guild = member.guild;
+    const invites = await guild.invites.fetch();
+    if (!globalThis._inviteSnapshots) globalThis._inviteSnapshots = new Map();
+    const oldSnapshot = globalThis._inviteSnapshots.get(guild.id) || new Map();
+    const newSnapshot = new Map();
+    let usedInvite = null;
+
+    for (const invite of invites.values()) {
+      newSnapshot.set(invite.code, invite.uses || 0);
+      const oldUses = oldSnapshot.get(invite.code) || 0;
+      if ((invite.uses || 0) > oldUses) {
+        usedInvite = invite;
+        break;
+      }
+    }
+
+    globalThis._inviteSnapshots.set(guild.id, newSnapshot);
+
+    if (usedInvite) {
+      inviteCache.set(member.id, {
+        code: usedInvite.code,
+        inviterId: usedInvite.inviterId,
+        inviterTag: usedInvite.inviter?.tag || usedInvite.inviterId,
+        url: `https://discord.gg/${usedInvite.code}`
+      });
+    } else {
+      inviteCache.set(member.id, {
+        code: "desconhecido",
+        inviterId: "❓",
+        inviterTag: "Desconhecido",
+        url: "N/A"
+      });
+    }
+  } catch (error) {
+    console.error("[InviteCache] Erro ao atualizar cache de convite:", error);
+    inviteCache.set(member.id, {
+      code: "erro",
+      inviterId: "❓",
+      inviterTag: "Erro ao obter",
+      url: "N/A"
+    });
+  }
 }
 
 /* ============================================================
@@ -65,9 +112,7 @@ function isDuplicateMessageDelete(messageId) {
  * ============================================================ */
 
 function truncate(value, max = MAX_FIELD, fallback = "*Nenhum*") {
-  if (value === null || value === undefined || value === "") {
-    return fallback;
-  }
+  if (value === null || value === undefined || value === "") return fallback;
   const text = String(value);
   if (text.length <= max) return text;
   return `${text.slice(0, Math.max(0, max - 15))}\n… *(truncado)*`;
@@ -222,9 +267,6 @@ async function sendLog(channelId, payload) {
   }
 }
 
-/**
- * Procura o executor no Audit Log.
- */
 async function findAuditExecutor(
   guild,
   type,
@@ -283,10 +325,7 @@ export async function setupExternalLogChannels(guild) {
 
 export async function logExternalMessageDelete(message) {
   try {
-    // --- DEDUPLICAÇÃO ---
-    if (isDuplicateMessageDelete(message?.id)) {
-      return; // Ignora segunda chamada para a mesma mensagem
-    }
+    if (isDuplicateEvent(`msgDel_${message?.id}`)) return;
 
     const guild = message?.guild;
     const channel = await getExternalChannel(EXTERNAL_CHANNELS.MESSAGE_LOGS);
@@ -316,7 +355,6 @@ export async function logExternalMessageDelete(message) {
         actionText = "teve uma mensagem apagada por um moderador";
       }
     } else {
-      // Sem entrada no Audit Log → muito provavelmente o próprio autor
       if (message?.author) {
         deletedBy = `${userLabel(message.author)}\n\`Próprio autor\``;
         actionText = "apagou a própria mensagem";
@@ -332,31 +370,11 @@ export async function logExternalMessageDelete(message) {
       );
 
     embed.addFields(
-      {
-        name: "👤 Utilizador",
-        value: message?.author ? userLabel(message.author) : "❓ Desconhecido",
-        inline: true,
-      },
-      {
-        name: "🧹 Apagado por",
-        value: deletedBy,
-        inline: true,
-      },
-      {
-        name: "📍 Canal",
-        value: channelLabel(message?.channel),
-        inline: true,
-      },
-      {
-        name: "📝 Mensagem",
-        value: formatMessageContent(message?.content),
-        inline: false,
-      },
-      {
-        name: "📎 Anexos",
-        value: formatAttachments(message?.attachments),
-        inline: false,
-      }
+      { name: "👤 Utilizador", value: message?.author ? userLabel(message.author) : "❓ Desconhecido", inline: true },
+      { name: "🧹 Apagado por", value: deletedBy, inline: true },
+      { name: "📍 Canal", value: channelLabel(message?.channel), inline: true },
+      { name: "📝 Mensagem", value: formatMessageContent(message?.content), inline: false },
+      { name: "📎 Anexos", value: formatAttachments(message?.attachments), inline: false }
     );
 
     if (message?.stickers?.size) {
@@ -434,7 +452,6 @@ export async function logExternalMessageUpdate(oldMessage, newMessage) {
   }
 }
 
-// Aliases
 export { logExternalMessageDelete as logMessageDelete, logExternalMessageUpdate as logMessageUpdate };
 
 /* ============================================================
@@ -443,6 +460,11 @@ export { logExternalMessageDelete as logMessageDelete, logExternalMessageUpdate 
 
 export async function logExternalMemberJoin(member) {
   try {
+    const key = `join_${member?.id}`;
+    if (isDuplicateEvent(key)) return;
+
+    await updateInviteCache(member);
+
     const embed = createBaseEmbed("📥 Membro Entrou", COLORS.SUCCESS)
       .setDescription(`${userLabel(member?.user)} **entrou no servidor**.`);
 
@@ -450,10 +472,16 @@ export async function logExternalMemberJoin(member) {
     const accountAge = createdTimestamp ? `<t:${Math.floor(createdTimestamp / 1000)}:R>` : "Desconhecida";
     const memberCount = member?.guild?.memberCount ? `#${member.guild.memberCount}` : "N/A";
 
+    const inviteInfo = inviteCache.get(member.id);
+    const inviteField = inviteInfo
+      ? `[${inviteInfo.code}](${inviteInfo.url}) | Criado por: ${inviteInfo.inviterTag}`
+      : "Não disponível";
+
     embed.addFields(
       { name: "👤 Utilizador", value: userLabel(member?.user), inline: true },
       { name: "🔢 Entrada", value: code(memberCount), inline: true },
       { name: "📅 Conta criada", value: accountAge, inline: true },
+      { name: "🔗 Convite usado", value: inviteField, inline: false },
       { name: "🆔 ID", value: code(member?.id), inline: true },
       { name: "🏠 Servidor", value: code(member?.guild?.name), inline: true }
     );
@@ -469,6 +497,9 @@ export async function logExternalMemberJoin(member) {
 
 export async function logExternalMemberLeave(member) {
   try {
+    const key = `leave_${member?.id}`;
+    if (isDuplicateEvent(key)) return;
+
     const guild = member?.guild;
     const kickEntry = await findAuditExecutor(guild, AuditLogEvent.MemberKick, { targetId: member?.id });
     const banEntry = await findAuditExecutor(guild, AuditLogEvent.MemberBanAdd, { targetId: member?.id });
@@ -476,38 +507,47 @@ export async function logExternalMemberLeave(member) {
     let title = "👋 Membro Saiu";
     let color = COLORS.DANGER;
     let action = "saiu do servidor";
-    let executor = null;
+    let executorDisplay = "👤 Saiu por conta própria"; // Novo texto
 
     if (kickEntry) {
       title = "👢 Membro Expulso";
       color = COLORS.ORANGE;
       action = "foi expulso do servidor";
-      executor = kickEntry;
+      executorDisplay = executorLabel(kickEntry);
     } else if (banEntry) {
       title = "🔨 Membro Banido";
       color = COLORS.DANGER;
       action = "foi banido do servidor";
-      executor = banEntry;
+      executorDisplay = executorLabel(banEntry);
     }
 
     const embed = createBaseEmbed(title, color)
       .setDescription(`${userLabel(member?.user)} **${action}**.`);
 
+    const inviteInfo = inviteCache.get(member.id);
+    const inviteField = inviteInfo
+      ? `[${inviteInfo.code}](${inviteInfo.url}) | Criado por: ${inviteInfo.inviterTag}`
+      : "Não disponível";
+
     embed.addFields(
       { name: "👤 Utilizador", value: userLabel(member?.user), inline: true },
       { name: "🆔 ID", value: code(member?.id), inline: true },
-      { name: "🧑‍⚖️ Executado por", value: executorLabel(executor), inline: true },
+      { name: "🔗 Convite usado (entrada)", value: inviteField, inline: false },
+      { name: "🧑‍⚖️ Executado por", value: executorDisplay, inline: true },
       { name: "🏠 Servidor", value: code(guild?.name), inline: true }
     );
 
-    if (executor?.reason) {
-      embed.addFields({ name: "📋 Motivo", value: truncate(executor.reason), inline: false });
+    if (kickEntry?.reason || banEntry?.reason) {
+      const reason = kickEntry?.reason || banEntry?.reason;
+      embed.addFields({ name: "📋 Motivo", value: truncate(reason), inline: false });
     }
 
     setUserThumbnail(embed, member?.user);
     setFooter(embed, member?.id);
 
     await sendLog(EXTERNAL_CHANNELS.MEMBER_LOGS, { embeds: [embed] });
+
+    inviteCache.delete(member.id);
   } catch (error) {
     console.error("[ExternalLogs] Erro ao logar saída:", error?.message);
   }
@@ -515,6 +555,9 @@ export async function logExternalMemberLeave(member) {
 
 export async function logExternalMemberUpdate(oldMember, newMember) {
   try {
+    const key = `update_${newMember?.id}`;
+    if (isDuplicateEvent(key)) return;
+
     const changes = [];
 
     if (oldMember?.nickname !== newMember?.nickname) {
@@ -575,11 +618,14 @@ export async function logExternalMemberUpdate(oldMember, newMember) {
 }
 
 /* ============================================================
- * VOICE EVENTS
+ * VOICE EVENTS (com deduplicação)
  * ============================================================ */
 
 export async function logExternalVoiceJoin(member, channel) {
   try {
+    const key = `voiceJoin_${member?.id}_${channel?.id}`;
+    if (isDuplicateEvent(key)) return;
+
     const embed = createBaseEmbed("🔊 Entrou em Canal de Voz", COLORS.SUCCESS)
       .setDescription(`${userLabel(member?.user)} **entrou em** ${channelLabel(channel)}.`);
 
@@ -600,6 +646,9 @@ export async function logExternalVoiceJoin(member, channel) {
 
 export async function logExternalVoiceLeave(member, channel) {
   try {
+    const key = `voiceLeave_${member?.id}_${channel?.id}`;
+    if (isDuplicateEvent(key)) return;
+
     const embed = createBaseEmbed("🔊 Saiu de Canal de Voz", COLORS.ORANGE)
       .setDescription(`${userLabel(member?.user)} **saiu de** ${channelLabel(channel)}.`);
 
@@ -620,6 +669,9 @@ export async function logExternalVoiceLeave(member, channel) {
 
 export async function logExternalVoiceMove(member, oldChannel, newChannel) {
   try {
+    const key = `voiceMove_${member?.id}_${oldChannel?.id}_${newChannel?.id}`;
+    if (isDuplicateEvent(key)) return;
+
     const embed = createBaseEmbed("🔀 Mudança de Canal de Voz", COLORS.CYAN)
       .setDescription(`${userLabel(member?.user)} **mudou de canal de voz**.`);
 
@@ -979,10 +1031,6 @@ export async function logExternalGeneric({
     return false;
   }
 }
-
-/* ============================================================
- * EXPORTS
- * ============================================================ */
 
 export {
   EXTERNAL_CHANNELS,
