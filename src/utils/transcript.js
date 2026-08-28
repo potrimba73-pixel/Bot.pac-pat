@@ -1,9 +1,13 @@
 // src/utils/transcript.js
+
 import { AttachmentBuilder } from "discord.js";
 
 /**
- * Escapa texto para utilização segura dentro de HTML.
+ * ============================================================
+ * ESCAPE HTML
+ * ============================================================
  */
+
 function escapeHtml(value = "") {
   return String(value)
     .replace(/&/g, "&amp;")
@@ -14,30 +18,59 @@ function escapeHtml(value = "") {
 }
 
 /**
- * Converte Markdown/Discord básico em HTML.
- * Emojis Unicode continuam a ser renderizados normalmente pelo browser.
+ * ============================================================
+ * DATA / TIMEZONE
+ * ============================================================
  */
+
+function formatDate(date) {
+  if (!date) return "—";
+
+  return new Intl.DateTimeFormat("pt-PT", {
+    timeZone: "Europe/Lisbon",
+    dateStyle: "short",
+    timeStyle: "medium",
+  }).format(new Date(date));
+}
+
+/**
+ * ============================================================
+ * DISCORD TEXT → HTML
+ * ============================================================
+ */
+
 function formatDiscordText(value = "") {
   let text = escapeHtml(value);
 
-  // Emojis personalizados: <:nome:id> e <a:nome:id>
+  /**
+   * Emojis personalizados
+   * <:nome:id>
+   * <a:nome:id>
+   */
   text = text.replace(
     /&lt;(a?):([\w~]+):(\d+)&gt;/g,
     (_, animated, name, id) => {
       const extension = animated ? "gif" : "png";
-      const url = `https://cdn.discordapp.com/emojis/${id}.${extension}?size=48&quality=lossless`;
 
-      return `<img
-        class="emoji custom-emoji"
-        src="${url}"
-        alt=":${name}:"
-        title=":${name}:"
-        loading="lazy"
-      >`;
+      const url =
+        `https://cdn.discordapp.com/emojis/${id}.${extension}?size=48&quality=lossless`;
+
+      return `
+        <img
+          class="emoji custom-emoji"
+          src="${url}"
+          alt=":${name}:"
+          title=":${name}:"
+          loading="lazy"
+        >
+      `;
     }
   );
 
-  // Menções
+  /**
+   * Menções
+   */
+
   text = text.replace(
     /&lt;@!?(\d+)&gt;/g,
     `<span class="mention">@utilizador</span>`
@@ -53,19 +86,19 @@ function formatDiscordText(value = "") {
     `<span class="mention">@cargo</span>`
   );
 
-  // Links
-  text = text.replace(
-    /(https?:\/\/[^\s<]+)/g,
-    '<a class="message-link" href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
-  );
+  /**
+   * Markdown de código
+   */
 
-  // Código inline
   text = text.replace(
     /`([^`\n]+)`/g,
     "<code>$1</code>"
   );
 
-  // Markdown básico
+  /**
+   * Markdown básico
+   */
+
   text = text.replace(
     /\*\*([^*\n]+)\*\*/g,
     "<strong>$1</strong>"
@@ -91,35 +124,62 @@ function formatDiscordText(value = "") {
     "$1<em>$2</em>"
   );
 
+  /**
+   * Links
+   *
+   * Fazemos isto depois do escape para impedir
+   * HTML arbitrário dentro das mensagens.
+   */
+
+  text = text.replace(
+    /(https?:\/\/[^\s<]+)/g,
+    (url) => {
+      return `
+        <a
+          class="message-link"
+          href="${url}"
+          target="_blank"
+          rel="noopener noreferrer"
+        >${url}</a>
+      `;
+    }
+  );
+
   return text;
 }
 
 /**
- * Cor do embed.
+ * ============================================================
+ * EMBED COLOR
+ * ============================================================
  */
+
 function getEmbedColor(embed) {
-  if (embed?.color == null) {
+  if (
+    embed?.color === null ||
+    embed?.color === undefined
+  ) {
     return "#5865f2";
   }
 
-  return `#${Number(embed.color)
+  const number = Number(embed.color);
+
+  if (!Number.isFinite(number)) {
+    return "#5865f2";
+  }
+
+  return `#${number
     .toString(16)
-    .padStart(6, "0")}`;
+    .padStart(6, "0")
+    .slice(-6)}`;
 }
 
 /**
- * Formatação da data em Português de Portugal.
+ * ============================================================
+ * RENDER IMAGE
+ * ============================================================
  */
-function formatDate(date) {
-  return new Date(date).toLocaleString("pt-PT", {
-    dateStyle: "short",
-    timeStyle: "medium",
-  });
-}
 
-/**
- * Renderiza uma imagem clicável.
- */
 function renderImage(
   url,
   alt = "Imagem",
@@ -149,9 +209,14 @@ function renderImage(
 }
 
 /**
- * Renderiza embeds do Discord.
+ * ============================================================
+ * RENDER EMBED
+ * ============================================================
  */
+
 function renderEmbed(embed) {
+  if (!embed) return "";
+
   const title = embed.title
     ? formatDiscordText(embed.title)
     : "";
@@ -162,85 +227,132 @@ function renderEmbed(embed) {
 
   const color = getEmbedColor(embed);
 
-  const thumbnail = embed.thumbnail?.url
-    ? renderImage(
-        embed.thumbnail.url,
-        "Thumbnail",
-        "embed-thumbnail"
-      )
-    : "";
+  const thumbnail =
+    embed.thumbnail?.url
+      ? renderImage(
+          embed.thumbnail.url,
+          "Thumbnail",
+          "embed-thumbnail"
+        )
+      : "";
 
-  const image = embed.image?.url
-    ? renderImage(
-        embed.image.url,
-        "Imagem do embed",
-        "embed-image"
-      )
-    : "";
+  const image =
+    embed.image?.url
+      ? renderImage(
+          embed.image.url,
+          "Imagem do embed",
+          "embed-image"
+        )
+      : "";
+
+  /**
+   * Author
+   */
+
+  const author =
+    embed.author?.name
+      ? `
+        <div class="embed-author">
+
+          ${
+            embed.author.iconURL
+              ? `
+                <img
+                  src="${escapeHtml(
+                    embed.author.iconURL
+                  )}"
+                  alt=""
+                >
+              `
+              : ""
+          }
+
+          <span>
+            ${formatDiscordText(
+              embed.author.name
+            )}
+          </span>
+
+        </div>
+      `
+      : "";
+
+  /**
+   * Fields
+   */
 
   let fields = "";
 
-  if (Array.isArray(embed.fields) && embed.fields.length) {
+  if (
+    Array.isArray(embed.fields) &&
+    embed.fields.length
+  ) {
     fields = `
       <div class="embed-fields">
+
         ${embed.fields
-          .map(
-            (field) => `
-              <div class="embed-field ${
-                field.inline ? "inline" : ""
-              }">
+          .map((field) => {
+            return `
+              <div
+                class="embed-field ${
+                  field.inline
+                    ? "inline"
+                    : ""
+                }"
+              >
+
                 <div class="embed-field-name">
-                  ${formatDiscordText(field.name || "")}
+                  ${formatDiscordText(
+                    field.name || ""
+                  )}
                 </div>
 
                 <div class="embed-field-value">
-                  ${formatDiscordText(field.value || "")}
+                  ${formatDiscordText(
+                    field.value || ""
+                  )}
                 </div>
+
               </div>
-            `
-          )
+            `;
+          })
           .join("")}
+
       </div>
     `;
   }
 
-  const author = embed.author?.name
-    ? `
-      <div class="embed-author">
-        ${
-          embed.author.iconURL
-            ? `
-              <img
-                src="${escapeHtml(embed.author.iconURL)}"
-                alt=""
-              >
-            `
-            : ""
-        }
+  /**
+   * Footer
+   */
 
-        ${formatDiscordText(embed.author.name)}
-      </div>
-    `
-    : "";
+  const footer =
+    embed.footer?.text
+      ? `
+        <div class="embed-footer">
 
-  const footer = embed.footer?.text
-    ? `
-      <div class="embed-footer">
-        ${
-          embed.footer.iconURL
-            ? `
-              <img
-                src="${escapeHtml(embed.footer.iconURL)}"
-                alt=""
-              >
-            `
-            : ""
-        }
+          ${
+            embed.footer.iconURL
+              ? `
+                <img
+                  src="${escapeHtml(
+                    embed.footer.iconURL
+                  )}"
+                  alt=""
+                >
+              `
+              : ""
+          }
 
-        ${formatDiscordText(embed.footer.text)}
-      </div>
-    `
-    : "";
+          <span>
+            ${formatDiscordText(
+              embed.footer.text
+            )}
+          </span>
+
+        </div>
+      `
+      : "";
 
   if (
     !title &&
@@ -311,38 +423,48 @@ function renderEmbed(embed) {
 }
 
 /**
- * Informações adicionais do ticket.
- *
- * Pode receber:
- *
- * {
- *   evaluationSent: true,
- *   evaluation: "⭐⭐⭐⭐⭐",
- *   evaluationComment: "Excelente atendimento",
- *   closedBy: "arte_10",
- *   closedAt: "05/06/2026, 18:20:54"
- * }
+ * ============================================================
+ * ADDITIONAL INFO
+ * ============================================================
  */
-function renderAdditionalInfo(additionalInfo = {}) {
-  const evaluationSent =
-    additionalInfo.evaluationSent;
 
-  const evaluation =
-    additionalInfo.evaluation;
+function renderAdditionalInfo(
+  additionalInfo = {}
+) {
+  const {
+    openedBy,
+    openedAt,
+    closedBy,
+    closedAt,
+    claimedBy,
+    evaluationSent,
+    evaluation,
+    evaluationComment,
+    ticketType,
+    ticketLabel,
+    truckyNome,
+    recrutado,
+    fotoNome,
+    duration,
+  } = additionalInfo;
 
-  const comment =
-    additionalInfo.evaluationComment;
-
-  const hasEvaluationInfo =
+  const hasInfo =
+    openedBy ||
+    openedAt ||
+    closedBy ||
+    closedAt ||
+    claimedBy ||
     evaluationSent !== undefined ||
     evaluation !== undefined ||
-    comment !== undefined;
+    evaluationComment ||
+    ticketType ||
+    ticketLabel ||
+    truckyNome ||
+    recrutado !== undefined ||
+    fotoNome ||
+    duration;
 
-  if (
-    !hasEvaluationInfo &&
-    !additionalInfo.closedBy &&
-    !additionalInfo.closedAt
-  ) {
+  if (!hasInfo) {
     return "";
   }
 
@@ -350,18 +472,18 @@ function renderAdditionalInfo(additionalInfo = {}) {
     <section class="info-card">
 
       <div class="info-title">
-        📋 Informações adicionais
+        📋 Informações do ticket
       </div>
 
       <div class="info-grid">
 
         ${
-          additionalInfo.closedBy
+          openedBy
             ? `
               <div>
-                <span>👮 Fechado por</span>
+                <span>👤 Aberto por</span>
                 <strong>
-                  ${escapeHtml(additionalInfo.closedBy)}
+                  ${escapeHtml(openedBy)}
                 </strong>
               </div>
             `
@@ -369,12 +491,77 @@ function renderAdditionalInfo(additionalInfo = {}) {
         }
 
         ${
-          additionalInfo.closedAt
+          openedAt
+            ? `
+              <div>
+                <span>🕐 Aberto em</span>
+                <strong>
+                  ${escapeHtml(openedAt)}
+                </strong>
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          ticketLabel
+            ? `
+              <div>
+                <span>📝 Tipo</span>
+                <strong>
+                  ${escapeHtml(ticketLabel)}
+                </strong>
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          claimedBy
+            ? `
+              <div>
+                <span>⚒️ Assumido por</span>
+                <strong>
+                  ${escapeHtml(claimedBy)}
+                </strong>
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          closedBy
+            ? `
+              <div>
+                <span>👮 Fechado por</span>
+                <strong>
+                  ${escapeHtml(closedBy)}
+                </strong>
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          closedAt
             ? `
               <div>
                 <span>⏰ Fechado em</span>
                 <strong>
-                  ${escapeHtml(additionalInfo.closedAt)}
+                  ${escapeHtml(closedAt)}
+                </strong>
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          duration
+            ? `
+              <div>
+                <span>⌛ Duração</span>
+                <strong>
+                  ${escapeHtml(duration)}
                 </strong>
               </div>
             `
@@ -387,7 +574,11 @@ function renderAdditionalInfo(additionalInfo = {}) {
               <div>
                 <span>📨 Avaliação enviada</span>
                 <strong>
-                  ${evaluationSent ? "Sim" : "Não"}
+                  ${
+                    evaluationSent
+                      ? "Sim"
+                      : "Não"
+                  }
                 </strong>
               </div>
             `
@@ -409,16 +600,63 @@ function renderAdditionalInfo(additionalInfo = {}) {
         }
 
         ${
-          comment
+          truckyNome
+            ? `
+              <div>
+                <span>🚛 Nome no Trucky</span>
+                <strong>
+                  ${escapeHtml(truckyNome)}
+                </strong>
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          recrutado !== undefined
+            ? `
+              <div>
+                <span>💼 Recrutado</span>
+                <strong>
+                  ${
+                    recrutado === true
+                      ? "✅ Sim"
+                      : recrutado === false
+                        ? "❌ Não"
+                        : "N/A"
+                  }
+                </strong>
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          fotoNome
+            ? `
+              <div>
+                <span>📷 Nome para foto</span>
+                <strong>
+                  ${escapeHtml(fotoNome)}
+                </strong>
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          evaluationComment
             ? `
               <div class="info-full">
 
                 <span>
-                  💬 Comentário
+                  💬 Comentário da avaliação
                 </span>
 
                 <strong>
-                  ${formatDiscordText(comment)}
+                  ${formatDiscordText(
+                    evaluationComment
+                  )}
                 </strong>
 
               </div>
@@ -433,40 +671,32 @@ function renderAdditionalInfo(additionalInfo = {}) {
 }
 
 /**
- * Gera o transcript completo do ticket.
- *
- * Compatível com:
- *
- * gerarTranscript(channel, ticketId)
- *
- * Também aceita informações adicionais:
- *
- * gerarTranscript(channel, ticketId, {
- *   evaluationSent: true,
- *   evaluation: "⭐⭐⭐⭐⭐",
- *   evaluationComment: "Excelente",
- *   closedBy: "arte_10",
- *   closedAt: "05/06/2026, 18:20:54"
- * })
+ * ============================================================
+ * GERAR TRANSCRIPT
+ * ============================================================
  */
+
 export async function gerarTranscript(
   channel,
   ticketId,
   additionalInfo = {}
 ) {
   try {
-    /*
-     * ==========================================================
+    if (!channel) {
+      throw new Error(
+        "Canal do ticket não foi fornecido."
+      );
+    }
+
+    /**
+     * ========================================================
      * BUSCAR TODAS AS MENSAGENS
-     * ==========================================================
-     *
-     * O Discord permite no máximo 100 mensagens por fetch.
-     * Por isso fazemos paginação até chegar ao início do canal.
+     * ========================================================
      */
 
     const allMessages = new Map();
 
-    let lastId;
+    let lastId = null;
 
     while (true) {
       const options = {
@@ -478,42 +708,52 @@ export async function gerarTranscript(
       }
 
       const batch =
-        await channel.messages.fetch(options);
+        await channel.messages.fetch(
+          options
+        );
 
-      if (!batch.size) {
+      if (!batch?.size) {
         break;
       }
 
       for (const message of batch.values()) {
-        allMessages.set(message.id, message);
+        allMessages.set(
+          message.id,
+          message
+        );
       }
 
       if (batch.size < 100) {
         break;
       }
 
-      lastId = batch.last()?.id;
+      const oldest =
+        batch.last();
 
-      if (!lastId) {
+      if (!oldest?.id) {
         break;
       }
+
+      lastId = oldest.id;
     }
 
-    /*
-     * Ordenar cronologicamente.
+    /**
+     * Ordenar mensagens cronologicamente
      */
-    const sorted = Array.from(
-      allMessages.values()
-    ).sort(
-      (a, b) =>
-        a.createdTimestamp -
-        b.createdTimestamp
-    );
 
-    /*
-     * ==========================================================
-     * INFORMAÇÕES DO SERVIDOR
-     * ==========================================================
+    const sorted =
+      Array.from(
+        allMessages.values()
+      ).sort(
+        (a, b) =>
+          a.createdTimestamp -
+          b.createdTimestamp
+      );
+
+    /**
+     * ========================================================
+     * DADOS DO SERVIDOR / TICKET
+     * ========================================================
      */
 
     const guildName =
@@ -532,7 +772,9 @@ export async function gerarTranscript(
 
     const createdAt =
       sorted[0]?.createdAt
-        ? formatDate(sorted[0].createdAt)
+        ? formatDate(
+            sorted[0].createdAt
+          )
         : "—";
 
     const generatedAt =
@@ -543,10 +785,10 @@ export async function gerarTranscript(
         additionalInfo
       );
 
-    /*
-     * ==========================================================
+    /**
+     * ========================================================
      * HTML
-     * ==========================================================
+     * ========================================================
      */
 
     let html = `<!DOCTYPE html>
@@ -567,7 +809,9 @@ export async function gerarTranscript(
   >
 
   <title>
-    Transcript - #${escapeHtml(channelName)}
+    Transcript - #${escapeHtml(
+      channelName
+    )}
   </title>
 
   <style>
@@ -577,41 +821,27 @@ export async function gerarTranscript(
     }
 
     :root {
-
       --bg: #313338;
-
       --bg-secondary: #2b2d31;
-
       --bg-tertiary: #1e1f22;
-
       --text: #dbdee1;
-
       --muted: #949ba4;
-
       --white: #f2f3f5;
-
       --link: #00a8fc;
-
       --mention: #c9cdfb;
-
       --mention-bg: rgba(88,101,242,.30);
-
       --line: rgba(255,255,255,.06);
-
     }
 
     html {
       background: var(--bg);
+      scroll-behavior: smooth;
     }
 
     body {
-
       margin: 0;
-
       min-height: 100vh;
-
       background: var(--bg);
-
       color: var(--text);
 
       font-family:
@@ -624,9 +854,7 @@ export async function gerarTranscript(
         sans-serif;
 
       font-size: 15px;
-
       line-height: 1.45;
-
     }
 
     a {
@@ -634,82 +862,65 @@ export async function gerarTranscript(
     }
 
     .topbar {
-
       position: sticky;
-
       top: 0;
-
       z-index: 10;
 
       background:
         rgba(30,31,34,.96);
 
-      backdrop-filter: blur(12px);
+      backdrop-filter:
+        blur(12px);
 
       border-bottom:
         1px solid #111214;
 
-      padding: 14px 24px;
-
+      padding:
+        14px 24px;
     }
 
     .server {
-
       display: flex;
-
       align-items: center;
-
       gap: 12px;
 
       max-width: 1100px;
-
       margin: auto;
-
     }
 
     .server-icon {
-
       width: 40px;
-
       height: 40px;
 
       border-radius: 50%;
 
       object-fit: cover;
 
-      background: #5865f2;
+      background:
+        #5865f2;
 
+      flex: 0 0 40px;
     }
 
     .server-name {
-
       color: var(--white);
-
       font-weight: 700;
-
     }
 
     .channel-name {
-
       color: var(--muted);
-
       font-size: 13px;
-
     }
 
     .wrap {
-
       max-width: 1100px;
-
       margin: 0 auto;
 
       padding:
         28px 24px 60px;
-
     }
 
     .ticket-header {
-
       background:
         var(--bg-secondary);
 
@@ -724,47 +935,38 @@ export async function gerarTranscript(
 
       box-shadow:
         0 6px 20px rgba(0,0,0,.16);
-
     }
 
     .ticket-header h1 {
-
       margin:
         0 0 8px;
 
-      color: var(--white);
+      color:
+        var(--white);
 
       font-size: 24px;
-
     }
 
     .meta {
-
       display: flex;
-
       flex-wrap: wrap;
 
       gap:
         8px 18px;
 
-      color: var(--muted);
+      color:
+        var(--muted);
 
       font-size: 13px;
-
     }
 
     .meta span {
-
       display: inline-flex;
-
       align-items: center;
-
       gap: 5px;
-
     }
 
     .info-card {
-
       background:
         var(--bg-secondary);
 
@@ -775,34 +977,29 @@ export async function gerarTranscript(
 
       padding: 16px;
 
-      margin:
-        0 0 22px;
-
+      margin-bottom: 22px;
     }
 
     .info-title {
-
-      color: var(--white);
+      color:
+        var(--white);
 
       font-weight: 700;
 
-      margin-bottom: 12px;
-
+      margin-bottom:
+        12px;
     }
 
     .info-grid {
-
       display: grid;
 
       grid-template-columns:
         repeat(2, minmax(0, 1fr));
 
       gap: 10px;
-
     }
 
     .info-grid > div {
-
       background:
         var(--bg-tertiary);
 
@@ -810,45 +1007,40 @@ export async function gerarTranscript(
 
       padding:
         10px 12px;
-
     }
 
     .info-grid span,
     .info-grid strong {
-
       display: block;
-
     }
 
     .info-grid span {
-
-      color: var(--muted);
+      color:
+        var(--muted);
 
       font-size: 12px;
 
-      margin-bottom: 3px;
-
+      margin-bottom:
+        3px;
     }
 
     .info-grid strong {
+      color:
+        var(--text);
 
-      color: var(--text);
+      font-weight:
+        600;
 
-      font-weight: 600;
-
+      overflow-wrap:
+        anywhere;
     }
 
     .info-full {
-
       grid-column:
         1 / -1;
-
     }
 
     .message {
-
-      position: relative;
-
       display: flex;
 
       gap: 16px;
@@ -856,21 +1048,20 @@ export async function gerarTranscript(
       padding:
         8px 8px 8px 0;
 
-      border-radius: 6px;
+      border-radius:
+        6px;
 
+      scroll-margin-top:
+        80px;
     }
 
     .message:hover {
-
       background:
         rgba(255,255,255,.025);
-
     }
 
     .avatar {
-
       width: 42px;
-
       height: 42px;
 
       border-radius: 50%;
@@ -880,151 +1071,157 @@ export async function gerarTranscript(
       flex:
         0 0 42px;
 
-      background: #202225;
-
+      background:
+        #202225;
     }
 
     .message-content {
-
       min-width: 0;
-
       flex: 1;
-
     }
 
     .author-line {
-
       display: flex;
 
-      align-items: baseline;
+      align-items:
+        baseline;
 
-      flex-wrap: wrap;
+      flex-wrap:
+        wrap;
 
       gap: 7px;
-
     }
 
     .author {
+      color:
+        var(--white);
 
-      color: var(--white);
-
-      font-weight: 600;
-
+      font-weight:
+        600;
     }
 
     .bot-tag {
+      background:
+        #5865f2;
 
-      background: #5865f2;
+      color:
+        white;
 
-      color: white;
-
-      border-radius: 3px;
+      border-radius:
+        3px;
 
       padding:
         1px 4px;
 
-      font-size: 10px;
+      font-size:
+        10px;
 
-      font-weight: 700;
+      font-weight:
+        700;
 
-      text-transform: uppercase;
-
+      text-transform:
+        uppercase;
     }
 
     .time {
+      color:
+        var(--muted);
 
-      color: var(--muted);
-
-      font-size: 12px;
-
+      font-size:
+        12px;
     }
 
     .edited {
+      color:
+        var(--muted);
 
-      color: var(--muted);
-
-      font-size: 10px;
-
+      font-size:
+        10px;
     }
 
     .body {
+      margin-top:
+        2px;
 
-      margin-top: 2px;
+      white-space:
+        pre-wrap;
 
-      white-space: pre-wrap;
+      overflow-wrap:
+        anywhere;
 
-      overflow-wrap: anywhere;
-
-      color: var(--text);
-
+      color:
+        var(--text);
     }
 
     .body.empty {
+      color:
+        var(--muted);
 
-      color: var(--muted);
-
-      font-style: italic;
-
+      font-style:
+        italic;
     }
 
     .emoji {
+      width:
+        1.375em;
 
-      width: 1.375em;
+      height:
+        1.375em;
 
-      height: 1.375em;
+      vertical-align:
+        -.35em;
 
-      vertical-align: -.35em;
+      object-fit:
+        contain;
 
-      object-fit: contain;
-
-      display: inline-block;
-
+      display:
+        inline-block;
     }
 
     .custom-emoji {
-
       margin:
         0 1px;
-
     }
 
     .mention {
-
-      color: var(--mention);
+      color:
+        var(--mention);
 
       background:
         var(--mention-bg);
 
-      border-radius: 3px;
+      border-radius:
+        3px;
 
       padding:
         0 2px;
 
-      font-weight: 500;
-
+      font-weight:
+        500;
     }
 
     .message-link {
+      text-decoration:
+        none;
 
-      text-decoration: none;
-
+      overflow-wrap:
+        anywhere;
     }
 
     .message-link:hover {
-
-      text-decoration: underline;
-
+      text-decoration:
+        underline;
     }
 
     code {
-
       background:
         #1e1f22;
 
       border:
         1px solid rgba(255,255,255,.06);
 
-      border-radius: 4px;
+      border-radius:
+        4px;
 
       padding:
         1px 4px;
@@ -1034,25 +1231,32 @@ export async function gerarTranscript(
         "Courier New",
         monospace;
 
-      color: #c9cdfb;
-
+      color:
+        #c9cdfb;
     }
 
     .reply-ref {
+      margin-top:
+        5px;
 
-      margin-top: 5px;
+      font-size:
+        12px;
 
-      font-size: 12px;
+      color:
+        var(--muted);
+    }
 
-      color: var(--muted);
-
+    .reply-ref a {
+      text-decoration:
+        none;
     }
 
     .embed {
+      max-width:
+        680px;
 
-      max-width: 680px;
-
-      margin-top: 8px;
+      margin-top:
+        8px;
 
       padding:
         10px 12px 12px;
@@ -1063,331 +1267,353 @@ export async function gerarTranscript(
       background:
         #2b2d31;
 
-      border-radius: 4px;
-
+      border-radius:
+        4px;
     }
 
     .embed-main {
+      display:
+        flex;
 
-      display: flex;
-
-      gap: 12px;
-
+      gap:
+        12px;
     }
 
     .embed-content {
+      flex:
+        1;
 
-      flex: 1;
-
-      min-width: 0;
-
+      min-width:
+        0;
     }
 
     .embed-title {
+      color:
+        var(--white);
 
-      color: var(--white);
+      font-weight:
+        700;
 
-      font-weight: 700;
-
-      margin-bottom: 4px;
-
+      margin-bottom:
+        4px;
     }
 
     .embed-description {
+      white-space:
+        pre-wrap;
 
-      white-space: pre-wrap;
-
-      overflow-wrap: anywhere;
-
+      overflow-wrap:
+        anywhere;
     }
 
     .embed-author {
+      color:
+        var(--white);
 
-      color: var(--white);
+      font-weight:
+        600;
 
-      font-weight: 600;
+      font-size:
+        13px;
 
-      font-size: 13px;
+      display:
+        flex;
 
-      display: flex;
+      align-items:
+        center;
 
-      align-items: center;
+      gap:
+        6px;
 
-      gap: 6px;
-
-      margin-bottom: 5px;
-
+      margin-bottom:
+        5px;
     }
 
     .embed-author img,
     .embed-footer img {
+      width:
+        20px;
 
-      width: 20px;
+      height:
+        20px;
 
-      height: 20px;
+      border-radius:
+        50%;
 
-      border-radius: 50%;
-
-      object-fit: cover;
-
-    }
-
-    .embed-thumb-wrap {
-
-      flex:
-        0 0 auto;
-
+      object-fit:
+        cover;
     }
 
     .embed-thumbnail {
+      width:
+        80px;
 
-      width: 80px;
+      height:
+        80px;
 
-      height: 80px;
+      object-fit:
+        cover;
 
-      object-fit: cover;
-
-      border-radius: 4px;
-
+      border-radius:
+        4px;
     }
 
     .embed-image {
-
-      display: block;
+      display:
+        block;
 
       max-width:
         min(100%, 560px);
 
-      max-height: 500px;
+      max-height:
+        500px;
 
-      object-fit: contain;
+      object-fit:
+        contain;
 
-      border-radius: 4px;
+      border-radius:
+        4px;
 
-      margin-top: 10px;
+      margin-top:
+        10px;
 
       background:
         #202225;
-
     }
 
     .image-link {
+      display:
+        inline-block;
 
-      display: inline-block;
-
-      line-height: 0;
-
+      line-height:
+        0;
     }
 
     .image-link:hover img {
-
       filter:
         brightness(1.08);
-
     }
 
     .embed-fields {
+      display:
+        grid;
 
-      display: grid;
+      grid-template-columns:
+        1fr;
 
-      grid-template-columns: 1fr;
+      gap:
+        8px;
 
-      gap: 8px;
-
-      margin-top: 10px;
-
+      margin-top:
+        10px;
     }
 
     .embed-field.inline {
-
-      display: inline-block;
-
+      display:
+        inline-block;
     }
 
     .embed-field-name {
+      color:
+        var(--white);
 
-      color: var(--white);
+      font-weight:
+        700;
 
-      font-weight: 700;
-
-      font-size: 13px;
-
+      font-size:
+        13px;
     }
 
     .embed-field-value {
+      margin-top:
+        2px;
 
-      margin-top: 2px;
+      white-space:
+        pre-wrap;
 
-      white-space: pre-wrap;
-
-      overflow-wrap: anywhere;
-
+      overflow-wrap:
+        anywhere;
     }
 
     .embed-footer {
+      display:
+        flex;
 
-      display: flex;
+      align-items:
+        center;
 
-      align-items: center;
+      gap:
+        6px;
 
-      gap: 6px;
+      color:
+        var(--muted);
 
-      color: var(--muted);
+      font-size:
+        11px;
 
-      font-size: 11px;
-
-      margin-top: 10px;
-
+      margin-top:
+        10px;
     }
 
     .attachment {
-
-      margin-top: 8px;
+      margin-top:
+        8px;
 
       background:
         #1e1f22;
 
-      border-radius: 6px;
+      border-radius:
+        6px;
 
       padding:
         8px 10px;
 
-      width: fit-content;
+      width:
+        fit-content;
 
-      max-width: 100%;
-
+      max-width:
+        100%;
     }
 
     .attachment a {
+      text-decoration:
+        none;
 
-      text-decoration: none;
-
-      overflow-wrap: anywhere;
-
+      overflow-wrap:
+        anywhere;
     }
 
     .attachment a:hover {
-
-      text-decoration: underline;
-
+      text-decoration:
+        underline;
     }
 
     .attachment-image {
-
-      display: block;
+      display:
+        block;
 
       max-width:
         min(100%, 560px);
 
-      max-height: 500px;
+      max-height:
+        500px;
 
-      border-radius: 4px;
+      border-radius:
+        4px;
 
-      margin-top: 7px;
+      margin-top:
+        7px;
 
-      object-fit: contain;
-
+      object-fit:
+        contain;
     }
 
     .system-divider {
+      display:
+        flex;
 
-      display: flex;
+      align-items:
+        center;
 
-      align-items: center;
+      gap:
+        10px;
 
-      gap: 10px;
+      color:
+        var(--muted);
 
-      color: var(--muted);
-
-      font-size: 12px;
+      font-size:
+        12px;
 
       margin:
         18px 0;
-
     }
 
     .system-divider::before,
     .system-divider::after {
+      content:
+        "";
 
-      content: "";
-
-      height: 1px;
+      height:
+        1px;
 
       background:
         var(--line);
 
-      flex: 1;
-
+      flex:
+        1;
     }
 
     .footer {
+      text-align:
+        center;
 
-      text-align: center;
+      color:
+        var(--muted);
 
-      color: var(--muted);
+      font-size:
+        12px;
 
-      font-size: 12px;
-
-      padding-top: 24px;
-
+      padding-top:
+        24px;
     }
 
     @media (max-width: 700px) {
 
       .topbar {
-
         padding:
           12px 14px;
-
       }
 
       .wrap {
-
         padding:
           18px 12px 40px;
-
       }
 
       .ticket-header {
-
-        padding: 16px;
-
+        padding:
+          16px;
       }
 
       .ticket-header h1 {
-
-        font-size: 20px;
-
+        font-size:
+          20px;
       }
 
       .message {
-
-        gap: 10px;
-
+        gap:
+          10px;
       }
 
       .avatar {
+        width:
+          36px;
 
-        width: 36px;
+        height:
+          36px;
 
-        height: 36px;
-
-        flex-basis: 36px;
-
+        flex-basis:
+          36px;
       }
 
       .info-grid {
-
-        grid-template-columns: 1fr;
-
+        grid-template-columns:
+          1fr;
       }
 
       .info-full {
-
-        grid-column: auto;
-
+        grid-column:
+          auto;
       }
 
+      .embed-main {
+        flex-direction:
+          column;
+      }
+
+      .embed-thumb-wrap {
+        order:
+          -1;
+      }
     }
 
   </style>
@@ -1405,7 +1631,9 @@ export async function gerarTranscript(
           ? `
             <img
               class="server-icon"
-              src="${escapeHtml(guildIcon)}"
+              src="${escapeHtml(
+                guildIcon
+              )}"
               alt=""
             >
           `
@@ -1421,7 +1649,7 @@ export async function gerarTranscript(
         </div>
 
         <div class="channel-name">
-          # ${escapeHtml(channelName)}
+          #${escapeHtml(channelName)}
         </div>
 
       </div>
@@ -1435,13 +1663,17 @@ export async function gerarTranscript(
     <section class="ticket-header">
 
       <h1>
-        📋 Transcript — #${escapeHtml(channelName)}
+        📋 Transcript — #${escapeHtml(
+          channelName
+        )}
       </h1>
 
       <div class="meta">
 
         <span>
-          🎫 Ticket #${escapeHtml(ticketId)}
+          🎫 Ticket #${escapeHtml(
+            ticketId
+          )}
         </span>
 
         <span>
@@ -1449,11 +1681,13 @@ export async function gerarTranscript(
         </span>
 
         <span>
-          🕐 Início: ${escapeHtml(createdAt)}
+          🕐 Início:
+          ${escapeHtml(createdAt)}
         </span>
 
         <span>
-          📅 Gerado: ${escapeHtml(generatedAt)}
+          📅 Gerado:
+          ${escapeHtml(generatedAt)}
         </span>
 
       </div>
@@ -1465,19 +1699,30 @@ export async function gerarTranscript(
     <section class="messages">
 `;
 
-    /*
-     * ==========================================================
+    /**
+     * ========================================================
      * MENSAGENS
-     * ==========================================================
+     * ========================================================
      */
 
     let lastDay = "";
 
     for (const msg of sorted) {
+
       const day =
-        new Date(
-          msg.createdTimestamp
-        ).toLocaleDateString("pt-PT");
+        new Intl.DateTimeFormat(
+          "pt-PT",
+          {
+            timeZone:
+              "Europe/Lisbon",
+            dateStyle:
+              "full",
+          }
+        ).format(
+          new Date(
+            msg.createdTimestamp
+          )
+        );
 
       if (day !== lastDay) {
 
@@ -1490,11 +1735,19 @@ export async function gerarTranscript(
         lastDay = day;
       }
 
+      /**
+       * Avatar
+       */
+
       const avatar =
         msg.author?.displayAvatarURL?.({
           extension: "png",
           size: 64,
         }) || "";
+
+      /**
+       * Nome
+       */
 
       const author =
         msg.member?.displayName ||
@@ -1502,18 +1755,38 @@ export async function gerarTranscript(
         msg.author?.username ||
         "Utilizador desconhecido";
 
+      /**
+       * BOT
+       */
+
       const botTag =
         msg.author?.bot
           ? `<span class="bot-tag">BOT</span>`
           : "";
 
+      /**
+       * Hora
+       */
+
       const time =
-        formatDate(msg.createdAt);
+        formatDate(
+          msg.createdAt
+        );
+
+      /**
+       * Conteúdo
+       */
 
       const content =
         msg.content
-          ? formatDiscordText(msg.content)
+          ? formatDiscordText(
+              msg.content
+            )
           : "";
+
+      /**
+       * Editada
+       */
 
       const edited =
         msg.editedTimestamp
@@ -1523,7 +1796,9 @@ export async function gerarTranscript(
       html += `
         <article
           class="message"
-          id="m-${escapeHtml(msg.id)}"
+          id="m-${escapeHtml(
+            msg.id
+          )}"
         >
 
           ${
@@ -1531,7 +1806,9 @@ export async function gerarTranscript(
               ? `
                 <img
                   class="avatar"
-                  src="${escapeHtml(avatar)}"
+                  src="${escapeHtml(
+                    avatar
+                  )}"
                   alt=""
                   loading="lazy"
                 >
@@ -1561,23 +1838,46 @@ export async function gerarTranscript(
 
             <div
               class="body ${
-                content ? "" : "empty"
+                content
+                  ? ""
+                  : "empty"
               }"
             >
-              ${content || "Sem texto"}
+              ${
+                content ||
+                "Sem texto"
+              }
             </div>
       `;
 
-      /*
-       * Reply
+      /**
+       * ======================================================
+       * REPLY
+       * ======================================================
        */
 
-      if (msg.reference?.messageId) {
+      if (
+        msg.reference?.messageId
+      ) {
+
+        const referenced =
+          allMessages.get(
+            msg.reference.messageId
+          );
+
+        const replyAuthor =
+          referenced?.member
+            ?.displayName ||
+          referenced?.author
+            ?.globalName ||
+          referenced?.author
+            ?.username ||
+          "mensagem";
 
         html += `
           <div class="reply-ref">
 
-            ↪ Resposta à mensagem
+            ↪ Resposta a
 
             <a
               href="#m-${escapeHtml(
@@ -1585,7 +1885,7 @@ export async function gerarTranscript(
               )}"
             >
               ${escapeHtml(
-                msg.reference.messageId
+                replyAuthor
               )}
             </a>
 
@@ -1593,23 +1893,29 @@ export async function gerarTranscript(
         `;
       }
 
-      /*
-       * Embeds
+      /**
+       * ======================================================
+       * EMBEDS
+       * ======================================================
        */
 
-      for (const embed of msg.embeds || []) {
-
+      for (
+        const embed
+        of msg.embeds || []
+      ) {
         html +=
           renderEmbed(embed);
       }
 
-      /*
-       * Anexos
+      /**
+       * ======================================================
+       * ANEXOS
+       * ======================================================
        */
 
       for (
-        const [, attachment]
-        of msg.attachments || []
+        const attachment
+        of msg.attachments.values()
       ) {
 
         const url =
@@ -1628,18 +1934,22 @@ export async function gerarTranscript(
             "image/"
           ) ||
           /\.(png|jpe?g|gif|webp|bmp|svg)(\?|$)/i.test(
-            url
+            url || ""
           );
 
         html += `
           <div class="attachment">
 
             <a
-              href="${escapeHtml(url)}"
+              href="${escapeHtml(
+                url
+              )}"
               target="_blank"
               rel="noopener noreferrer"
             >
-              📎 ${escapeHtml(name)}
+              📎 ${escapeHtml(
+                name
+              )}
             </a>
 
             ${
@@ -1656,6 +1966,37 @@ export async function gerarTranscript(
         `;
       }
 
+      /**
+       * ======================================================
+       * STICKER
+       * ======================================================
+       */
+
+      if (
+        msg.stickers?.size
+      ) {
+
+        for (
+          const sticker
+          of msg.stickers.values()
+        ) {
+
+          html += `
+            <div class="attachment">
+
+              🎨 Sticker:
+              <strong>
+                ${escapeHtml(
+                  sticker.name ||
+                    "Sticker"
+                )}
+              </strong>
+
+            </div>
+          `;
+        }
+      }
+
       html += `
           </div>
 
@@ -1669,7 +2010,8 @@ export async function gerarTranscript(
     <div class="footer">
 
       Fim do transcript •
-      ${sorted.length} mensagens exportadas
+      ${sorted.length}
+      mensagens exportadas
 
     </div>
 
@@ -1680,10 +2022,10 @@ export async function gerarTranscript(
 </html>
 `;
 
-    /*
-     * ==========================================================
+    /**
+     * ========================================================
      * TXT
-     * ==========================================================
+     * ========================================================
      */
 
     let txt = "";
@@ -1712,23 +2054,45 @@ export async function gerarTranscript(
     txt +=
       `Gerado em: ${generatedAt}\n`;
 
-    if (additionalInfo.closedBy) {
+    if (additionalInfo.openedBy) {
+      txt +=
+        `Aberto por: ${additionalInfo.openedBy}\n`;
+    }
 
+    if (additionalInfo.openedAt) {
+      txt +=
+        `Aberto em: ${additionalInfo.openedAt}\n`;
+    }
+
+    if (additionalInfo.ticketLabel) {
+      txt +=
+        `Tipo: ${additionalInfo.ticketLabel}\n`;
+    }
+
+    if (additionalInfo.claimedBy) {
+      txt +=
+        `Assumido por: ${additionalInfo.claimedBy}\n`;
+    }
+
+    if (additionalInfo.closedBy) {
       txt +=
         `Fechado por: ${additionalInfo.closedBy}\n`;
     }
 
     if (additionalInfo.closedAt) {
-
       txt +=
         `Fechado em: ${additionalInfo.closedAt}\n`;
+    }
+
+    if (additionalInfo.duration) {
+      txt +=
+        `Duração: ${additionalInfo.duration}\n`;
     }
 
     if (
       additionalInfo.evaluationSent !==
       undefined
     ) {
-
       txt +=
         `Avaliação enviada: ${
           additionalInfo.evaluationSent
@@ -1743,7 +2107,6 @@ export async function gerarTranscript(
       additionalInfo.evaluation !==
       null
     ) {
-
       txt +=
         `Avaliação: ${additionalInfo.evaluation}\n`;
     }
@@ -1751,15 +2114,38 @@ export async function gerarTranscript(
     if (
       additionalInfo.evaluationComment
     ) {
-
       txt +=
         `Comentário da avaliação: ${additionalInfo.evaluationComment}\n`;
+    }
+
+    if (additionalInfo.truckyNome) {
+      txt +=
+        `Nome no Trucky: ${additionalInfo.truckyNome}\n`;
+    }
+
+    if (
+      additionalInfo.recrutado !==
+      undefined
+    ) {
+      txt +=
+        `Recrutado: ${
+          additionalInfo.recrutado === true
+            ? "Sim"
+            : additionalInfo.recrutado === false
+              ? "Não"
+              : "N/A"
+        }\n`;
+    }
+
+    if (additionalInfo.fotoNome) {
+      txt +=
+        `Nome para Foto: ${additionalInfo.fotoNome}\n`;
     }
 
     txt +=
       "═══════════════════════════════════════════════════════════════\n\n";
 
-    /*
+    /**
      * Mensagens TXT
      */
 
@@ -1772,7 +2158,9 @@ export async function gerarTranscript(
         "Utilizador desconhecido";
 
       txt +=
-        `[${formatDate(msg.createdAt)}] `;
+        `[${formatDate(
+          msg.createdAt
+        )}] `;
 
       txt +=
         `${author} (${msg.author?.id || "?"})`;
@@ -1784,12 +2172,22 @@ export async function gerarTranscript(
       txt += "\n";
 
       if (msg.content) {
-
         txt +=
           `${msg.content}\n`;
       }
 
-      /*
+      /**
+       * Replies
+       */
+
+      if (
+        msg.reference?.messageId
+      ) {
+        txt +=
+          `  ↪ Resposta a mensagem: ${msg.reference.messageId}\n`;
+      }
+
+      /**
        * Embeds
        */
 
@@ -1798,42 +2196,81 @@ export async function gerarTranscript(
         of msg.embeds || []
       ) {
 
-        if (embed.title) {
+        txt +=
+          "  [EMBED]\n";
 
+        if (embed.author?.name) {
           txt +=
-            `  [Embed] ${embed.title}\n`;
+            `  Autor: ${embed.author.name}\n`;
+        }
+
+        if (embed.title) {
+          txt +=
+            `  Título: ${embed.title}\n`;
         }
 
         if (embed.description) {
-
           txt +=
-            `  ${embed.description}\n`;
+            `  Descrição: ${embed.description}\n`;
         }
 
         for (
           const field
           of embed.fields || []
         ) {
-
           txt +=
             `  ${field.name}: ${field.value}\n`;
         }
+
+        if (embed.url) {
+          txt +=
+            `  URL: ${embed.url}\n`;
+        }
+
+        if (embed.image?.url) {
+          txt +=
+            `  Imagem: ${embed.image.url}\n`;
+        }
+
+        if (embed.thumbnail?.url) {
+          txt +=
+            `  Thumbnail: ${embed.thumbnail.url}\n`;
+        }
+
+        if (embed.footer?.text) {
+          txt +=
+            `  Footer: ${embed.footer.text}\n`;
+        }
       }
 
-      /*
+      /**
        * Anexos
        */
 
       for (
-        const [, attachment]
-        of msg.attachments || []
+        const attachment
+        of msg.attachments.values()
       ) {
-
         txt +=
           `  📎 ${
             attachment.name ||
             "Anexo"
           }: ${attachment.url}\n`;
+      }
+
+      /**
+       * Stickers
+       */
+
+      for (
+        const sticker
+        of msg.stickers.values()
+      ) {
+        txt +=
+          `  🎨 Sticker: ${
+            sticker.name ||
+            "Sticker"
+          }\n`;
       }
 
       txt += "\n";
@@ -1848,15 +2285,18 @@ export async function gerarTranscript(
     txt +=
       "═══════════════════════════════════════════════════════════════\n";
 
-    /*
-     * ==========================================================
+    /**
+     * ========================================================
      * ATTACHMENTS
-     * ==========================================================
+     * ========================================================
      */
 
     const htmlAttachment =
       new AttachmentBuilder(
-        Buffer.from(html, "utf-8"),
+        Buffer.from(
+          html,
+          "utf-8"
+        ),
         {
           name:
             `transcript-${ticketId}.html`,
@@ -1865,30 +2305,30 @@ export async function gerarTranscript(
 
     const txtAttachment =
       new AttachmentBuilder(
-        Buffer.from(txt, "utf-8"),
+        Buffer.from(
+          txt,
+          "utf-8"
+        ),
         {
           name:
             `transcript-${ticketId}.txt`,
         }
       );
 
-    /*
-     * ==========================================================
-     * RETORNO
-     * ==========================================================
+    /**
+     * ========================================================
+     * RETURN
+     * ========================================================
      */
 
     return {
-
       attachment:
         htmlAttachment,
 
       fileName:
         `transcript-${ticketId}.html`,
 
-      txtAttachment:
-
-        txtAttachment,
+      txtAttachment,
 
       txtFileName:
         `transcript-${ticketId}.txt`,
@@ -1898,6 +2338,8 @@ export async function gerarTranscript(
       messageCount:
         sorted.length,
 
+      html,
+      txt,
     };
 
   } catch (err) {
