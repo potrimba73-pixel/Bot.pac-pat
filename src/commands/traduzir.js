@@ -30,7 +30,7 @@ export async function execute(interaction) {
   let targetUser = interaction.options.getUser('utilizador');
   let lang = interaction.options.getString('idioma') || 'en';
 
-  // Se não mencionou ninguém, mas respondeu a uma mensagem, usa o autor dela
+  // Se não mencionou mas respondeu a uma mensagem, usa o autor dela
   if (!targetUser && interaction.message?.reference) {
     try {
       const replied = await interaction.channel.messages.fetch(interaction.message.reference.messageId);
@@ -38,7 +38,6 @@ export async function execute(interaction) {
     } catch (_) {}
   }
 
-  // Se ainda não há target, termina a sessão (se existir) ou avisa
   if (!targetUser) {
     const session = await getSession(channelId);
     if (session) {
@@ -50,7 +49,6 @@ export async function execute(interaction) {
     return;
   }
 
-  // Verificar se o utilizador está no servidor
   const member = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
   if (!member) {
     return interaction.editReply('❌ Utilizador não encontrado neste servidor.');
