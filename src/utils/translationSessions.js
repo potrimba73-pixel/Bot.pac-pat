@@ -1,7 +1,7 @@
 // src/utils/translationSessions.js
 import { db, saveDB } from './db.js';
 
-// Inicializar a coleção de sessões se não existir
+// Inicializa a coleção se não existir
 if (!db.translationSessions) {
   db.translationSessions = {};
 }
