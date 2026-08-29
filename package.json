@@ -7,8 +7,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "deploy": "node src/commands/register.js",
-    "postinstall": "npm install discord.js-html-transcript"
+    "deploy": "node src/commands/register.js"
   },
   "engines": {
     "node": ">=18.0.0 <24.0.0"
@@ -16,7 +15,6 @@
   "dependencies": {
     "discord.js": "^14.18.0",
     "discord-html-transcripts": "^3.2.0",
-    "discord.js-html-transcript": "^3.6.1",
     "@octokit/rest": "^20.1.1",
     "js-base64": "^3.7.7",
     "axios": "^1.7.0",
