@@ -14,9 +14,9 @@ import {
 } from "discord.js";
 
 import {
-  handleAjudaCommand,
-  handleAjudaFeedback,
-  handleAjudaProcurar,
+  handleHelpCommand as handleAjudaCommand,
+  handleHelpInteraction as handleAjudaFeedback,
+  handleHelpInteraction as handleAjudaProcurar,
   assistantMemory,
 } from "../services/ajuda.js";
 
@@ -403,9 +403,9 @@ export async function handleInteractionCreate(interaction, client) {
 
 async function handleSlashCommand(interaction, client) {
   const command = interaction.commandName;
-  // 👇 ADICIONA 'ajuda' À LISTA PARA EVITAR DEFER
+  // 👇 ADICIONA 'ajuda' À LISTA PARA NÃO FAZER DEFER
   const noDeferCommands = ['ajuda'];
-  
+
   let deferred = false;
   if (!noDeferCommands.includes(command)) {
     deferred = await safeDefer(interaction);
@@ -1125,9 +1125,8 @@ async function handleAvaliacaoModal(interaction, client) {
   }
 
   const stars = "⭐".repeat(estrelas) + "☆".repeat(5 - estrelas);
-  // Resposta completa após avaliação (sem chamada para avaliar novamente)
   const now = new Date();
-  const dataHoraFinal = now.toLocaleString('pt-PT', {
+  const dataHora = now.toLocaleString('pt-PT', {
     timeZone: 'Europe/Lisbon',
     day: '2-digit',
     month: '2-digit',
@@ -1135,8 +1134,8 @@ async function handleAvaliacaoModal(interaction, client) {
     hour: '2-digit',
     minute: '2-digit',
   });
-  const staffName = ticket.closedByName || interaction.user.username;
 
+  const staffName = ticket.closedByName || interaction.user.username;
   const mensagemFinal =
     `✅ **Obrigado pela tua avaliação!**\n\n` +
     `Avaliação: ${stars} (${estrelas}/5)\n\n` +
@@ -1145,7 +1144,7 @@ async function handleAvaliacaoModal(interaction, client) {
     `🎫 **Ticket:** #${ticket.id}\n` +
     `📝 **Tipo:** ${ticket.label}\n\n` +
     `⚒️ **Fechado por:** ${staffName}\n` +
-    `🕚 **Fechado em:** ${dataHoraFinal}\n\n` +
+    `🕚 **Fechado em:** ${dataHora}\n\n` +
     `🎫 Caso seja necessário, não hesite em abrir um novo ticket!`;
 
   try {
@@ -1426,7 +1425,6 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
           year: 'numeric',
           hour: '2-digit',
           minute: '2-digit',
-          // second: '2-digit',  // REMOVIDO
         });
 
         const dataAbertura = ticket.openedAt
@@ -1438,7 +1436,6 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
               year: 'numeric',
               hour: '2-digit',
               minute: '2-digit',
-              // second: '2-digit',  // REMOVIDO
             })
           : '—';
 
@@ -1468,7 +1465,7 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
           .setColor(0x2629F1)
           .setTimestamp();
 
-        // SEM BOTÃO "IR PARA O TICKET" – O CANAL JÁ FOI ELIMINADO!
+        // ⚠️ SEM BOTÃO – O CANAL JÁ FOI ELIMINADO
         await logChannel.send({
           embeds: [embedUnificado],
         });
