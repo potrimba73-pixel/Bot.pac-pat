@@ -1,12 +1,24 @@
 // src/services/ajuda.js
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle, ModalBuilder } from 'discord.js';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+
+import {
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ModalBuilder
+} from 'discord.js';
 
 // ============================================================
-// IMPORTAR DADOS (assumindo que são ficheiros JSON ou JS)
+// IMPORTAR DADOS (CommonJS) usando require()
 // ============================================================
-import faqData from '../database/faq.js';
-import tutoriaisData from '../database/tutoriais.js';
-import config from '../config/index.js';
+const faqData = require('../database/faq.js');
+const tutoriaisData = require('../database/tutoriais.js');
+const config = require('../config/index.js');
 
 // ============================================================
 // CONFIGURAÇÕES
