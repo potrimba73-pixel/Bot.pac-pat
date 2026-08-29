@@ -6,10 +6,8 @@ import { getSession } from '../utils/translationSessions.js';
 import { translateText } from '../services/translator.js';
 
 export async function handleMessageCreate(message, client) {
-  // ===== IGNORAR MENSAGENS DO BOT =====
+  // ===== IGNORAR BOTS E DMs =====
   if (message.author.bot) return;
-
-  // ===== IGNORAR MENSAGENS EM DMs =====
   if (!message.guild) return;
 
   // =============================================
@@ -20,7 +18,7 @@ export async function handleMessageCreate(message, client) {
     const { staffId, userId, userLang } = session;
     const authorId = message.author.id;
 
-    // Apenas mensagens do staff ou do utilizador alvo são traduzidas
+    // Apenas mensagens do staff ou do utilizador alvo
     if (authorId === staffId || authorId === userId) {
       const isStaff = authorId === staffId;
       const sourceLang = isStaff ? 'pt' : userLang;
@@ -46,12 +44,12 @@ export async function handleMessageCreate(message, client) {
   }
   // =============================================
 
-  // ===== IGNORAR MENSAGENS EM CANAIS DE TICKETS =====
+  // ===== IGNORAR TICKETS (depois da tradução) =====
   if (message.channel.name?.startsWith('ticket-')) return;
 
   // ===== IGNORAR COMANDOS =====
   if (message.content.startsWith('/')) return;
 
-  // ===== PROCESSAR PERGUNTA NA IA =====
+  // ===== PROCESSAR IA =====
   await handleSmartResponse(message, client);
 }
