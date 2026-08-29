@@ -20,7 +20,7 @@ export async function handleMessageCreate(message, client) {
     const { staffId, userId, userLang } = session;
     const authorId = message.author.id;
 
-    // Só processa se for o staff OU o utilizador alvo
+    // Apenas mensagens do staff ou do utilizador alvo são traduzidas
     if (authorId === staffId || authorId === userId) {
       const isStaff = authorId === staffId;
       const sourceLang = isStaff ? 'pt' : userLang;
