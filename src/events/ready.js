@@ -1,7 +1,4 @@
-// ============================================================
-// events/ready.js - Evento de Ready do Bot
-// ============================================================
-
+// src/events/ready.js
 import {
   setExternalClient,
   setupExternalLogChannels,
@@ -144,6 +141,23 @@ export async function handleReady(client) {
       );
     } else {
       await configurarTodosPainels(client, guild);
+    }
+
+    // ============================================================
+    // 🆕 REGISTO AUTOMÁTICO DE COMANDOS SLASH
+    // ============================================================
+    try {
+      console.log('[Ready] 🔄 A registar comandos...');
+      const { registerCommands } = await import('../commands/register.js');
+      if (typeof registerCommands === 'function') {
+        await registerCommands();
+        console.log('[Ready] ✅ Comandos registados automaticamente.');
+      } else {
+        console.warn('[Ready] ⚠️ registerCommands não é uma função.');
+      }
+    } catch (err) {
+      console.error('[Ready] ❌ Erro ao registar comandos:', err.message);
+      console.error(err);
     }
 
     // --------------------------------------------------------
