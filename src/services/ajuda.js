@@ -1,19 +1,30 @@
 // src/services/ajuda.js
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ComponentType } = require('discord.js');
-const faqData = require('../database/faq.js');       // array de { pergunta, resposta, categoria }
-const tutoriaisData = require('../database/tutoriais.js'); // array de { titulo, descricao, link, categoria }
-const config = require('../config/index.js');        // para obter COOLDOWN, etc.
-const { getAIResponse } = require('./ai.js');        // se existir; senão, podes ignorar
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle, ModalBuilder } from 'discord.js';
 
-// ------------------------------
+// ============================================================
+// IMPORTAR DADOS (assumindo que são ficheiros JSON ou JS)
+// ============================================================
+import faqData from '../database/faq.js';
+import tutoriaisData from '../database/tutoriais.js';
+import config from '../config/index.js';
+
+// ============================================================
 // CONFIGURAÇÕES
-// ------------------------------
+// ============================================================
 const COOLDOWN_SECONDS = config.HELP_COOLDOWN || 3600; // 1 hora por defeito
 const cooldownMap = new Map();
 
-// ------------------------------
+// ============================================================
+// 🆕 EXPORTAR assistantMemory (para ser usado pelo analyzer.js)
+// ============================================================
+export const assistantMemory = {
+  pendingSearches: new Map(),
+  // podes adicionar mais propriedades aqui se necessário
+};
+
+// ============================================================
 // INTENÇÕES (base de conhecimento para deteção)
-// ------------------------------
+// ============================================================
 const intents = [
   {
     id: 'ets2_convoy',
@@ -76,9 +87,9 @@ Se estás com problemas no ETS2LA:
   // Adiciona mais categorias: VR, Project ALM, etc.
 ];
 
-// ------------------------------
+// ============================================================
 // FUNÇÕES AUXILIARES
-// ------------------------------
+// ============================================================
 function detectIntent(query) {
   const words = query.toLowerCase().split(/\s+/);
   let bestIntent = null;
@@ -110,9 +121,9 @@ function setCooldown(userId) {
   cooldownMap.set(userId, Date.now());
 }
 
-// ------------------------------
+// ============================================================
 // GERADORES DE COMPONENTES (Embeds, Botões)
-// ------------------------------
+// ============================================================
 function createMainMenuEmbed() {
   return new EmbedBuilder()
     .setColor(0x00A2E8)
@@ -132,7 +143,6 @@ function createMainMenuEmbed() {
 }
 
 function createCategoryEmbed(category) {
-  // Busca perguntas e tutoriais da categoria
   const faqs = faqData.filter(f => f.categoria === category);
   const tutoriais = tutoriaisData.filter(t => t.categoria === category);
 
@@ -157,7 +167,6 @@ function createCategoryEmbed(category) {
 }
 
 function createSearchEmbed(query, result) {
-  // result pode ser { found: true, response: string, source: 'intent'|'faq'|'tutorial'|'ia' }
   const embed = new EmbedBuilder()
     .setColor(0x2ECC71)
     .setTitle('🔍 Resultado da Pesquisa')
@@ -207,13 +216,12 @@ function createNavigationButtons() {
     );
 }
 
-// ------------------------------
+// ============================================================
 // COMANDO PRINCIPAL: /ajuda
-// ------------------------------
-async function handleHelpCommand(interaction) {
+// ============================================================
+export async function handleHelpCommand(interaction) {
   const userId = interaction.user.id;
 
-  // Cooldown
   if (isOnCooldown(userId)) {
     const timeLeft = Math.ceil((COOLDOWN_SECONDS - (Date.now() - cooldownMap.get(userId)) / 1000));
     return interaction.reply({
@@ -223,7 +231,6 @@ async function handleHelpCommand(interaction) {
   }
   setCooldown(userId);
 
-  // Mostra o menu principal
   const embed = createMainMenuEmbed();
   const navRow = createNavigationButtons();
   const categorySelect = new StringSelectMenuBuilder()
@@ -245,23 +252,22 @@ async function handleHelpCommand(interaction) {
   await interaction.reply({
     embeds: [embed],
     components: [rowSelect, navRow],
-    ephemeral: false // ou true, consoante preferência
+    ephemeral: false
   });
 }
 
-// ------------------------------
-// MANIPULADORES DE INTERAÇÕES (botões, selects, modais)
-// ------------------------------
-async function handleHelpInteraction(interaction) {
+// ============================================================
+// MANIPULADORES DE INTERAÇÕES (exportados)
+// ============================================================
+export async function handleHelpInteraction(interaction) {
   if (!interaction.isButton() && !interaction.isStringSelectMenu() && !interaction.isModalSubmit()) return;
 
   const customId = interaction.customId;
 
-  // ---------- SELECT MENU (Categoria) ----------
+  // SELECT MENU (Categoria)
   if (customId === 'help_category_select' && interaction.isStringSelectMenu()) {
     const selected = interaction.values[0];
     if (selected === 'IA') {
-      // Abre modal para pergunta à IA
       const modal = new ModalBuilder()
         .setCustomId('help_ia_modal')
         .setTitle('🤖 Pergunta à IA')
@@ -278,7 +284,6 @@ async function handleHelpInteraction(interaction) {
       return interaction.showModal(modal);
     }
 
-    // Mostra a categoria selecionada
     const embed = createCategoryEmbed(selected);
     const navRow = createNavigationButtons();
     await interaction.update({
@@ -287,7 +292,7 @@ async function handleHelpInteraction(interaction) {
     });
   }
 
-  // ---------- BOTÃO "Pesquisar" ----------
+  // BOTÃO "Pesquisar"
   if (customId === 'help_search' && interaction.isButton()) {
     const modal = new ModalBuilder()
       .setCustomId('help_search_modal')
@@ -305,7 +310,7 @@ async function handleHelpInteraction(interaction) {
     return interaction.showModal(modal);
   }
 
-  // ---------- BOTÃO "Início" ----------
+  // BOTÃO "Início"
   if (customId === 'help_home' && interaction.isButton()) {
     const embed = createMainMenuEmbed();
     const navRow = createNavigationButtons();
@@ -329,9 +334,8 @@ async function handleHelpInteraction(interaction) {
     });
   }
 
-  // ---------- BOTÃO "Voltar" ----------
+  // BOTÃO "Voltar"
   if (customId === 'help_back' && interaction.isButton()) {
-    // Volta ao menu anterior (podes guardar estado, mas aqui simplificamos: volta ao início)
     const embed = createMainMenuEmbed();
     const navRow = createNavigationButtons();
     const categorySelect = new StringSelectMenuBuilder()
@@ -354,10 +358,9 @@ async function handleHelpInteraction(interaction) {
     });
   }
 
-  // ---------- MODAL: Pesquisa ----------
+  // MODAL: Pesquisa
   if (customId === 'help_search_modal' && interaction.isModalSubmit()) {
     const query = interaction.fields.getTextInputValue('search_query');
-    // 1. Detetar intenção
     const { intent, confidence } = detectIntent(query);
 
     let result = { response: '', source: '' };
@@ -366,38 +369,22 @@ async function handleHelpInteraction(interaction) {
       result.response = intent.response;
       result.source = '🧠 Intenção reconhecida';
     } else {
-      // 2. Procurar no FAQ
       const faqMatch = faqData.find(f => query.toLowerCase().includes(f.pergunta.toLowerCase()) || f.pergunta.toLowerCase().includes(query.toLowerCase()));
       if (faqMatch) {
         result.response = `📖 **FAQ:** ${faqMatch.resposta}`;
         result.source = '📖 FAQ';
       } else {
-        // 3. Procurar em Tutoriais
         const tutorialMatch = tutoriaisData.find(t => query.toLowerCase().includes(t.titulo.toLowerCase()) || t.titulo.toLowerCase().includes(query.toLowerCase()));
         if (tutorialMatch) {
           result.response = `📚 **Tutorial:** [${tutorialMatch.titulo}](${tutorialMatch.link})\n${tutorialMatch.descricao}`;
           result.source = '📚 Tutorial';
         } else {
-          // 4. Se houver IA, chama (opcional)
-          if (typeof getAIResponse === 'function') {
-            try {
-              const aiAnswer = await getAIResponse(query);
-              result.response = aiAnswer;
-              result.source = '🤖 IA';
-            } catch (e) {
-              result.response = 'Não consegui obter resposta da IA. Tenta reformular ou abre um ticket.';
-              result.source = '⚠️ Erro';
-            }
-          } else {
-            // 5. Fallback: sugerir ticket
-            result.response = 'Não encontrei informação suficiente. Por favor, abre um ticket para ajuda personalizada.';
-            result.source = '📌 Sugestão';
-          }
+          result.response = 'Não encontrei informação suficiente. Por favor, abre um ticket para ajuda personalizada.';
+          result.source = '📌 Sugestão';
         }
       }
     }
 
-    // Se a confiança for média, adiciona um aviso e sugestão de categorias
     if (confidence === 'medium' && intent) {
       result.response += '\n\n🤔 **Não tenho a certeza se percebi bem.** Estás à procura de ajuda sobre:\n' +
         '🚛 ETS2 / Convoys\n🛡️ Recrutamento PAT\n📱 Trucky\n⚙️ Problemas técnicos\n🎫 Tickets\n\n' +
@@ -414,23 +401,12 @@ async function handleHelpInteraction(interaction) {
     });
   }
 
-  // ---------- MODAL: IA ----------
+  // MODAL: IA
   if (customId === 'help_ia_modal' && interaction.isModalSubmit()) {
     const question = interaction.fields.getTextInputValue('ia_question');
-    // Chama a IA (se existir)
-    let response = '';
-    let source = '🤖 IA';
-    if (typeof getAIResponse === 'function') {
-      try {
-        response = await getAIResponse(question);
-      } catch (e) {
-        response = 'Erro ao contactar a IA. Tenta novamente mais tarde.';
-        source = '⚠️ Erro';
-      }
-    } else {
-      response = 'A IA não está configurada. Por favor, usa a pesquisa ou abre um ticket.';
-      source = '📌 Aviso';
-    }
+    const response = 'A IA não está configurada. Por favor, usa a pesquisa ou abre um ticket.';
+    const source = '📌 Aviso';
+
     const embed = createSearchEmbed(question, { response, source });
     const buttons = createResponseButtons();
     const navRow = createNavigationButtons();
@@ -441,7 +417,7 @@ async function handleHelpInteraction(interaction) {
     });
   }
 
-  // ---------- BOTÕES DE FEEDBACK (Resolvido, Mais ajuda, Ticket) ----------
+  // BOTÕES DE FEEDBACK (Resolvido, Mais ajuda, Ticket)
   if (interaction.isButton() && customId.startsWith('help_')) {
     const action = customId.replace('help_', '');
     if (action === 'resolvido') {
@@ -451,29 +427,17 @@ async function handleHelpInteraction(interaction) {
         components: [],
       });
     } else if (action === 'mais_ajuda') {
-      // Podes encaminhar para o menu de pesquisa novamente ou para um ticket
       await interaction.update({
         content: '❌ Vamos tentar novamente. Usa a pesquisa com mais detalhes ou abre um ticket.',
         embeds: [],
         components: [createNavigationButtons()],
       });
     } else if (action === 'ticket') {
-      // Chama o sistema de tickets (assumo que existe uma função para abrir ticket)
-      // Exemplo: await openTicket(interaction);
       await interaction.update({
         content: '🎫 A abrir ticket... Aguarda que um membro da equipa te atenderá em breve.',
         embeds: [],
         components: [],
       });
-      // Aqui podes invocar a tua lógica de criação de ticket
     }
   }
 }
-
-// ------------------------------
-// EXPORTS
-// ------------------------------
-module.exports = {
-  handleHelpCommand,
-  handleHelpInteraction,
-};
