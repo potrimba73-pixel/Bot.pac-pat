@@ -14,9 +14,9 @@ import {
 } from "discord.js";
 
 import {
-  handleAjudaCommand,
-  handleAjudaFeedback,
-  handleAjudaProcurar,
+  handleHelpCommand as handleAjudaCommand,
+  handleHelpInteraction as handleAjudaFeedback,
+  handleHelpInteraction as handleAjudaProcurar,
   assistantMemory,
 } from "../services/ajuda.js";
 
