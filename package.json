@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "deploy": "node src/commands/register.js"
+    "deploy": "node src/commands/register.js",
+    "postinstall": "npm install discord.js-html-transcript"
   },
   "engines": {
     "node": ">=18.0.0 <24.0.0"
