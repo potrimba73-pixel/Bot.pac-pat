@@ -255,12 +255,10 @@ async function chamarStaff(interaction, ticket, staffId) {
         .setURL(ticketLink)
     );
 
-    // Tenta enviar DM, com fallback silencioso se falhar
     try {
       await staffMember.send({ embeds: [embedDM], components: [rowDM] });
     } catch (dmError) {
       console.warn(`[ChamarStaff] DM para ${staffId} falhou:`, dmError.message);
-      // Não interrompe o fluxo, apenas avisa
     }
 
     await interaction.channel.send({
@@ -378,26 +376,18 @@ async function enviarPainelStaff(interaction, client) {
 
 export async function handleInteractionCreate(interaction, client) {
   try {
-    // ---- SLASH COMMANDS ----
     if (interaction.isChatInputCommand()) {
       return await handleSlashCommand(interaction, client);
     }
-
-    // ---- MODALS ----
     if (interaction.isModalSubmit()) {
       return await handleModalSubmit(interaction, client);
     }
-
-    // ---- SELECT MENUS ----
     if (interaction.isStringSelectMenu()) {
       return await handleSelectMenu(interaction, client);
     }
-
-    // ---- BUTTONS ----
     if (interaction.isButton()) {
       return await handleButton(interaction, client);
     }
-
   } catch (error) {
     console.error("[InteractionCreate] Erro não tratado:", error);
     try {
@@ -412,9 +402,8 @@ export async function handleInteractionCreate(interaction, client) {
 
 async function handleSlashCommand(interaction, client) {
   const command = interaction.commandName;
+  const noDeferCommands = [];
 
-const noDeferCommands = [];
-  
   let deferred = false;
   if (!noDeferCommands.includes(command)) {
     deferred = await safeDefer(interaction);
@@ -535,31 +524,26 @@ const noDeferCommands = [];
 async function handleModalSubmit(interaction, client) {
   const customId = interaction.customId;
 
-  // Trucky verification
   if (customId.startsWith("modal_trucky_")) {
     return handleTruckyVerification(interaction, client);
   }
 
-  // Ajuda (recrutamento)
   if (customId.startsWith("modal_ajuda_") && interaction.fields.fields.has("ajuda_especificacoes")) {
     const especificacoes = interaction.fields.getTextInputValue("ajuda_especificacoes")?.trim();
     interaction._ajudaEspecificacoes = especificacoes;
     return createTicket(interaction, "ajuda", "❓ Pedir ajuda", client);
   }
 
-  // Ajuda (/ajuda)
   if (customId.startsWith("modal_ajuda_") && interaction.fields.fields.has("pergunta_ajuda")) {
     const { handleAjudaModal } = await import("../services/ajuda.js");
     return handleAjudaModal(interaction, client);
   }
 
-  // Foto Trucky (recrutamento concluído)
   if (customId.startsWith("modal_foto_trucky_")) {
     if (!(await safeDefer(interaction))) return;
     return handleFotoTruckyModal(interaction, client);
   }
 
-  // Adicionar/Remover utilizador da call
   if (customId.startsWith("modal_add_user_")) {
     return handleAddUserModal(interaction, client);
   }
@@ -567,7 +551,6 @@ async function handleModalSubmit(interaction, client) {
     return handleRemoveUserModal(interaction, client);
   }
 
-  // Avaliação com comentário
   if (customId.startsWith("modal_avaliacao_")) {
     return handleAvaliacaoModal(interaction, client);
   }
@@ -580,7 +563,6 @@ async function handleModalSubmit(interaction, client) {
 // ============================================================
 
 async function handleSelectMenu(interaction, client) {
-  // Chamar staff
   if (interaction.customId.startsWith("chamar_staff_")) {
     const ticketId = interaction.customId.replace("chamar_staff_", "");
     const staffId = interaction.values[0];
@@ -605,7 +587,6 @@ async function handleSelectMenu(interaction, client) {
     return chamarStaff(interaction, ticket, staffId);
   }
 
-  // Ticket geral
   if (interaction.customId === "ticket_geral") {
     const value = interaction.values[0];
     const labels = {
@@ -620,7 +601,6 @@ async function handleSelectMenu(interaction, client) {
     return createTicket(interaction, value, labels[value], client);
   }
 
-  // Ticket recrutamento
   if (interaction.customId === "ticket_recruitamento") {
     const value = interaction.values[0];
     if (value === "recrutamento") {
@@ -661,12 +641,10 @@ async function handleButton(interaction, client) {
   const customId = interaction.customId;
   console.log(`[Button] CustomId: ${customId}`);
 
-  // --- Aceitar regras ---
   if (customId === "aceitar_regras") {
     return handleAceitarRegras(interaction);
   }
 
-  // --- Aceitar/Recusar recrutamento ---
   if (customId.startsWith("aceitar_regras_rec_")) {
     const userId = customId.split("_")[3];
     if (interaction.user.id !== userId) {
@@ -691,27 +669,22 @@ async function handleButton(interaction, client) {
     }
   }
 
-  // --- Assumir ticket ---
   if (customId.startsWith("assumir_")) {
     return handleAssumirTicket(interaction, client);
   }
 
-  // --- Painel membro ---
   if (customId.startsWith("painel_membro_")) {
     return enviarPainelMembro(interaction);
   }
 
-  // --- Sair ---
   if (customId.startsWith("sair_")) {
     return handleSairTicket(interaction, client);
   }
 
-  // --- Fechar ticket ---
   if (customId.startsWith("deletar_")) {
     return handleFecharTicket(interaction, client);
   }
 
-  // --- Recrutado Sim/Não ---
   if (customId.startsWith("recrutado_sim_")) {
     return handleRecrutadoSim(interaction, client);
   }
@@ -723,7 +696,6 @@ async function handleButton(interaction, client) {
     return fecharTicket(interaction, ticketId, client, false);
   }
 
-  // --- Fechar definitivo ---
   if (customId.startsWith("fechar_definitivo_")) {
     if (!isStaff(interaction.member)) {
       return safeReply(interaction, "❌ Apenas staff pode fechar este ticket.");
@@ -732,12 +704,10 @@ async function handleButton(interaction, client) {
     return fecharTicket(interaction, ticketId, client, false);
   }
 
-  // --- Avaliação (abre modal) ---
   if (customId.startsWith("avaliar_")) {
     return handleAvaliacaoButton(interaction);
   }
 
-  // --- Sistema de ajuda ---
   if (customId === "ajuda_procurar") {
     return handleAjudaProcurar(interaction);
   }
@@ -752,7 +722,6 @@ async function handleButton(interaction, client) {
     return handleAjudaFeedback(interaction);
   }
 
-  // --- Calls ---
   if (customId.startsWith("criar_call_")) {
     if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode criar calls.");
     const ticketId = customId.substring("criar_call_".length);
@@ -779,7 +748,6 @@ async function handleButton(interaction, client) {
     return removeUserFromCall?.(interaction, ticketId, client) || safeReply(interaction, "⏳ Funcionalidade em desenvolvimento.");
   }
 
-  // --- Smart Search ---
   if (customId.startsWith("smart_search_") || customId.startsWith("smart_do_search_")) {
     return handleSmartSearch(interaction);
   }
@@ -793,7 +761,7 @@ async function handleButton(interaction, client) {
 }
 
 // ============================================================
-// HANDLERS ESPECÍFICOS (extraídos para clareza)
+// HANDLERS ESPECÍFICOS
 // ============================================================
 
 async function handleAceitarRegras(interaction) {
@@ -831,6 +799,10 @@ async function handleAceitarRegras(interaction) {
   }
 }
 
+// ============================================================
+// ASSUMIR TICKET (com log no canal de logs)
+// ============================================================
+
 async function handleAssumirTicket(interaction, client) {
   const ticketId = interaction.customId.substring("assumir_".length);
   if (!(await safeDefer(interaction))) return;
@@ -857,6 +829,7 @@ async function handleAssumirTicket(interaction, client) {
       if (current.claimedBy) throw new Error("TICKET_ALREADY_CLAIMED");
       current.claimedBy = interaction.user.id;
       current.claimedByName = interaction.user.username;
+      current.claimedAt = new Date().toISOString();
       const saved = await persistDB();
       if (!saved) throw new Error("DB_SAVE_FAILED");
     });
@@ -870,6 +843,48 @@ async function handleAssumirTicket(interaction, client) {
     await channel.send(
       `🎉 **Ticket assumido com sucesso!**\n\n👮 <@${interaction.user.id}> assumiu este ticket.\nSe precisares de chamar outro membro da staff, usa o **Painel Membro**.`
     );
+
+    // ===== LOG NO CANAL DE LOGS =====
+    try {
+      const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
+      if (logChannel) {
+        const agora = new Date();
+        const dataHora = agora.toLocaleString('pt-PT', {
+          timeZone: 'Europe/Lisbon',
+          weekday: 'long',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+
+        const ticketLink = `https://discord.com/channels/${ticket.guildId}/${ticket.channelId}`;
+
+        const embedLog = new EmbedBuilder()
+          .setTitle(`⚒️ Staff que Assumiu — #${ticket.id}`)
+          .setDescription(
+            `👮 **Staff que Assumiu:**\n<@${interaction.user.id}>\n\n` +
+            `🎫 **Ticket:** #${ticket.id}\n` +
+            `📝 **Tipo:** ${ticket.label}\n` +
+            `👤 **Utilizador:** <@${ticket.userId}>\n\n` +
+            `📅 **Horário:** ${dataHora}`
+          )
+          .setColor(0x00a8fc)
+          .setTimestamp();
+
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setLabel("🎫 Ir para o Ticket")
+            .setStyle(ButtonStyle.Link)
+            .setURL(ticketLink)
+        );
+
+        await logChannel.send({ embeds: [embedLog], components: [row] });
+      }
+    } catch (e) {
+      console.error("[AssumirTicket] Erro ao enviar log:", e.message);
+    }
 
     return safeEdit(interaction, { content: "✅ Ticket assumido com sucesso!" });
   } catch (error) {
@@ -920,7 +935,6 @@ async function handleFecharTicket(interaction, client) {
     return safeEdit(interaction, { content: "⚠️ Ticket não encontrado ou já fechado." });
   }
 
-  // Para tickets de recrutamento, pergunta se foi recrutado
   if (ticket.type === "recrutamento") {
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -990,7 +1004,6 @@ async function handleAvaliacaoButton(interaction) {
     return safeReply(interaction, `⚠️ Já avaliaste este ticket com ${"⭐".repeat(ticket.rating)} (${ticket.rating}/5).`);
   }
 
-  // Abrir modal para comentário
   const modal = new ModalBuilder()
     .setCustomId(`modal_avaliacao_${ticketId}_${estrelas}`)
     .setTitle(`Avaliação - ${estrelas} ⭐`);
@@ -1070,7 +1083,6 @@ async function handleAvaliacaoModal(interaction, client) {
   ticket.ratingComment = comentario;
   await persistDB();
 
-  // Log no canal de logs
   try {
     const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
     if (logChannel) {
@@ -1127,7 +1139,7 @@ async function handleFotoTruckyModal(interaction, client) {
     }
 
     let fotoNome = interaction.fields.getTextInputValue("foto_nome")?.trim() || "Não informado";
-    fotoNome = fotoNome.replace(/\.[^/.]+$/, "");
+    fotoNome = fotoNome.replace(/\.[^\/.]+$/, "");
 
     await withTicketLock(ticket.id, async () => {
       const current = db.tickets[String(ticket.id)];
@@ -1142,7 +1154,6 @@ async function handleFotoTruckyModal(interaction, client) {
       if (!saved) throw new Error("DB_SAVE_FAILED");
     });
 
-    // Dar cargos
     const guild = await client.guilds.fetch(ticket.guildId).catch(() => null);
     if (guild) {
       const member = await guild.members.fetch(ticket.userId).catch(() => null);
@@ -1155,7 +1166,6 @@ async function handleFotoTruckyModal(interaction, client) {
       }
     }
 
-    // Mensagem no canal geral
     if (CONFIG.CANAL_GERAL) {
       const canalGeral = await client.channels.fetch(CONFIG.CANAL_GERAL).catch(() => null);
       if (canalGeral) {
@@ -1194,7 +1204,7 @@ async function handleFotoTruckyModal(interaction, client) {
 }
 
 // ============================================================
-// FECHAR TICKET (COM TRANSCRIPT E AVALIAÇÃO)
+// FECHAR TICKET (COM TRANSCRIPT, AVALIAÇÃO E LOG MELHORADO)
 // ============================================================
 
 async function fecharTicket(interaction, ticketId, client, recrutado = false) {
@@ -1203,8 +1213,13 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
   }
 
   setClosing(ticketId);
+
+  let evaluationSent = false;
+  let transcriptResult = null;
+  let ticket = null;
+
   try {
-    const ticket = getTicketForInteraction(ticketId, interaction.channelId);
+    ticket = getTicketForInteraction(ticketId, interaction.channelId);
     if (!ticket || ticket.closed) {
       return safeReply(interaction, "⚠️ Ticket não encontrado ou já fechado.");
     }
@@ -1228,7 +1243,7 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
       return safeReply(interaction, "❌ O canal do ticket já não existe.");
     }
 
-    // Embed de fecho no canal
+    // Embed de fecho no canal do ticket
     const duracao = formatDuration(ticket.openedAt, new Date());
     const duracaoEmoji = getDurationEmoji(ticket.openedAt, new Date());
 
@@ -1239,90 +1254,67 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
     const embedFecho = new EmbedBuilder().setDescription(desc).setColor(0xFF0000).setTimestamp();
     await channel.send({ embeds: [embedFecho] }).catch(() => {});
 
-    // --- GERAR TRANSCRIPT (usando o serviço unificado) ---
+    // --- GERAR TRANSCRIPT ---
     try {
-      // Buscar mensagens para o TXT
-      const messages = await channel.messages.fetch({ limit: 200 });
-      const msgsArray = Array.from(messages.values()).sort((a, b) => a.createdTimestamp - b.createdTimestamp);
-
-      // Gerar HTML via serviço (já retorna attachment)
-      let htmlAttachment = null;
-      try {
-        htmlAttachment = await gerarTranscript(channel, `transcript-ticket-${ticket.id}-${Date.now()}`);
-      } catch (e) {
-        console.error("[Transcript Auto] Erro HTML:", e.message);
-      }
-
-      // TXT
-      let txtContent = `═══════════════════════════════════════════════════════════════\n`;
-      txtContent += `  TRANSCRIPT - PORTUGAL ALFA COMMUNITY\n`;
-      txtContent += `  Ticket #${ticket.id}\n`;
-      txtContent += `═══════════════════════════════════════════════════════════════\n`;
-      txtContent += `Canal:        #${channel.name}\nID do Canal:  ${channel.id}\nServidor:     ${interaction.guild.name}\n`;
-      txtContent += `Aberto por:   ${ticket.username} (${ticket.userId})\nTipo:         ${ticket.label}\n`;
-      txtContent += `Fechado por:  ${interaction.user.tag}\nData:         ${new Date().toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" })}\n`;
-      txtContent += `Total msgs:   ${msgsArray.length}\n`;
-      txtContent += `═══════════════════════════════════════════════════════════════\n\n`;
-
-      for (const msg of msgsArray) {
-        const data = new Date(msg.createdTimestamp).toLocaleString("pt-PT", {
-          timeZone: "Europe/Lisbon",
-          day: '2-digit', month: '2-digit', year: 'numeric',
-          hour: '2-digit', minute: '2-digit', second: '2-digit'
-        });
-        txtContent += `[${data}] ${msg.author.tag} (${msg.author.id})\n`;
-        if (msg.content) txtContent += `  ${msg.content}\n`;
-        if (msg.attachments.size > 0) {
-          txtContent += `  [Anexos: ${msg.attachments.map(a => `${a.name} (${a.url})`).join(", ")}]\n`;
-        }
-        if (msg.embeds.length > 0) {
-          txtContent += `  [Embed: ${msg.embeds.length} embed(s)]\n`;
-        }
-        txtContent += `\n`;
-      }
-      txtContent += `═══════════════════════════════════════════════════════════════\nFIM DO TRANSCRIPT\n═══════════════════════════════════════════════════════════════\n`;
-
-      // Anexos
-      const files = [];
-      const txtBuffer = Buffer.from(txtContent, "utf-8");
-      files.push(new AttachmentBuilder(txtBuffer, { name: `transcript-ticket-${ticket.id}.txt` }));
-      if (htmlAttachment) files.push(htmlAttachment.attachment);
-
-      // Enviar para logs
-      const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
-      if (logChannel) {
-        const embedLog = new EmbedBuilder()
-          .setTitle(`📋 Transcript do Ticket #${ticket.id}`)
-          .setDescription(
-            `**Ticket:** #${ticket.id}\n**Tipo:** ${ticket.label}\n**Aberto por:** <@${ticket.userId}>\n` +
-            `**Fechado por:** ${interaction.user.tag}\n**Mensagens:** ${msgsArray.length}\n**Ficheiros:** ${files.length} anexo(s)`
-          )
-          .setColor(0x0099ff)
-          .setTimestamp();
-        await logChannel.send({ embeds: [embedLog], files }).catch(() => {});
-      }
-
-      // Guardar no Supabase
-      const transcriptData = {
-        id: `transcript-ticket-${ticket.id}-${Date.now()}`,
-        canalId: channel.id,
-        canalNome: channel.name,
-        guildId: interaction.guild.id,
-        guildNome: interaction.guild.name,
-        geradoPor: interaction.user.id,
-        geradoPorTag: interaction.user.tag,
-        data: new Date().toISOString(),
-        totalMensagens: msgsArray.length,
-        txtConteudo: txtContent,
-        htmlFileName: htmlAttachment ? htmlAttachment.fileName : null,
+      const additionalInfo = {
+        openedBy: ticket.username,
+        openedAt: ticket.openedAt ? new Date(ticket.openedAt).toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" }) : "—",
+        closedBy: interaction.user.username,
+        closedAt: new Date().toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" }),
+        claimedBy: ticket.claimedByName || null,
+        ticketLabel: ticket.label,
+        duration: duracao,
+        evaluationSent: undefined,
+        evaluation: ticket.rating ? "⭐".repeat(ticket.rating) + "☆".repeat(5 - ticket.rating) : undefined,
+        evaluationComment: ticket.ratingComment || undefined,
+        recrutado: ticket.type === "recrutamento" ? recrutado : undefined,
+        fotoNome: ticket.fotoNome || undefined,
       };
-      await salvarTranscriptSupabase(transcriptData).catch(e => console.error("[Supabase] Erro:", e));
 
+      transcriptResult = await gerarTranscript(channel, ticket.id, additionalInfo);
+
+      if (transcriptResult) {
+        // Enviar para logs
+        const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
+        if (logChannel) {
+          const embedLog = new EmbedBuilder()
+            .setTitle(`📋 Transcript do Ticket #${ticket.id}`)
+            .setDescription(
+              `**Ticket:** #${ticket.id}\n**Tipo:** ${ticket.label}\n**Aberto por:** <@${ticket.userId}>\n` +
+              `**Fechado por:** ${interaction.user.tag}\n**Mensagens:** ${transcriptResult.messageCount}\n**Ficheiros:** 2 anexo(s)`
+            )
+            .setColor(0x0099ff)
+            .setTimestamp();
+
+          const files = [
+            transcriptResult.attachment,
+            transcriptResult.txtAttachment,
+          ];
+
+          await logChannel.send({ embeds: [embedLog], files }).catch(() => {});
+        }
+
+        // Guardar no Supabase
+        const transcriptData = {
+          id: transcriptResult.ticketId,
+          canalId: channel.id,
+          canalNome: channel.name,
+          guildId: interaction.guild.id,
+          guildNome: interaction.guild.name,
+          geradoPor: interaction.user.id,
+          geradoPorTag: interaction.user.tag,
+          data: new Date().toISOString(),
+          totalMensagens: transcriptResult.messageCount,
+          txtConteudo: transcriptResult.txt,
+          htmlFileName: transcriptResult.fileName,
+        };
+        await salvarTranscriptSupabase(transcriptData).catch(e => console.error("[Supabase] Erro:", e));
+      }
     } catch (error) {
       console.error("[Transcript Auto] Erro geral:", error.message);
     }
 
-    // --- DM de avaliação (com verificação) ---
+    // --- DM DE AVALIAÇÃO (com verificação REAL) ---
     try {
       const user = await client.users.fetch(ticket.userId);
       if (user) {
@@ -1358,10 +1350,101 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
           new ButtonBuilder().setCustomId(`avaliar_${ticket.id}_5`).setLabel("5 ⭐⭐⭐⭐⭐").setStyle(ButtonStyle.Secondary)
         );
 
-        await user.send({ embeds: [embedDM], components: [row] }).catch(() => {});
+        // Tentar enviar DM e capturar resultado real
+        await user.send({ embeds: [embedDM], components: [row] });
+        evaluationSent = true;
+        console.log(`[Avaliação] DM enviada com sucesso para ${ticket.userId}`);
       }
     } catch (error) {
-      console.log("[Tickets] Não foi possível enviar DM:", error.message);
+      evaluationSent = false;
+      console.log(`[Avaliação] DM NÃO enviada para ${ticket.userId}: ${error.message}`);
+    }
+
+    // Guardar no DB se a avaliação foi enviada
+    if (evaluationSent !== undefined) {
+      try {
+        db.tickets[String(ticket.id)].evaluationSent = evaluationSent;
+        await persistDB();
+      } catch (e) {
+        console.error("[DB] Erro ao guardar evaluationSent:", e.message);
+      }
+    }
+
+    // --- LOG DE FECHO MELHORADO ---
+    try {
+      const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
+      if (logChannel && ticket) {
+        const agora = new Date();
+        const dataFecho = agora.toLocaleString('pt-PT', {
+          timeZone: 'Europe/Lisbon',
+          weekday: 'long',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        });
+
+        const dataAbertura = ticket.openedAt
+          ? new Date(ticket.openedAt).toLocaleString('pt-PT', {
+              timeZone: 'Europe/Lisbon',
+              weekday: 'long',
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            })
+          : '—';
+
+        const ticketLink = `https://discord.com/channels/${ticket.guildId}/${ticket.channelId}`;
+
+        const embedFechoLog = new EmbedBuilder()
+          .setTitle(`🔴 Ticket Fechado — #${ticket.id}`)
+          .setDescription(
+            `👮 **Fechado por:** <@${interaction.user.id}>\n` +
+            `👤 **Utilizador:** <@${ticket.userId}>\n` +
+            `🎫 **Ticket:** #${ticket.id}\n` +
+            `📝 **Tipo:** ${ticket.label}\n\n` +
+            `📅 **Horário:** ${dataFecho}`
+          )
+          .setColor(0xFF0000)
+          .setTimestamp();
+
+        const rowFecho = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setLabel("🎫 Ir para o Ticket")
+            .setStyle(ButtonStyle.Link)
+            .setURL(ticketLink)
+        );
+
+        // Informações adicionais
+        let infoAdicional = '';
+        infoAdicional += `🕑 **Horários:**\n`;
+        infoAdicional += `• 🕛 Abertura: ${dataAbertura}\n`;
+        infoAdicional += `• 🕛 Fechamento: ${dataFecho}\n`;
+        infoAdicional += `• 🕛 Duração: ${duracao}\n`;
+        infoAdicional += `🚛 **Nome no Trucky:**\n`;
+        infoAdicional += `• ${ticket.fotoNome || 'Não informado'}\n`;
+        infoAdicional += `💼 **Recrutado:**\n`;
+        infoAdicional += `• ${ticket.type === 'recrutamento' ? (recrutado ? '✅ Sim' : '❌ Não') : 'N/A'}\n`;
+        infoAdicional += `📨 **Avaliação Enviada:**\n`;
+        infoAdicional += `• ${evaluationSent ? '✅ Sim' : '❌ Não'}`;
+
+        const embedInfo = new EmbedBuilder()
+          .setTitle('↕ Informações Adicionais')
+          .setDescription(infoAdicional)
+          .setColor(0x5865f2);
+
+        await logChannel.send({
+          embeds: [embedFechoLog, embedInfo],
+          components: [rowFecho],
+        });
+      }
+    } catch (e) {
+      console.error("[FecharTicket] Erro ao enviar log de fecho:", e.message);
     }
 
     // Apagar canal após 10 segundos
@@ -1381,30 +1464,48 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
 }
 
 // ============================================================
-// COMANDO TRANSCRIPT (slash) – usa o mesmo serviço gerarTranscript
+// COMANDO TRANSCRIPT (slash)
 // ============================================================
 
 async function handleTranscriptCommand(interaction, ticket, client) {
   try {
-    // Usa o serviço unificado para gerar o HTML
-    const result = await gerarTranscript(interaction.channel, `transcript-ticket-${ticket.id}-${Date.now()}`);
+    const additionalInfo = {
+      openedBy: ticket.username,
+      openedAt: ticket.openedAt ? new Date(ticket.openedAt).toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" }) : undefined,
+      ticketLabel: ticket.label,
+      claimedBy: ticket.claimedByName || undefined,
+      closedBy: ticket.closedByName || undefined,
+      closedAt: ticket.closedAt ? new Date(ticket.closedAt).toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" }) : undefined,
+      evaluation: ticket.rating ? "⭐".repeat(ticket.rating) + "☆".repeat(5 - ticket.rating) : undefined,
+      evaluationComment: ticket.ratingComment || undefined,
+      evaluationSent: ticket.evaluationSent,
+      recrutado: ticket.recrutado,
+      fotoNome: ticket.fotoNome || undefined,
+    };
+
+    const result = await gerarTranscript(interaction.channel, ticket.id, additionalInfo);
     if (result) {
       await interaction.editReply({
-        content: `📋 Transcript do Ticket #${ticket.id}`,
-        files: [result.attachment],
+        content: `📋 Transcript do Ticket #${ticket.id} — ${result.messageCount} mensagens`,
+        files: [result.attachment, result.txtAttachment],
       });
+
+      const transcriptData = {
+        id: result.ticketId,
+        canalId: interaction.channel.id,
+        canalNome: interaction.channel.name,
+        guildId: interaction.guild.id,
+        guildNome: interaction.guild.name,
+        geradoPor: interaction.user.id,
+        geradoPorTag: interaction.user.tag,
+        data: new Date().toISOString(),
+        totalMensagens: result.messageCount,
+        txtConteudo: result.txt,
+        htmlFileName: result.fileName,
+      };
+      await salvarTranscriptSupabase(transcriptData).catch(e => console.error("[Supabase] Erro:", e));
     } else {
-      // Fallback: gerar manualmente (caso o serviço falhe)
-      const messages = await interaction.channel.messages.fetch({ limit: 200 });
-      const sorted = Array.from(messages.values()).sort((a, b) => a.createdTimestamp - b.createdTimestamp);
-      const html = generateFallbackTranscriptHTML(sorted, ticket, interaction.guild);
-      const attachment = new AttachmentBuilder(Buffer.from(html, "utf-8"), {
-        name: `transcript-ticket-${ticket.id}.html`,
-      });
-      await interaction.editReply({
-        content: `📋 Transcript do Ticket #${ticket.id}`,
-        files: [attachment],
-      });
+      await safeEdit(interaction, { content: "❌ Erro ao gerar o transcript." });
     }
 
     await sendLog(ticket.id, "transcript", client).catch(() => {});
