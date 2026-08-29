@@ -1,5 +1,6 @@
+// src/utils/transcript.js
 import { AttachmentBuilder } from "discord.js";
-import discordTranscripts from "discord.js-html-transcript";
+import discordTranscripts from "discord-html-transcripts"; // ← nome corrigido
 
 const DEFAULT_OPTIONS = {
   locale: "pt-PT",
