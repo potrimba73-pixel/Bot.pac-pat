@@ -1,25 +1,25 @@
 // src/utils/translationSessions.js
-const Session = require('../database/sessionModel');
+import { db, saveDB } from './db.js';
 
-module.exports = {
-  async startSession(channelId, staffId, userId, userLang = 'en') {
-    await Session.findOneAndUpdate(
-      { channelId },
-      { staffId, userId, userLang },
-      { upsert: true, new: true }
-    );
-  },
+// Inicializar a coleção de sessões se não existir
+if (!db.translationSessions) {
+  db.translationSessions = {};
+}
 
-  async getSession(channelId) {
-    return await Session.findOne({ channelId });
-  },
+export async function startSession(channelId, staffId, userId, userLang = 'en') {
+  db.translationSessions[channelId] = { staffId, userId, userLang };
+  await saveDB();
+}
 
-  async endSession(channelId) {
-    await Session.deleteOne({ channelId });
-  },
+export async function getSession(channelId) {
+  return db.translationSessions[channelId] || null;
+}
 
-  async isActive(channelId) {
-    const session = await Session.findOne({ channelId });
-    return !!session;
-  }
-};
+export async function endSession(channelId) {
+  delete db.translationSessions[channelId];
+  await saveDB();
+}
+
+export async function isActive(channelId) {
+  return !!db.translationSessions[channelId];
+}
