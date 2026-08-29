@@ -14,9 +14,9 @@ import {
 } from "discord.js";
 
 import {
-  handleHelpCommand as handleAjudaCommand,
-  handleHelpInteraction as handleAjudaFeedback,
-  handleHelpInteraction as handleAjudaProcurar,
+  handleAjudaCommand,
+  handleAjudaFeedback,
+  handleAjudaProcurar,
   assistantMemory,
 } from "../services/ajuda.js";
 
@@ -403,7 +403,8 @@ export async function handleInteractionCreate(interaction, client) {
 
 async function handleSlashCommand(interaction, client) {
   const command = interaction.commandName;
-  const noDeferCommands = [];
+  // 👇 ADICIONA 'ajuda' À LISTA PARA EVITAR DEFER
+  const noDeferCommands = ['ajuda'];
   
   let deferred = false;
   if (!noDeferCommands.includes(command)) {
@@ -1124,15 +1125,37 @@ async function handleAvaliacaoModal(interaction, client) {
   }
 
   const stars = "⭐".repeat(estrelas) + "☆".repeat(5 - estrelas);
+  // Resposta completa após avaliação (sem chamada para avaliar novamente)
+  const now = new Date();
+  const dataHoraFinal = now.toLocaleString('pt-PT', {
+    timeZone: 'Europe/Lisbon',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  const staffName = ticket.closedByName || interaction.user.username;
+
+  const mensagemFinal =
+    `✅ **Obrigado pela tua avaliação!**\n\n` +
+    `Avaliação: ${stars} (${estrelas}/5)\n\n` +
+    `🎫 **Ticket Fechado**\n` +
+    `ℹ️ O seu ticket foi fechado com sucesso!\n\n` +
+    `🎫 **Ticket:** #${ticket.id}\n` +
+    `📝 **Tipo:** ${ticket.label}\n\n` +
+    `⚒️ **Fechado por:** ${staffName}\n` +
+    `🕚 **Fechado em:** ${dataHoraFinal}\n\n` +
+    `🎫 Caso seja necessário, não hesite em abrir um novo ticket!`;
+
   try {
-    // ⚠️ ALTERAÇÃO: removido o comentário da resposta ao utilizador
     await interaction.update({
-      content: `✅ **Obrigado pela tua avaliação!**\n\nAvaliação: ${stars} (${estrelas}/5)`,
+      content: mensagemFinal,
       components: [],
     });
   } catch {
     await safeReply(interaction, {
-      content: `✅ Avaliação registada: ${stars} (${estrelas}/5)`,
+      content: mensagemFinal,
       ephemeral: true,
     });
   }
@@ -1355,7 +1378,7 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
         const embedDM = new EmbedBuilder()
           .setTitle('🎫 Ticket Fechado')
           .setDescription(
-            `ℹ️ O seu ticket foi fechado com sucesso! Avalie o nosso atendimento clicando nas estrelas abaixo.\n\n` +
+            `ℹ️ O seu ticket foi fechado com sucesso!\n\n` +
             `🎫 **Ticket:** #${ticket.id}\n📝 **Tipo:** ${ticket.label}\n\n` +
             `⚒️ **Fechado por:** ${staffDisplayName}\n🕚 **Fechado em:** ${dataHora}\n\n` +
             `🎫 Caso seja necessário, não hesite em abrir um novo ticket!`
@@ -1390,7 +1413,7 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
       }
     }
 
-    // --- LOG DE FECHO MELHORADO E UNIFICADO (SEM BOTÃO, POIS O CANAL JÁ FOI APAGADO) ---
+    // --- LOG DE FECHO MELHORADO E UNIFICADO (SEM BOTÃO) ---
     try {
       const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
       if (logChannel && ticket) {
@@ -1403,7 +1426,7 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
           year: 'numeric',
           hour: '2-digit',
           minute: '2-digit',
-          second: '2-digit',
+          // second: '2-digit',  // REMOVIDO
         });
 
         const dataAbertura = ticket.openedAt
@@ -1415,7 +1438,7 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
               year: 'numeric',
               hour: '2-digit',
               minute: '2-digit',
-              second: '2-digit',
+              // second: '2-digit',  // REMOVIDO
             })
           : '—';
 
@@ -1445,7 +1468,7 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
           .setColor(0x2629F1)
           .setTimestamp();
 
-        // ⚠️ SEM BOTÃO "IR PARA O TICKET" – O CANAL JÁ FOI ELIMINADO!
+        // SEM BOTÃO "IR PARA O TICKET" – O CANAL JÁ FOI ELIMINADO!
         await logChannel.send({
           embeds: [embedUnificado],
         });
