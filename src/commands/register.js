@@ -1,8 +1,12 @@
+// src/commands/register.js
 import {
   REST, Routes, SlashCommandBuilder, PermissionFlagsBits,
 } from "discord.js";
 import { CONFIG } from "../config/index.js";
 import { truckyImageSlashCommands } from "./truckyImageCommands.js";
+
+// ✅ IMPORTAR O COMANDO TRADUZIR
+import { data as traduzirData } from "./traduzir.js";
 
 export async function registerCommands() {
   const commands = [
@@ -58,35 +62,39 @@ export async function registerCommands() {
       .setDescription("Pedir assumo de um ticket que esta com outro staff")
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
       .toJSON(),
-  new SlashCommandBuilder()
-    .setName("transcript")
-    .setDescription("Gera um transcript completo do canal atual (HTML + TXT) - Apenas Staff")
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
-    .toJSON(),
+    new SlashCommandBuilder()
+      .setName("transcript")
+      .setDescription("Gera um transcript completo do canal atual (HTML + TXT) - Apenas Staff")
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+      .toJSON(),
+    new SlashCommandBuilder()
+      .setName("apgrmsgbot")
+      .setDescription("Gera transcript e apaga mensagens de um membro/bot")
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+      .addUserOption(option =>
+        option.setName("membro")
+          .setDescription("Membro ou bot a apagar (opcional, padrão é o bot Jockie)")
+          .setRequired(false))
+      .addIntegerOption(option =>
+        option.setName("quantidade")
+          .setDescription("Número máximo de mensagens (1-100)")
+          .setMinValue(1)
+          .setMaxValue(100)
+          .setRequired(false))
+      .addStringOption(option =>
+        option.setName("motivo")
+          .setDescription("Motivo da limpeza")
+          .setRequired(false))
+      .toJSON(),
 
-new SlashCommandBuilder()
-  .setName("apgrmsgbot")
-  .setDescription("Gera transcript e apaga mensagens de um membro/bot")
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
-  .addUserOption(option =>
-    option.setName("membro")
-      .setDescription("Membro ou bot a apagar (opcional, padrão é o bot Jockie)")
-      .setRequired(false))
-  .addIntegerOption(option =>
-    option.setName("quantidade")
-      .setDescription("Número máximo de mensagens (1-100)")
-      .setMinValue(1)
-      .setMaxValue(100)
-      .setRequired(false))
-  .addStringOption(option =>
-    option.setName("motivo")
-      .setDescription("Motivo da limpeza")
-      .setRequired(false))
-  .toJSON(),
-    
-  // === COMANDOS TRUCKY IMAGE ===
-  ...truckyImageSlashCommands,
-];
+    // ============================================================
+    // ➕ ADICIONAR O COMANDO /traduzir
+    // ============================================================
+    traduzirData.toJSON(),
+
+    // === COMANDOS TRUCKY IMAGE ===
+    ...truckyImageSlashCommands,
+  ];
 
   const rest = new REST({ version: "10" }).setToken(CONFIG.TOKEN);
 
@@ -100,7 +108,7 @@ new SlashCommandBuilder()
     );
     console.log("[Register] Comandos registados no servidor principal!");
 
-    // Servidor de recrutamento (so se GUILD_ID_RECRUTAMENTO estiver definido e diferente do principal)
+    // Servidor de recrutamento (se configurado e diferente do principal)
     if (CONFIG.GUILD_ID_RECRUTAMENTO && CONFIG.GUILD_ID_RECRUTAMENTO !== "undefined" && CONFIG.GUILD_ID_RECRUTAMENTO !== "" && CONFIG.GUILD_ID_RECRUTAMENTO !== CONFIG.GUILD_ID) {
       try {
         await rest.put(
@@ -118,5 +126,6 @@ new SlashCommandBuilder()
     console.error("[Register] Erro ao registar comandos:", error);
   }
 }
-// ✅ CORREÇÃO: EXECUTAR O REGISTO
-registerCommands().catch(console.error);
+
+// ❌ REMOVER A EXECUÇÃO AUTOMÁTICA PARA EVITAR DUPLICAÇÃO
+// registerCommands().catch(console.error);  // ← COMENTADO OU ELIMINADO
