@@ -131,7 +131,7 @@ function getTicketForInteraction(ticketId, channelId) {
   console.log(`[getTicket] ticketId=${ticketId}, channelId=${channelId}`);
   if (ticketId) {
     const ticket = db.tickets?.[String(ticketId)];
-    if (ticket && !ticket.closed) return ticket;
+    if (ticket && !ticket.closed && ticket.status !== 'closed') return ticket;
   }
   if (channelId) {
     const found = findTicketByChannelId(channelId);
@@ -348,10 +348,20 @@ async function responderPainelMembro(interaction, deferred = false) {
 
   const row = new ActionRowBuilder().addComponents(selectMenu);
 
+  // ===== NOVO BOTÃO "ADICIONAR MEMBRO" =====
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`add_membro_${ticket.id}`)
+      .setLabel('➕ Adicionar Membro')
+      .setStyle(ButtonStyle.Primary)
+  );
+
+  const rows = [row, row2];
+
   if (deferred) {
-    return await interaction.editReply({ embeds: [embed], components: [row] });
+    return await interaction.editReply({ embeds: [embed], components: rows });
   } else {
-    return await interaction.reply({ embeds: [embed], components: [row], flags: 64 });
+    return await interaction.reply({ embeds: [embed], components: rows, flags: 64 });
   }
 }
 
@@ -369,6 +379,92 @@ async function enviarPainelStaff(interaction, client) {
     console.error("[PainelStaff] Erro:", error);
     return safeEdit(interaction, { content: "❌ Não foi possível abrir o painel de staff." });
   }
+}
+
+// ============================================================
+// HANDLERS DE ADICIONAR MEMBRO
+// ============================================================
+
+async function handleAddMembro(interaction, client) {
+  const ticketId = interaction.customId.split('_')[2];
+  const ticket = getTicketForInteraction(ticketId, interaction.channelId);
+  if (!ticket || ticket.closed) {
+    return safeReply(interaction, '⚠️ Ticket não encontrado ou já fechado.');
+  }
+
+  const isStaff = interaction.member.permissions.has(PermissionFlagsBits.ManageMessages) ||
+                  interaction.member.roles.cache.has(CONFIG.CARGO_STAFF);
+  if (!isStaff && interaction.user.id !== ticket.userId) {
+    return safeReply(interaction, '❌ Apenas o dono do ticket ou staff pode adicionar membros.');
+  }
+
+  const modal = new ModalBuilder()
+    .setCustomId(`modal_add_membro_${ticket.id}`)
+    .setTitle('Adicionar Membro ao Ticket');
+
+  const input = new TextInputBuilder()
+    .setCustomId('membro_id')
+    .setLabel('ID ou menção do utilizador')
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder('Ex: @utilizador ou 123456789')
+    .setRequired(true);
+
+  const row = new ActionRowBuilder().addComponents(input);
+  modal.addComponents(row);
+
+  try {
+    await interaction.showModal(modal);
+  } catch (error) {
+    console.error('[AddMembro] Erro ao mostrar modal:', error);
+    await safeReply(interaction, '❌ Não foi possível abrir o formulário.');
+  }
+}
+
+async function handleModalAddMembro(interaction, client) {
+  await interaction.deferReply({ ephemeral: true });
+
+  const ticketId = interaction.customId.split('_')[3];
+  const ticket = getTicketForInteraction(ticketId, interaction.channelId);
+  if (!ticket || ticket.closed) {
+    return interaction.editReply('⚠️ Ticket não encontrado ou já fechado.');
+  }
+
+  const userIdInput = interaction.fields.getTextInputValue('membro_id');
+  let userId = userIdInput.replace(/[<@!>]/g, '');
+  if (!/^\d+$/.test(userId)) {
+    return interaction.editReply('❌ Formato inválido. Use o ID ou menção do utilizador.');
+  }
+
+  const member = await interaction.guild.members.fetch(userId).catch(() => null);
+  if (!member) {
+    return interaction.editReply('❌ Utilizador não encontrado no servidor.');
+  }
+
+  const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
+  if (!channel) {
+    return interaction.editReply('❌ Canal do ticket não encontrado.');
+  }
+
+  const perms = channel.permissionsFor(member);
+  if (perms && perms.has('ViewChannel')) {
+    return interaction.editReply(`ℹ️ ${member} já tem acesso ao ticket.`);
+  }
+
+  await channel.permissionOverwrites.edit(member, {
+    ViewChannel: true,
+    SendMessages: true,
+    ReadMessageHistory: true,
+    AttachFiles: true,
+  });
+
+  await channel.send(`👤 ${member} foi adicionado ao ticket por ${interaction.user}.`);
+
+  const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
+  if (logChannel) {
+    await logChannel.send(`📥 [${channel.name}] ${interaction.user} adicionou ${member} ao ticket.`);
+  }
+
+  await interaction.editReply(`✅ ${member} adicionado ao ticket com sucesso.`);
 }
 
 // ============================================================
@@ -403,7 +499,6 @@ export async function handleInteractionCreate(interaction, client) {
 
 async function handleSlashCommand(interaction, client) {
   const command = interaction.commandName;
-  // 👇 ADICIONA 'ajuda' À LISTA PARA NÃO FAZER DEFER
   const noDeferCommands = ['ajuda'];
 
   let deferred = false;
@@ -528,6 +623,10 @@ async function handleModalSubmit(interaction, client) {
 
   if (customId.startsWith("modal_trucky_")) {
     return handleTruckyVerification(interaction, client);
+  }
+
+  if (customId.startsWith("modal_add_membro_")) {
+    return handleModalAddMembro(interaction, client);
   }
 
   if (customId.startsWith("modal_ajuda_") && interaction.fields.fields.has("ajuda_especificacoes")) {
@@ -687,6 +786,18 @@ async function handleButton(interaction, client) {
     return handleFecharTicket(interaction, client);
   }
 
+  if (customId.startsWith("add_membro_")) {
+    return handleAddMembro(interaction, client);
+  }
+
+  if (customId.startsWith("confirmar_fecho_")) {
+    return handleConfirmarFecho(interaction, client);
+  }
+
+  if (customId.startsWith("cancelar_fecho_")) {
+    return handleCancelarFecho(interaction, client);
+  }
+
   if (customId.startsWith("recrutado_sim_")) {
     return handleRecrutadoSim(interaction, client);
   }
@@ -802,7 +913,7 @@ async function handleAceitarRegras(interaction) {
 }
 
 // ============================================================
-// ASSUMIR TICKET (com log no canal de logs)
+// ASSUMIR TICKET (com log modificado)
 // ============================================================
 
 async function handleAssumirTicket(interaction, client) {
@@ -846,7 +957,7 @@ async function handleAssumirTicket(interaction, client) {
       `🎉 **Ticket assumido com sucesso!**\n\n👮 <@${interaction.user.id}> assumiu este ticket.\nSe precisares de chamar outro membro da staff, usa o **Painel Membro**.`
     );
 
-    // ===== LOG NO CANAL DE LOGS =====
+    // ===== LOG MODIFICADO =====
     try {
       const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
       if (logChannel) {
@@ -864,9 +975,9 @@ async function handleAssumirTicket(interaction, client) {
         const ticketLink = `https://discord.com/channels/${ticket.guildId}/${ticket.channelId}`;
 
         const embedLog = new EmbedBuilder()
-          .setTitle(`⚒️ Staff que Assumiu — #${ticket.id}`)
+          .setTitle(`⚒️ Ticket Assumido — #${ticket.id}`)
           .setDescription(
-            `👮 **Staff que Assumiu:**\n<@${interaction.user.id}> | \`${interaction.user.username}\`\n\n` +
+            `👮 **Staff que Assumiu:**\n<@${interaction.user.id}>\n\n` +
             `🎫 **Ticket:** #${ticket.id}\n` +
             `📝 **Tipo:** ${ticket.label}\n` +
             `👤 **Utilizador:** <@${ticket.userId}> | \`${ticket.username}\`\n\n` +
@@ -900,6 +1011,10 @@ async function handleAssumirTicket(interaction, client) {
   }
 }
 
+// ============================================================
+// SAIR TICKET (com avisos)
+// ============================================================
+
 async function handleSairTicket(interaction, client) {
   const ticketId = interaction.customId.substring("sair_".length);
   if (!(await safeDefer(interaction))) return;
@@ -919,15 +1034,29 @@ async function handleSairTicket(interaction, client) {
 
   try {
     await channel.permissionOverwrites.delete(interaction.user.id);
+
+    // ===== AVISOS =====
+    await channel.send(`🚪 ${interaction.user} saiu do ticket.`);
+
+    const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
+    if (logChannel) {
+      await logChannel.send(`🚪 [${channel.name}] ${interaction.user} saiu do ticket.`);
+    }
+
     return safeEdit(interaction, { content: "✅ Saíste do ticket com sucesso." });
   } catch {
     return safeEdit(interaction, { content: "❌ Não consegui remover o teu acesso ao ticket." });
   }
 }
 
+// ============================================================
+// FECHAR TICKET (com confirmação)
+// ============================================================
+
 async function handleFecharTicket(interaction, client) {
   const ticketId = interaction.customId.substring("deletar_".length);
   if (!(await safeDefer(interaction))) return;
+
   if (!isStaff(interaction.member)) {
     return safeEdit(interaction, { content: "❌ Apenas staff pode fechar tickets." });
   }
@@ -937,6 +1066,11 @@ async function handleFecharTicket(interaction, client) {
     return safeEdit(interaction, { content: "⚠️ Ticket não encontrado ou já fechado." });
   }
 
+  if (ticket.status === 'pending_close') {
+    return safeEdit(interaction, { content: "⏳ Este ticket já está aguardando confirmação de fecho." });
+  }
+
+  // Fluxo de recrutamento (mantido)
   if (ticket.type === "recrutamento") {
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -955,8 +1089,146 @@ async function handleFecharTicket(interaction, client) {
     return safeEdit(interaction, { content: "❓ **O candidato foi recrutado?**", components: [row] });
   }
 
+  // --- FLUXO NORMAL COM CONFIRMAÇÃO ---
+  await withTicketLock(ticket.id, async () => {
+    const current = db.tickets[String(ticket.id)];
+    if (!current || current.closed) throw new Error("TICKET_NOT_FOUND");
+    current.status = 'pending_close';
+    current.pendingCloseRequestedBy = interaction.user.id;
+    current.pendingCloseRequestedAt = new Date().toISOString();
+    await persistDB();
+  });
+
+  const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
+  if (!logChannel) {
+    await withTicketLock(ticket.id, async () => {
+      const current = db.tickets[String(ticket.id)];
+      if (current) current.status = 'open';
+      await persistDB();
+    });
+    return safeEdit(interaction, { content: "❌ Canal de logs não configurado. Contacte a administração." });
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle("📌 Pedido de Fecho de Ticket")
+    .setDescription(
+      `👤 **Solicitado por:** ${interaction.user} | \`${interaction.user.username}\`\n` +
+      `🎫 **Ticket:** #${ticket.id}\n` +
+      `📝 **Tipo:** ${ticket.label}\n` +
+      `👤 **Utilizador:** <@${ticket.userId}> | \`${ticket.username}\`\n` +
+      `🕐 **Aberto em:** ${new Date(ticket.openedAt).toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })}\n\n` +
+      `Confirme o fecho para finalizar o ticket.`
+    )
+    .setColor(0xFEE75C)
+    .setTimestamp();
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`confirmar_fecho_${ticket.id}`)
+      .setLabel('✅ Confirmar Fecho')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`cancelar_fecho_${ticket.id}`)
+      .setLabel('❌ Cancelar')
+      .setStyle(ButtonStyle.Danger)
+  );
+
+  const staffMsg = await logChannel.send({
+    content: `<@&${CONFIG.CARGO_STAFF}>`,
+    embeds: [embed],
+    components: [row]
+  });
+
+  await withTicketLock(ticket.id, async () => {
+    const current = db.tickets[String(ticket.id)];
+    if (current) {
+      current.pendingCloseMessageId = staffMsg.id;
+      await persistDB();
+    }
+  });
+
+  await safeEdit(interaction, { content: "✅ Pedido de fecho enviado para a staff. Aguarde aprovação." });
+}
+
+// ============================================================
+// CONFIRMAR / CANCELAR FECHO
+// ============================================================
+
+async function handleConfirmarFecho(interaction, client) {
+  if (!(await safeDefer(interaction))) return;
+  if (!isStaff(interaction.member)) {
+    return safeEdit(interaction, { content: "❌ Apenas staff pode confirmar o fecho." });
+  }
+
+  const ticketId = interaction.customId.split('_')[2];
+  const ticket = getTicketForInteraction(ticketId, interaction.channelId);
+  if (!ticket || ticket.closed) {
+    return safeEdit(interaction, { content: "⚠️ Ticket não encontrado ou já fechado." });
+  }
+  if (ticket.status !== 'pending_close') {
+    return safeEdit(interaction, { content: "ℹ️ Este ticket não está aguardando fecho." });
+  }
+
+  try {
+    const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS);
+    if (logChannel) {
+      const msg = await logChannel.messages.fetch(ticket.pendingCloseMessageId).catch(() => null);
+      if (msg) {
+        await msg.edit({ components: [] });
+      }
+    }
+  } catch (e) { /* ignorar */ }
+
   return fecharTicket(interaction, ticketId, client, false);
 }
+
+async function handleCancelarFecho(interaction, client) {
+  if (!(await safeDefer(interaction))) return;
+  if (!isStaff(interaction.member)) {
+    return safeEdit(interaction, { content: "❌ Apenas staff pode cancelar o fecho." });
+  }
+
+  const ticketId = interaction.customId.split('_')[2];
+  const ticket = getTicketForInteraction(ticketId, interaction.channelId);
+  if (!ticket || ticket.closed) {
+    return safeEdit(interaction, { content: "⚠️ Ticket não encontrado ou já fechado." });
+  }
+  if (ticket.status !== 'pending_close') {
+    return safeEdit(interaction, { content: "ℹ️ Este ticket não está aguardando fecho." });
+  }
+
+  await withTicketLock(ticket.id, async () => {
+    const current = db.tickets[String(ticket.id)];
+    if (current) {
+      current.status = 'open';
+      delete current.pendingCloseRequestedBy;
+      delete current.pendingCloseRequestedAt;
+      delete current.pendingCloseMessageId;
+      await persistDB();
+    }
+  });
+
+  try {
+    const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS);
+    if (logChannel) {
+      const msg = await logChannel.messages.fetch(ticket.pendingCloseMessageId).catch(() => null);
+      if (msg) {
+        await msg.edit({ components: [] });
+      }
+    }
+  } catch (e) { /* ignorar */ }
+
+  const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
+  if (channel) {
+    await channel.send('🔓 O pedido de fecho foi cancelado. O ticket continua aberto.');
+  }
+
+  await safeEdit(interaction, { content: "❌ Fecho cancelado." });
+}
+
+// ============================================================
+// RECRUTADO SIM
+// ============================================================
 
 async function handleRecrutadoSim(interaction, client) {
   const ticketId = interaction.customId.substring("recrutado_sim_".length);
@@ -989,6 +1261,10 @@ async function handleRecrutadoSim(interaction, client) {
     return safeReply(interaction, "❌ Não foi possível abrir o modal.");
   }
 }
+
+// ============================================================
+// AVALIAÇÃO
+// ============================================================
 
 async function handleAvaliacaoButton(interaction) {
   const parts = interaction.customId.split("_");
@@ -1027,44 +1303,6 @@ async function handleAvaliacaoButton(interaction) {
     return safeReply(interaction, "❌ Não foi possível abrir o formulário de avaliação.");
   }
 }
-
-async function handleSmartSearch(interaction) {
-  const parts = interaction.customId.split("_");
-  const messageId = parts[2];
-  const pending = assistantMemory.pendingSearches?.get(messageId);
-  if (!pending) {
-    return safeReply(interaction, "❓ Não encontrei a pergunta associada. Tenta novamente.");
-  }
-
-  const question = pending.question;
-  await safeDefer(interaction);
-
-  try {
-    let answer = await callPollinationsAI(question) || await callGeminiAI(question);
-    if (answer) {
-      const embed = new EmbedBuilder()
-        .setTitle("🤖 Resultado da pesquisa")
-        .setDescription(answer)
-        .setColor(0x3498db)
-        .setFooter({ text: "Fonte: IA externa" })
-        .setTimestamp();
-      await interaction.editReply({ embeds: [embed] });
-    } else {
-      await interaction.editReply({
-        content: `🔍 Não consegui encontrar uma resposta para: "${question}"\n\nTenta reformular ou abre um ticket.`
-      });
-    }
-  } catch (err) {
-    console.error("[SmartSearch] Erro:", err);
-    await interaction.editReply({ content: "❌ Erro ao pesquisar. Tenta mais tarde." });
-  }
-
-  assistantMemory.pendingSearches?.delete(messageId);
-}
-
-// ============================================================
-// AVALIAÇÃO MODAL (handler) - SEM COMENTÁRIO NA RESPOSTA AO UTILIZADOR
-// ============================================================
 
 async function handleAvaliacaoModal(interaction, client) {
   const parts = interaction.customId.split("_");
@@ -1247,7 +1485,7 @@ async function handleFotoTruckyModal(interaction, client) {
 }
 
 // ============================================================
-// FECHAR TICKET (COM TRANSCRIPT, AVALIAÇÃO E LOG MELHORADO E UNIFICADO)
+// FECHAR TICKET (função principal)
 // ============================================================
 
 async function fecharTicket(interaction, ticketId, client, recrutado = false) {
@@ -1263,14 +1501,15 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
 
   try {
     ticket = getTicketForInteraction(ticketId, interaction.channelId);
-    if (!ticket || ticket.closed) {
+    if (!ticket || ticket.closed || ticket.status === 'closed') {
       return safeReply(interaction, "⚠️ Ticket não encontrado ou já fechado.");
     }
 
     await withTicketLock(ticket.id, async () => {
       const current = db.tickets[String(ticket.id)];
-      if (!current || current.closed) throw new Error("ALREADY_CLOSED");
+      if (!current || current.closed || current.status === 'closed') throw new Error("ALREADY_CLOSED");
       current.closed = true;
+      current.status = 'closed';
       current.recrutado = recrutado;
       current.closedBy = interaction.user.id;
       current.closedByName = interaction.user.username;
@@ -1357,7 +1596,7 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
       console.error("[Transcript Auto] Erro geral:", error.message);
     }
 
-    // --- DM DE AVALIAÇÃO (com verificação REAL) ---
+    // --- DM DE AVALIAÇÃO ---
     try {
       const user = await client.users.fetch(ticket.userId);
       if (user) {
@@ -1412,7 +1651,7 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
       }
     }
 
-    // --- LOG DE FECHO MELHORADO E UNIFICADO (SEM BOTÃO) ---
+    // --- LOG DE FECHO MELHORADO ---
     try {
       const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
       if (logChannel && ticket) {
@@ -1439,7 +1678,6 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
             })
           : '—';
 
-        // Montar a descrição unificada
         let descUnificada = '';
         descUnificada += `👤 **Aberto por:** <@${ticket.userId}> | \`${ticket.username}\`\n`;
         descUnificada += `🚛 **Trucky:** ${ticket.fotoNome || 'Não informado'}\n`;
@@ -1465,10 +1703,7 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
           .setColor(0x2629F1)
           .setTimestamp();
 
-        // ⚠️ SEM BOTÃO – O CANAL JÁ FOI ELIMINADO
-        await logChannel.send({
-          embeds: [embedUnificado],
-        });
+        await logChannel.send({ embeds: [embedUnificado] });
       }
     } catch (e) {
       console.error("[FecharTicket] Erro ao enviar log de fecho:", e.message);
@@ -1491,7 +1726,45 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
 }
 
 // ============================================================
-// COMANDO TRANSCRIPT (slash)
+// SMART SEARCH
+// ============================================================
+
+async function handleSmartSearch(interaction) {
+  const parts = interaction.customId.split("_");
+  const messageId = parts[2];
+  const pending = assistantMemory.pendingSearches?.get(messageId);
+  if (!pending) {
+    return safeReply(interaction, "❓ Não encontrei a pergunta associada. Tenta novamente.");
+  }
+
+  const question = pending.question;
+  await safeDefer(interaction);
+
+  try {
+    let answer = await callPollinationsAI(question) || await callGeminiAI(question);
+    if (answer) {
+      const embed = new EmbedBuilder()
+        .setTitle("🤖 Resultado da pesquisa")
+        .setDescription(answer)
+        .setColor(0x3498db)
+        .setFooter({ text: "Fonte: IA externa" })
+        .setTimestamp();
+      await interaction.editReply({ embeds: [embed] });
+    } else {
+      await interaction.editReply({
+        content: `🔍 Não consegui encontrar uma resposta para: "${question}"\n\nTenta reformular ou abre um ticket.`
+      });
+    }
+  } catch (err) {
+    console.error("[SmartSearch] Erro:", err);
+    await interaction.editReply({ content: "❌ Erro ao pesquisar. Tenta mais tarde." });
+  }
+
+  assistantMemory.pendingSearches?.delete(messageId);
+}
+
+// ============================================================
+// TRANSCRIPT COMMAND
 // ============================================================
 
 async function handleTranscriptCommand(interaction, ticket, client) {
@@ -1540,60 +1813,4 @@ async function handleTranscriptCommand(interaction, ticket, client) {
     console.error("[Transcript] Erro:", error);
     await safeEdit(interaction, { content: "❌ Erro ao gerar o transcript." });
   }
-}
-
-// ============================================================
-// FALLBACK: gerar HTML manual (apenas para emergência)
-// ============================================================
-
-function escapeHTML(value) {
-  return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
-
-function generateFallbackTranscriptHTML(messages, ticket, guild) {
-  const content = messages.map((message) => {
-    const avatar = message.author.displayAvatarURL({ extension: "png", size: 64 });
-    const date = message.createdAt.toLocaleString("pt-PT");
-    const text = message.content ? escapeHTML(message.content).replace(/\n/g, "<br>") : "<em>[sem texto]</em>";
-    const attachments = Array.from(message.attachments.values())
-      .map((a) => `<a href="${escapeHTML(a.url)}" target="_blank">${escapeHTML(a.name)}</a>`)
-      .join("<br>");
-
-    return `
-<div class="message">
-  <img class="avatar" src="${escapeHTML(avatar)}">
-  <div class="content">
-    <div><strong>${escapeHTML(message.author.tag)}</strong> <span class="time">${escapeHTML(date)}</span></div>
-    <div class="body">${text}</div>
-    ${attachments ? `<div class="attachments">${attachments}</div>` : ""}
-  </div>
-</div>`;
-  }).join("\n");
-
-  return `<!DOCTYPE html>
-<html lang="pt">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Transcript - Ticket #${escapeHTML(ticket.id)}</title>
-<style>
-body { background: #36393f; color: #dcddde; font-family: Arial, sans-serif; margin: 0; padding: 20px; }
-.header { background: #202225; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-.header h1 { color: white; margin: 0 0 10px; }
-.header p { color: #aaa; }
-.message { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid #40444b; }
-.avatar { width: 40px; height: 40px; border-radius: 50%; }
-.content { flex: 1; }
-.time { color: #72767d; font-size: 12px; margin-left: 8px; }
-.body { margin-top: 5px; line-height: 1.5; word-break: break-word; }
-.attachments { margin-top: 8px; }
-.attachments a { color: #00aff4; }
-</style>
-</head>
-<body>
-<div class="header">
-  <h1>🎫 Ticket #${escapeHTML(ticket.id)}</h1>
-  <p>Servidor: ${escapeHTML(guild?.name || "Servidor")}<br>Tipo: ${escapeHTML(ticket.label)}<br>Utilizador: ${escapeHTML(ticket.username)}</p>
-</div>
-${content}
-</body>
-</html>`;
 }
