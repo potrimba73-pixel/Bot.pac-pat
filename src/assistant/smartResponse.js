@@ -8,16 +8,31 @@ import {
 import { ASSISTANT_CONFIG } from "../config/index.js";
 import { encontrarRespostaFAQ } from "../database/faq.js";
 import { encontrarTutorialPAC } from "../database/tutoriais.js";
+import { encontrarRespostaManual } from "../database/faq_manual.js"; // NOVO
 import { assistantMemory } from "../services/ajuda.js";
 import { MessageAnalyzer } from "./analyzer.js";
 import { callPollinationsAI, callGeminiAI } from "./ets2AI.js";
-// NOVOS IMPORTS
-import { encontrarRespostaManual } from "../database/faq_manual.js";
-import { getCachedAnswer, setCachedAnswer } from "../services/iaCache.js";
-import { getConversationHistory, addToConversation } from "../services/conversationMemory.js";
+import { getCachedAnswer, setCachedAnswer } from "../services/iaCache.js"; // NOVO
+import { getConversationHistory, addToConversation } from "../services/conversationMemory.js"; // NOVO
 
-// (mantém as funções auxiliares existentes, se houver)
-// Exemplo: safeCustomId, simpleHash, etc. (não mexi)
+function safeCustomId(prefix, messageId, extra = "") {
+  const base = `${prefix}_${messageId}`;
+  if (extra) {
+    const hash = simpleHash(extra).toString(36).substring(0, 8);
+    return `${base}_${hash}`.substring(0, 100);
+  }
+  return base.substring(0, 100);
+}
+
+function simpleHash(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash);
+}
 
 export async function handleSmartResponse(message, client) {
   if (message.author.bot) return;
@@ -48,7 +63,7 @@ export async function handleSmartResponse(message, client) {
   const question = message.content.replace(/<@!?\d+>/g, "").trim();
 
   // ----------------------------------------------------------
-  // 1. TENTAR TUTORIAIS (já existente)
+  // 1. TENTAR TUTORIAIS
   // ----------------------------------------------------------
   const tutorial = encontrarTutorialPAC(question);
   if (tutorial) {
@@ -140,7 +155,7 @@ export async function handleSmartResponse(message, client) {
   }
 
   // ----------------------------------------------------------
-  // 3. TENTAR FAQ (antigo, via database/faq.js)
+  // 3. TENTAR FAQ (base de dados antiga)
   // ----------------------------------------------------------
   const faqResposta = encontrarRespostaFAQ(question);
   if (faqResposta.found) {
@@ -186,7 +201,7 @@ export async function handleSmartResponse(message, client) {
   }
 
   // ----------------------------------------------------------
-  // 4. TENTAR HISTÓRICO DO ESPECIALISTA (com analyzer)
+  // 4. TENTAR HISTÓRICO DO ESPECIALISTA
   // ----------------------------------------------------------
   try {
     const analyzer = new MessageAnalyzer(client);
@@ -244,32 +259,28 @@ export async function handleSmartResponse(message, client) {
   // 5. CHAMAR IA EXTERNA (com cache e histórico)
   // ----------------------------------------------------------
   let answer = null;
-  let source = null;
+  let source = "Pollinations AI";
 
-  // 5a. Verificar cache primeiro
+  // 5.1 Verificar cache
   const cached = getCachedAnswer(question);
   if (cached) {
     answer = cached;
-    source = "💾 Cache local";
+    source = "💾 Cache";
   }
 
-  // 5b. Se não houver cache, chamar IA
+  // 5.2 Se não houver cache, chamar IAs
   if (!answer) {
-    const history = getConversationHistory(message.channel.id);
-    answer = await callPollinationsAI(question, history);
+    answer = await callPollinationsAI(question);
     source = "Pollinations AI";
-    if (!answer) {
-      answer = await callGeminiAI(question, history);
-      source = "Gemini AI";
-    }
-    if (answer) {
-      setCachedAnswer(question, answer, source);
-    }
+  }
+  if (!answer) {
+    answer = await callGeminiAI(question);
+    source = "Gemini AI";
   }
 
-  // 5c. Se obtivemos resposta, enviar
+  // 5.3 Se obteve resposta, guardar cache e histórico
   if (answer) {
-    // Guardar histórico
+    setCachedAnswer(question, answer, source);
     addToConversation(message.channel.id, question, answer);
 
     const embed = new EmbedBuilder()
