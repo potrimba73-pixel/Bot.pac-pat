@@ -1,4 +1,6 @@
 // src/database/faq_manual.js
+import { CONFIG } from "../config/index.js";
+
 export const FAQ_MANUAL = [
   {
     keywords: ["mods", "mod", "quais mods", "preciso de mods", "mods para jogar", "coleção", "steam"],
@@ -64,8 +66,6 @@ https://steamcommunity.com/sharedfiles/filedetails/?id=3665511189
 3️⃣ Preenche o formulário com a tua dúvida.
 
 ⏳ Aguarda que um membro da staff te atenda.`
-
-    // NOTA: Se os IDs dos canais não estiverem disponíveis no momento da importação, podes usar strings fixas ou substituir depois.
   },
   {
     keywords: ["recrutamento", "candidatar", "entrar na pat", "vtc", "trucky", "requisitos"],
@@ -167,7 +167,6 @@ Se precisares de ajuda específica, abre um ticket.`
   }
 ];
 
-// Função para pesquisar na FAQ manual
 export function encontrarRespostaManual(pergunta) {
   const p = pergunta.toLowerCase();
   let melhor = null;
