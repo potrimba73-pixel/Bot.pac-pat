@@ -8,6 +8,9 @@ import { truckyImageSlashCommands } from "./truckyImageCommands.js";
 // ✅ IMPORTAR O COMANDO TRADUZIR
 import { data as traduzirData } from "./traduzir.js";
 
+// ✅ IMPORTAR O COMANDO DUPLICAR
+import { data as duplicarData } from "./duplicar.js";
+
 export async function registerCommands() {
   const commands = [
     new SlashCommandBuilder()
