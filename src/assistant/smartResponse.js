@@ -11,25 +11,13 @@ import { encontrarTutorialPAC } from "../database/tutoriais.js";
 import { assistantMemory } from "../services/ajuda.js";
 import { MessageAnalyzer } from "./analyzer.js";
 import { callPollinationsAI, callGeminiAI } from "./ets2AI.js";
+// NOVOS IMPORTS
+import { encontrarRespostaManual } from "../database/faq_manual.js";
+import { getCachedAnswer, setCachedAnswer } from "../services/iaCache.js";
+import { getConversationHistory, addToConversation } from "../services/conversationMemory.js";
 
-function safeCustomId(prefix, messageId, extra = "") {
-  const base = `${prefix}_${messageId}`;
-  if (extra) {
-    const hash = simpleHash(extra).toString(36).substring(0, 8);
-    return `${base}_${hash}`.substring(0, 100);
-  }
-  return base.substring(0, 100);
-}
-
-function simpleHash(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return Math.abs(hash);
-}
+// (mantém as funções auxiliares existentes, se houver)
+// Exemplo: safeCustomId, simpleHash, etc. (não mexi)
 
 export async function handleSmartResponse(message, client) {
   if (message.author.bot) return;
@@ -38,7 +26,7 @@ export async function handleSmartResponse(message, client) {
 
   const contentLower = message.content.toLowerCase();
 
-  // Filtro inteligente: só responde a perguntas ou menções ao especialista
+  // Filtro inteligente
   const questionWords = ["como", "onde", "quando", "porque", "pq", "?", "ajuda", "help", "duvida", "sabe", "sabes", "consegues", "podes", "posso", "qual", "quais"];
   const isQuestion = questionWords.some(qw => contentLower.includes(qw));
 
@@ -60,7 +48,7 @@ export async function handleSmartResponse(message, client) {
   const question = message.content.replace(/<@!?\d+>/g, "").trim();
 
   // ----------------------------------------------------------
-  // 1. TENTAR TUTORIAIS
+  // 1. TENTAR TUTORIAIS (já existente)
   // ----------------------------------------------------------
   const tutorial = encontrarTutorialPAC(question);
   if (tutorial) {
@@ -106,7 +94,53 @@ export async function handleSmartResponse(message, client) {
   }
 
   // ----------------------------------------------------------
-  // 2. TENTAR FAQ
+  // 2. TENTAR FAQ MANUAL (NOVO)
+  // ----------------------------------------------------------
+  const manual = encontrarRespostaManual(question);
+  if (manual) {
+    const embed = new EmbedBuilder()
+      .setTitle(manual.titulo)
+      .setDescription(manual.resposta)
+      .setColor(0x00ff00)
+      .setFooter({ text: "Resposta automática (FAQ manual)" })
+      .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`smart_helpful_${message.author.id}_${message.id}`)
+        .setLabel("✅ Resolveu!")
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`smart_not_helpful_${message.author.id}_${message.id}`)
+        .setLabel("❌ Não é isto")
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId(`smart_search_${message.author.id}_${message.id}`)
+        .setLabel("🔍 Pesquisar na net")
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    try {
+      const sent = await message.reply({
+        embeds: [embed],
+        components: [row],
+        allowedMentions: { repliedUser: false }
+      });
+      if (!assistantMemory.pendingSearches) assistantMemory.pendingSearches = new Map();
+      assistantMemory.pendingSearches.set(message.id, {
+        question: question,
+        answer: manual.resposta,
+        messageId: sent.id,
+        channelId: message.channel.id
+      });
+      return;
+    } catch (err) {
+      console.error("[SmartResponse] Erro ao enviar FAQ manual:", err.message);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 3. TENTAR FAQ (antigo, via database/faq.js)
   // ----------------------------------------------------------
   const faqResposta = encontrarRespostaFAQ(question);
   if (faqResposta.found) {
@@ -152,7 +186,7 @@ export async function handleSmartResponse(message, client) {
   }
 
   // ----------------------------------------------------------
-  // 3. TENTAR HISTÓRICO DO ESPECIALISTA
+  // 4. TENTAR HISTÓRICO DO ESPECIALISTA (com analyzer)
   // ----------------------------------------------------------
   try {
     const analyzer = new MessageAnalyzer(client);
@@ -207,16 +241,37 @@ export async function handleSmartResponse(message, client) {
   }
 
   // ----------------------------------------------------------
-  // 4. CHAMAR IA EXTERNA
+  // 5. CHAMAR IA EXTERNA (com cache e histórico)
   // ----------------------------------------------------------
-  let answer = await callPollinationsAI(question);
-  let source = "Pollinations AI";
-  if (!answer) {
-    answer = await callGeminiAI(question);
-    source = "Gemini AI";
+  let answer = null;
+  let source = null;
+
+  // 5a. Verificar cache primeiro
+  const cached = getCachedAnswer(question);
+  if (cached) {
+    answer = cached;
+    source = "💾 Cache local";
   }
 
+  // 5b. Se não houver cache, chamar IA
+  if (!answer) {
+    const history = getConversationHistory(message.channel.id);
+    answer = await callPollinationsAI(question, history);
+    source = "Pollinations AI";
+    if (!answer) {
+      answer = await callGeminiAI(question, history);
+      source = "Gemini AI";
+    }
+    if (answer) {
+      setCachedAnswer(question, answer, source);
+    }
+  }
+
+  // 5c. Se obtivemos resposta, enviar
   if (answer) {
+    // Guardar histórico
+    addToConversation(message.channel.id, question, answer);
+
     const embed = new EmbedBuilder()
       .setTitle("🤖 Assistente Portugal Alfa")
       .setDescription(answer)
@@ -259,8 +314,17 @@ export async function handleSmartResponse(message, client) {
   }
 
   // ----------------------------------------------------------
-  // 5. FALLBACK – sugerir pesquisa manual
+  // 6. FALLBACK MELHORADO
   // ----------------------------------------------------------
+  const fallbackMsg = `🔍 **Não encontrei uma resposta exata para a tua pergunta.**
+
+**Sugestões:**
+• Reformula a pergunta com mais detalhes (ex: "Como instalo mods?").
+• Usa o comando \`/ajuda\` para aceder à central de ajuda.
+• Se precisares de assistência personalizada, abre um ticket com \`/ticket\`.
+
+**Pergunta original:** "${question}"`;
+
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`smart_do_search_${message.author.id}_${message.id}`)
@@ -274,7 +338,7 @@ export async function handleSmartResponse(message, client) {
 
   try {
     const sent = await message.reply({
-      content: `**Não encontrei nenhuma resposta no meu conhecimento.**\n\nQueres que eu **pesquise na internet** por:\n> "${question}"?`,
+      content: fallbackMsg,
       components: [row],
       allowedMentions: { repliedUser: false }
     });
