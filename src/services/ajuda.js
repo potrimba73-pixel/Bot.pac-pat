@@ -270,13 +270,11 @@ export async function handleHelpCommand(interaction) {
 
   const rowSelect = new ActionRowBuilder().addComponents(categorySelect);
 
-  // Resposta pública (todos veem)
-  await interaction.reply({
-    embeds: [embed],
-    components: [rowSelect, navRow],
-    ephemeral: false
-  });
-}
+await interaction.reply({
+  embeds: [embed],
+  components: [rowSelect, navRow],
+  ephemeral: true,
+});
 
 // ============================================================
 // MANIPULADORES DE INTERAÇÕES (exportados)
