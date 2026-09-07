@@ -1,139 +1,62 @@
-// src/assistant/analyzer.js
-import { ChannelType, PermissionsBitField } from "discord.js";
-import { ASSISTANT_CONFIG } from "../config/index.js";
-import { assistantMemory } from "../services/ajuda.js";
+// src/assistant/analyzer.js (adicional)
 
-const HISTORY_CACHE_TTL = 3600000; // 1 hora
-let lastHistoryFetch = 0;
+// Função para gerar embedding usando Gemini
+async function getEmbedding(text) {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return null;
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/embedding-001:embedContent?key=${key}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: "models/embedding-001",
+        content: { parts: [{ text: text }] }
+      })
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    return data.embedding?.values || null;
+  } catch (e) {
+    console.error("[Embedding] Erro:", e.message);
+    return null;
+  }
+}
 
-export class MessageAnalyzer {
-    constructor(client) {
-        this.client = client;
-        this.rateLimitQueue = [];
-    }
+// Função de similaridade de cosseno
+function cosineSimilarity(vecA, vecB) {
+  if (!vecA || !vecB || vecA.length !== vecB.length) return 0;
+  let dot = 0, magA = 0, magB = 0;
+  for (let i = 0; i < vecA.length; i++) {
+    dot += vecA[i] * vecB[i];
+    magA += vecA[i] * vecA[i];
+    magB += vecB[i] * vecB[i];
+  }
+  if (magA === 0 || magB === 0) return 0;
+  return dot / (Math.sqrt(magA) * Math.sqrt(magB));
+}
 
-    async rateLimitDelay() {
-        const now = Date.now();
-        this.rateLimitQueue = this.rateLimitQueue.filter(t => now - t < 1000);
-        if (this.rateLimitQueue.length >= 5) {
-            await new Promise(r => setTimeout(r, 1000));
-        }
-        this.rateLimitQueue.push(now);
-    }
+// Substitui ou melhora a função findSimilarResponses
+export async function findSimilarResponsesSemantic(question, limit = 3) {
+  const history = assistantMemory.diegoHistory;
+  if (!history || history.length === 0) return [];
 
-    async fetchExpertHistory(guild, userId, limit = 50) {
-        if (Date.now() - lastHistoryFetch < HISTORY_CACHE_TTL && assistantMemory.diegoHistory?.length > 0) {
-            return assistantMemory.diegoHistory;
-        }
+  // Gera embedding da pergunta
+  const questionEmbed = await getEmbedding(question);
+  if (!questionEmbed) {
+    // Fallback para o método antigo (keyword)
+    return this.findSimilarResponses(question);
+  }
 
-        const history = [];
-        const textChannels = guild.channels.cache.filter(
-            c => c.type === ChannelType.GuildText && 
-                 c.permissionsFor(this.client.user)?.has(PermissionsBitField.Flags.ViewChannel)
-        );
+  // Calcula similaridade para cada item do histórico
+  const scored = [];
+  for (const item of history) {
+    const itemEmbed = await getEmbedding(item.content);
+    if (!itemEmbed) continue;
+    const score = cosineSimilarity(questionEmbed, itemEmbed);
+    scored.push({ ...item, score });
+  }
 
-        const channelsToFetch = Array.from(textChannels.values()).slice(0, 10);
-
-        for (const channel of channelsToFetch) {
-            try {
-                await this.rateLimitDelay();
-                if (!channel.permissionsFor(this.client.user)?.has(PermissionsBitField.Flags.ReadMessageHistory)) {
-                    continue;
-                }
-                const messages = await channel.messages.fetch({ limit: 100 });
-                const expertMsgs = messages.filter(m => m.author.id === userId && m.content.length > 10);
-
-                expertMsgs.forEach(msg => {
-                    const allMsgs = Array.from(messages.values())
-                        .sort((a, b) => a.createdTimestamp - b.createdTimestamp);
-                    const idx = allMsgs.findIndex(m => m.id === msg.id);
-
-                    const context = [];
-                    if (idx > 0) {
-                        context.push({
-                            author: allMsgs[idx-1].author.username,
-                            content: allMsgs[idx-1].content.substring(0, 200)
-                        });
-                    }
-                    context.push({
-                        author: msg.author.username,
-                        content: msg.content.substring(0, 500)
-                    });
-
-                    history.push({
-                        content: msg.content.substring(0, 500),
-                        channel: channel.name,
-                        timestamp: msg.createdTimestamp,
-                        context,
-                        hasLinks: this.extractLinks(msg.content),
-                        isHelpful: this.isHelpfulMessage(msg.content)
-                    });
-                });
-            } catch (e) {
-                if (e.code !== 50001 && e.code !== 50013) {
-                    console.log(`[Analyzer] Erro em ${channel.name}:`, e.message);
-                }
-            }
-        }
-
-        history.sort((a, b) => b.timestamp - a.timestamp);
-        assistantMemory.diegoHistory = history.slice(0, limit);
-        lastHistoryFetch = Date.now();
-        return assistantMemory.diegoHistory;
-    }
-
-    extractLinks(content) {
-        const urlRegex = /(https?:\/\/[^\s]+)/g;
-        return content.match(urlRegex) || [];
-    }
-
-    isHelpfulMessage(content) {
-        const helpIndicators = [
-            "podes", "posso", "ajuda", "configurar", "instalar",
-            "link", "vídeo", "tutorial", "faz assim", "tenta",
-            "precisas de", "baixa", "download", "mod", "plugin",
-            "usa", "experimenta", "tens que", "deves", "recomendo"
-        ];
-        return helpIndicators.some(word => content.toLowerCase().includes(word));
-    }
-
-    findSimilarResponses(question) {
-        const history = assistantMemory.diegoHistory;
-        if (!history || history.length === 0) return [];
-
-        const questionLower = question.toLowerCase();
-        const qWords = questionLower.split(/\s+/).filter(w => w.length > 3);
-        if (qWords.length === 0) return [];
-
-        const scored = history.map(h => {
-            let score = 0;
-            const contentLower = h.content.toLowerCase();
-
-            qWords.forEach(word => {
-                if (contentLower.includes(word)) score += 3;
-            });
-
-            if (h.isHelpful) score += 5;
-            if (h.hasLinks.length > 0) score += 4;
-
-            // Palavras específicas (câmara, console, etc.)
-            const specificWords = ["camara", "camera", "console", "developer", "config.cfg", "numpad", "0", "teletransportar", "ctrl f9", "project alm", "insanux"];
-            specificWords.forEach(word => {
-                if (questionLower.includes(word) && contentLower.includes(word)) {
-                    score += 15;
-                }
-            });
-
-            h.context.forEach(ctx => {
-                qWords.forEach(word => {
-                    if (ctx.content.toLowerCase().includes(word)) score += 2;
-                });
-            });
-
-            return { ...h, score };
-        });
-
-        scored.sort((a, b) => b.score - a.score);
-        return scored.filter(s => s.score > 3).slice(0, 3);
-    }
+  scored.sort((a, b) => b.score - a.score);
+  return scored.filter(s => s.score > 0.5).slice(0, limit);
 }
