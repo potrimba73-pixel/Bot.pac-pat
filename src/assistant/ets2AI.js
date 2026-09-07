@@ -1,7 +1,11 @@
 // src/assistant/ets2AI.js
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import { CONFIG } from "../config/index.js";
+import { encontrarRespostaManual } from "../database/faq_manual.js";
+import { getCachedAnswer, setCachedAnswer } from "../services/iaCache.js";
+import { getConversationHistory, addToConversation } from "../services/conversationMemory.js";
 
+// ======================== CONFIGURAÇÕES ========================
 const AJUDA_KEYWORDS = [
   "ajuda", "help", "como", "configurar", "wheel", "volante", "ets2", "ats", 
   "mod", "dlc", "crash", "erro", "fps", "lag", "dinheiro", "economia", 
@@ -9,24 +13,10 @@ const AJUDA_KEYWORDS = [
   "patente", "regra", "ban", "punido", "discord", "bot", "comando", 
   "ticket", "recrutamento", "ets2la", "vr", "grafico", "problema", 
   "nao consigo", "tutorial", "video", "link", "download", "trucky",
-  "servidor", "entrar", "comboio", "juntar", "pat"
+  "servidor", "entrar", "comboio", "juntar", "pat", "mods", "mapa", "carro"
 ];
 
-const FAQ_SIMPLE = {
-  "volante": "Para configurar o volante no ETS2/ATS: Vai a Options > Controls > Wizard e segue os passos. Usa o software do teu volante (Logitech G HUB, Thrustmaster, etc) para calibrar antes.",
-  "configurar volante": "Para configurar o volante no ETS2/ATS: Vai a Options > Controls > Wizard e segue os passos. Usa o software do teu volante (Logitech G HUB, Thrustmaster, etc) para calibrar antes.",
-  "crash": "Se o jogo crasha: 1) Verifica ficheiros na Steam (botao direito no jogo > Propriedades > Ficheiros instalados > Verificar integridade). 2) Remove mods recentes. 3) Atualiza drivers da GPU.",
-  "dlc": "Os DLCs do ETS2/ATS sao expansoes pagas. Os mais populares sao: Going East, Scandinavia, Vive la France, Italia, Beyond the Baltic Sea, Road to the Black Sea, Iberia, West Balkans.",
-  "multiplayer": "O multiplayer oficial e o TruckersMP (TMP). Precisas de conta Steam com o jogo comprado. Vai a truckersmp.com e segue os passos de registo.",
-  "tmp": "O multiplayer oficial e o TruckersMP (TMP). Precisas de conta Steam com o jogo comprado. Vai a truckersmp.com e segue os passos de registo.",
-  "patente": "As patentes na Portugal Alfa sao baseadas nas horas de jogo. Consulta o canal de patentes ou fala com um membro da staff para saber os requisitos exatos.",
-  "recrutamento": "Para te candidatares a membro da Portugal Alfa: 1) Tens de ter o jogo ETS2/ATS. 2) Usa o comando /recrutamento ou abre um ticket. 3) Preenche o formulario com os teus dados.",
-  "ticket": "Para abrir um ticket: usa o comando /ticket ou clica no botao correspondente no canal de tickets. Escolhe a categoria e descreve o teu problema.",
-  "ets2la": "ETS2LA (Lane Assist) e um mod de assistencia de conducao. Vai ao Discord oficial do ETS2LA para downloads e tutoriais.",
-  "vr": "Para jogar ETS2/ATS em VR: 1) Tens de ter um headset VR compativel (Meta Quest, Valve Index, etc). 2) Ativa VR nas opcoes do jogo. 3) Usa OpenXR ou SteamVR.",
-  "grafico": "Para melhorar os graficos: 1) Atualiza drivers da GPU. 2) Aumenta as definicoes no jogo. 3) Usa mods de graficos (Realistic Graphics, etc). 4) Ativa DLSS/FSR se a tua GPU suportar.",
-};
-
+// ======================== FUNÇÕES AUXILIARES ========================
 function isAjudaChannel(channelId) {
   return CONFIG.AJUDA_CHANNELS?.includes(channelId);
 }
@@ -36,14 +26,48 @@ function matchesAjudaKeywords(content) {
   return AJUDA_KEYWORDS.some(kw => lower.includes(kw));
 }
 
-export async function callPollinationsAI(question) {
-  try {
-    const prompt = `Responde em portugues de Portugal de forma curta e direta (max 500 caracteres) a esta pergunta sobre Euro Truck Simulator 2, American Truck Simulator, ou a comunidade Portugal Alfa Truckers: "${question}"`;
-    const url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}?seed=${Date.now()}&json=false`;
+// ======================== PROMPT ENRIQUECIDO ========================
+function buildPrompt(question, history = []) {
+  let context = "";
+  if (history && history.length > 0) {
+    context = "**Histórico da conversa (últimas interações):**\n";
+    history.forEach((h, i) => {
+      context += `Utilizador: ${h.user}\nAssistente: ${h.bot}\n`;
+    });
+    context += "\n";
+  }
 
+  return `
+${context}
+Você é o assistente oficial da **Portugal Alfa Truckers (PAC)**, uma comunidade portuguesa de ETS2/ATS com cerca de 600 membros.
+
+**Informações essenciais sobre a PAC:**
+- Servidor de comboio: ID \`85568392935839115\` ou nome "Portugal Alfa Community".
+- Regras: velocidade máxima 100 km/h, respeito, disciplina nos comboios.
+- Recrutamento: Trucky obrigatório, 15.000 km/mês, candidatura via ticket.
+- Mods recomendados: Project ALM (Insanux), ETS2LA (Lane Assist), coleção Steam oficial (https://steamcommunity.com/sharedfiles/filedetails/?id=3665511189).
+- Apoio: tickets no Discord para questões personalizadas.
+
+**Instruções para a resposta:**
+- Responde em **português de Portugal**, de forma clara, direta e útil.
+- Dá passos práticos sempre que possível.
+- Se não souberes, sugere abrir um ticket.
+- Limita-te a 600 caracteres.
+
+**Pergunta do utilizador:**
+${question}
+
+**Resposta:**
+`;
+}
+
+// ======================== CHAMADAS À IA ========================
+export async function callPollinationsAI(question, history = []) {
+  try {
+    const prompt = buildPrompt(question, history);
+    const url = `https://text.pollinations.ai/${encodeURIComponent(prompt)}?seed=${Date.now()}&json=false`;
     const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
     const text = await response.text();
     return text?.trim()?.substring(0, 1000) || null;
   } catch (e) {
@@ -52,16 +76,17 @@ export async function callPollinationsAI(question) {
   }
 }
 
-export async function callGeminiAI(question) {
+export async function callGeminiAI(question, history = []) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return null;
 
   try {
+    const prompt = buildPrompt(question, history);
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
     const body = {
       contents: [{
         parts: [{
-          text: `Responde em portugues de Portugal de forma curta e direta (max 500 caracteres) a esta pergunta sobre ETS2/ATS: "${question}"`
+          text: prompt
         }]
       }]
     };
@@ -82,12 +107,13 @@ export async function callGeminiAI(question) {
   }
 }
 
+// ======================== ELEMENTOS VISUAIS ========================
 function createIAEmbed(question, answer, source) {
   return new EmbedBuilder()
     .setTitle("🤖 Assistente Portugal Alfa")
     .setDescription(answer)
     .setColor(0x3498db)
-    .setFooter({ text: `Fonte: ${source} | Clica nos botoes para dar feedback` })
+    .setFooter({ text: `Fonte: ${source} | Clica nos botões para dar feedback` })
     .setTimestamp();
 }
 
@@ -99,7 +125,7 @@ function createIAButtons(messageId) {
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId(`ia_nao_ajudou_${messageId}`)
-      .setLabel("👎 Nao ajudou")
+      .setLabel("👎 Não ajudou")
       .setStyle(ButtonStyle.Danger),
     new ButtonBuilder()
       .setCustomId(`ia_ticket_${messageId}`)
@@ -108,6 +134,7 @@ function createIAButtons(messageId) {
   );
 }
 
+// ======================== PROCESSAMENTO PRINCIPAL ========================
 export async function processarPerguntaETS2(message, client) {
   if (message.author.bot) return;
   if (!isAjudaChannel(message.channel.id)) return;
@@ -116,31 +143,58 @@ export async function processarPerguntaETS2(message, client) {
 
   const question = message.content;
   let answer = null;
-  let source = "FAQ Local";
+  let source = "FAQ Manual";
 
-  // 1. Tentar FAQ local
-  const lowerQ = question.toLowerCase();
-  for (const [key, value] of Object.entries(FAQ_SIMPLE)) {
-    if (lowerQ.includes(key)) {
-      answer = value;
-      break;
+  // 1. TENTAR FAQ MANUAL (resposta instantânea)
+  const manual = encontrarRespostaManual(question);
+  if (manual) {
+    answer = manual.resposta;
+    source = "📖 FAQ Manual";
+  }
+
+  // 2. TENTAR CACHE
+  if (!answer) {
+    const cached = getCachedAnswer(question);
+    if (cached) {
+      answer = cached;
+      source = "💾 Cache local";
     }
   }
 
-  // 2. Se nao encontrou no FAQ, chamar IA
+  // 3. TENTAR IA (com histórico)
   if (!answer) {
-    answer = await callPollinationsAI(question);
+    const history = getConversationHistory(message.channel.id);
+    answer = await callPollinationsAI(question, history);
     source = "Pollinations AI";
-  }
-  if (!answer) {
-    answer = await callGeminiAI(question);
-    source = "Gemini AI";
-  }
-  if (!answer) {
-    answer = "Nao consegui encontrar uma resposta especifica. Tenta reformular a pergunta ou abre um ticket para ajuda personalizada.";
-    source = "Padrao";
+    if (!answer) {
+      answer = await callGeminiAI(question, history);
+      source = "Gemini AI";
+    }
+    // Guardar na cache (se veio da IA)
+    if (answer) {
+      setCachedAnswer(question, answer, source);
+    }
   }
 
+  // 4. FALLBACK
+  if (!answer) {
+    answer = `🔍 Não encontrei uma resposta exata.
+
+**Sugestões:**
+• Reformula a pergunta com mais detalhes.
+• Consulta a central de ajuda com \`/ajuda\`.
+• Abre um ticket para atendimento personalizado.
+
+**Pergunta:** "${question}"`;
+    source = "Fallback";
+  }
+
+  // Guardar histórico (última interação)
+  if (answer) {
+    addToConversation(message.channel.id, question, answer);
+  }
+
+  // Enviar resposta
   const embed = createIAEmbed(question, answer, source);
   const buttons = createIAButtons(message.id);
 
@@ -164,6 +218,7 @@ export async function processarPerguntaETS2(message, client) {
   }
 }
 
+// ======================== FEEDBACK ========================
 export async function handleIAFeedback(interaction, client) {
   const customId = interaction.customId;
   const parts = customId.split("_");
@@ -172,7 +227,7 @@ export async function handleIAFeedback(interaction, client) {
 
   if (action === "ticket") {
     await interaction.reply({
-      content: "Para abrir um ticket, usa o comando /ticket ou clica no botao no canal de tickets.",
+      content: "Para abrir um ticket, usa o comando /ticket ou clica no botão no canal de tickets.",
       ephemeral: true
     });
     return;
