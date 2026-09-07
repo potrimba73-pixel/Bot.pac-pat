@@ -16,7 +16,6 @@ import {
 import {
   handleHelpCommand as handleAjudaCommand,
   handleHelpInteraction as handleAjudaFeedback,
-  handleHelpInteraction as handleAjudaProcurar,
   assistantMemory,
 } from "../services/ajuda.js";
 
@@ -348,7 +347,6 @@ async function responderPainelMembro(interaction, deferred = false) {
 
   const row = new ActionRowBuilder().addComponents(selectMenu);
 
-  // ===== NOVO BOTÃO "ADICIONAR MEMBRO" =====
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`add_membro_${ticket.id}`)
@@ -621,6 +619,11 @@ async function handleSlashCommand(interaction, client) {
 async function handleModalSubmit(interaction, client) {
   const customId = interaction.customId;
 
+  // ---------- AJUDA MODAL ----------
+  if (customId === 'help_search_modal' || customId === 'help_ia_modal') {
+    return handleAjudaFeedback(interaction);
+  }
+
   if (customId.startsWith("modal_trucky_")) {
     return handleTruckyVerification(interaction, client);
   }
@@ -664,6 +667,11 @@ async function handleModalSubmit(interaction, client) {
 // ============================================================
 
 async function handleSelectMenu(interaction, client) {
+  // ---------- AJUDA CATEGORY SELECT ----------
+  if (interaction.customId === 'help_category_select') {
+    return handleAjudaFeedback(interaction);
+  }
+
   if (interaction.customId.startsWith("chamar_staff_")) {
     const ticketId = interaction.customId.replace("chamar_staff_", "");
     const staffId = interaction.values[0];
@@ -741,6 +749,11 @@ async function handleSelectMenu(interaction, client) {
 async function handleButton(interaction, client) {
   const customId = interaction.customId;
   console.log(`[Button] CustomId: ${customId}`);
+
+  // ---------- AJUDA BUTTONS ----------
+  if (customId === 'help_home' || customId === 'help_back' || customId === 'help_search') {
+    return handleAjudaFeedback(interaction);
+  }
 
   if (customId === "aceitar_regras") {
     return handleAceitarRegras(interaction);
@@ -822,7 +835,7 @@ async function handleButton(interaction, client) {
   }
 
   if (customId === "ajuda_procurar") {
-    return handleAjudaProcurar(interaction);
+    return handleAjudaFeedback(interaction);
   }
   if (
     customId === "ajuda_ticket" ||
