@@ -84,7 +84,7 @@ export async function handleReady(client) {
     await inicializarAnalyzer(client);
 
     // --------------------------------------------------------
-    // PRESENÇA
+    // PRESENÇA (com horário)
     // --------------------------------------------------------
 
     configurarPresenca(client);
@@ -225,33 +225,56 @@ async function inicializarAnalyzer(client) {
 }
 
 // ============================================================
-// PRESENÇA
+// PRESENÇA DINÂMICA (com base na hora de Lisboa)
 // ============================================================
 
 function configurarPresenca(client) {
-  try {
+  // Função que calcula o status com base na hora atual (Lisboa)
+  const obterStatusPorHora = () => {
+    const agora = new Date();
+    // Obtém a hora em formato 24h no fuso horário de Lisboa
+    const horaStr = new Intl.DateTimeFormat('pt-PT', {
+      timeZone: 'Europe/Lisbon',
+      hour: '2-digit',
+      hour12: false,
+    }).format(agora);
+    const hora = parseInt(horaStr, 10);
+
+    // Regra: 8h às 17h = online, 18h às 7h = idle
+    if (hora >= 8 && hora < 18) {
+      return 'online';
+    } else {
+      return 'idle';
+    }
+  };
+
+  // Função para atualizar a presença no Discord
+  const atualizarPresenca = () => {
+    const status = obterStatusPorHora();
+    // (Opcional) para depuração no console
+    const agora = new Date();
+    const horaAtual = agora.toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon', hour: '2-digit', minute: '2-digit' });
+    console.log(`[Presence] ${horaAtual} → Status: ${status}`);
+
     client.user.setPresence({
       activities: [
         {
           name: "/ajuda | Portugal Alfa Community",
-          type: 0,
+          type: 0, // Playing
           state: "Euro Truck Simulator 2",
         },
       ],
-      status: "online",
+      status: status, // 'online' ou 'idle'
     });
+  };
 
-    console.log("[Ready] ✅ Presença configurada.");
+  // Executa imediatamente ao iniciar
+  atualizarPresenca();
 
-    return true;
-  } catch (err) {
-    console.error(
-      "[Ready] ❌ Erro ao configurar presença:",
-      err?.message || err
-    );
+  // Agenda atualização a cada 30 segundos (para garantir que muda às 18:00 e 08:00)
+  setInterval(atualizarPresenca, 30_000);
 
-    return false;
-  }
+  console.log("[Ready] ✅ Presença dinâmica configurada (online das 8h às 17h, idle das 18h às 7h).");
 }
 
 // ============================================================
