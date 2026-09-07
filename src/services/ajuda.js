@@ -31,7 +31,6 @@ const cooldownMap = new Map();
 // ============================================================
 export const assistantMemory = {
   pendingSearches: new Map(),
-  // podes adicionar mais propriedades aqui se necessário
 };
 
 // ============================================================
@@ -96,7 +95,6 @@ Se estás com problemas no ETS2LA:
 
 📌 **Suporte dedicado:** canal <#suporte-ets2la>`
   },
-  // Adiciona mais categorias: VR, Project ALM, etc.
 ];
 
 // ============================================================
@@ -155,19 +153,30 @@ function createMainMenuEmbed() {
 }
 
 function createCategoryEmbed(category) {
-  const faqs = faqData.filter(f => f.categoria === category);
-  const tutoriais = tutoriaisData.filter(t => t.categoria === category);
+  // Converter objetos para arrays para filtrar
+  const faqArray = Object.values(faqData.FAQ_DATABASE || {});
+  const tutoriaisArray = Object.values(tutoriaisData.PAC_TUTORIAIS || {});
 
+  // Filtrar por categoria – como não temos categoria nos objetos, vamos apenas listar tudo
+  // Para simplificar, listamos todos os itens (podes adaptar se quiseres)
   let description = `Aqui estão os recursos disponíveis para **${category}**:\n\n`;
-  if (faqs.length) {
+  
+  // Se a categoria for "ETS2", mostramos itens relacionados a ETS2
+  // Como não temos categorias, vamos mostrar uma seleção genérica
+  if (faqArray.length) {
     description += '📖 **FAQ:**\n';
-    faqs.forEach(f => description += `• ${f.pergunta}\n`);
+    faqArray.slice(0, 5).forEach(f => {
+      const pergunta = f.titulo || f.keywords?.join(', ') || 'Pergunta';
+      description += `• ${pergunta}\n`;
+    });
   }
-  if (tutoriais.length) {
+  if (tutoriaisArray.length) {
     description += '\n📚 **Tutoriais:**\n';
-    tutoriais.forEach(t => description += `• [${t.titulo}](${t.link})\n`);
+    tutoriaisArray.slice(0, 5).forEach(t => {
+      description += `• ${t.titulo}\n`;
+    });
   }
-  if (!faqs.length && !tutoriais.length) {
+  if (!faqArray.length && !tutoriaisArray.length) {
     description += 'Nenhuma informação específica encontrada. Tenta usar a pesquisa ou a IA.';
   }
 
@@ -261,6 +270,7 @@ export async function handleHelpCommand(interaction) {
 
   const rowSelect = new ActionRowBuilder().addComponents(categorySelect);
 
+  // Resposta pública (todos veem)
   await interaction.reply({
     embeds: [embed],
     components: [rowSelect, navRow],
@@ -272,6 +282,7 @@ export async function handleHelpCommand(interaction) {
 // MANIPULADORES DE INTERAÇÕES (exportados)
 // ============================================================
 export async function handleHelpInteraction(interaction) {
+  // Esta função trata botões, selects e modals do sistema /ajuda
   if (!interaction.isButton() && !interaction.isStringSelectMenu() && !interaction.isModalSubmit()) return;
 
   const customId = interaction.customId;
@@ -298,6 +309,7 @@ export async function handleHelpInteraction(interaction) {
 
     const embed = createCategoryEmbed(selected);
     const navRow = createNavigationButtons();
+    // Update da mensagem original (pública)
     await interaction.update({
       embeds: [embed],
       components: [navRow],
@@ -381,14 +393,30 @@ export async function handleHelpInteraction(interaction) {
       result.response = intent.response;
       result.source = '🧠 Intenção reconhecida';
     } else {
-      const faqMatch = faqData.find(f => query.toLowerCase().includes(f.pergunta.toLowerCase()) || f.pergunta.toLowerCase().includes(query.toLowerCase()));
+      // Procurar no FAQ_DATABASE (objeto)
+      const faqObj = faqData.FAQ_DATABASE || {};
+      let faqMatch = null;
+      for (const [key, value] of Object.entries(faqObj)) {
+        if (query.toLowerCase().includes(key) || key.includes(query.toLowerCase())) {
+          faqMatch = value;
+          break;
+        }
+      }
       if (faqMatch) {
         result.response = `📖 **FAQ:** ${faqMatch.resposta}`;
         result.source = '📖 FAQ';
       } else {
-        const tutorialMatch = tutoriaisData.find(t => query.toLowerCase().includes(t.titulo.toLowerCase()) || t.titulo.toLowerCase().includes(query.toLowerCase()));
+        // Procurar nos tutoriais (objeto)
+        const tutoriaisObj = tutoriaisData.PAC_TUTORIAIS || {};
+        let tutorialMatch = null;
+        for (const [key, value] of Object.entries(tutoriaisObj)) {
+          if (query.toLowerCase().includes(key) || key.includes(query.toLowerCase())) {
+            tutorialMatch = value;
+            break;
+          }
+        }
         if (tutorialMatch) {
-          result.response = `📚 **Tutorial:** [${tutorialMatch.titulo}](${tutorialMatch.link})\n${tutorialMatch.descricao}`;
+          result.response = `📚 **Tutorial:** ${tutorialMatch.titulo}\n${tutorialMatch.resumo}`;
           result.source = '📚 Tutorial';
         } else {
           result.response = 'Não encontrei informação suficiente. Por favor, abre um ticket para ajuda personalizada.';
@@ -416,6 +444,7 @@ export async function handleHelpInteraction(interaction) {
   // MODAL: IA
   if (customId === 'help_ia_modal' && interaction.isModalSubmit()) {
     const question = interaction.fields.getTextInputValue('ia_question');
+    // Podes chamar a IA aqui se quiseres, mas por enquanto usamos uma mensagem
     const response = 'A IA não está configurada. Por favor, usa a pesquisa ou abre um ticket.';
     const source = '📌 Aviso';
 
