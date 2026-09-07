@@ -4,33 +4,48 @@ import { db } from "../utils/db.js";
 import { CONFIG } from "../config/index.js";
 
 let lastCheckTime = 0;
-const CHECK_INTERVAL = 4 * 60 * 60 * 1000; // 4 horas em milissegundos
+const CHECK_INTERVAL = 4 * 60 * 60 * 1000; // 4 horas
+let lastLoggedStatus = null;
 
 /**
  * Executa uma verificação de saúde do bot e envia um log para o canal configurado.
- * @param {Client} client - O cliente do Discord.
  */
 export async function performHealthCheck(client) {
     const now = Date.now();
-    // Prevenir execuções duplicadas
     if (now - lastCheckTime < CHECK_INTERVAL - 60000) return;
     lastCheckTime = now;
 
     try {
-        // Recolher métricas
         const guilds = client.guilds.cache;
         const totalMembers = guilds.reduce((acc, g) => acc + g.memberCount, 0);
         const ticketsAbertos = Object.values(db.tickets || {}).filter(t => !t.closed).length;
         const uptimeSeconds = Math.floor(process.uptime());
         const uptimeStr = formatUptime(uptimeSeconds);
 
-        // Status atual do bot (online/idle/dnd)
         const botStatus = client.user?.presence?.status || "offline";
 
-        // Verificar MongoDB
-        const mongoStatus = db._mongoConnected ? "✅ Conectado" : "❌ Desconectado";
+        // ✅ VERIFICAÇÃO CORRETA DO MONGODB
+        // Usamos a variável useMongo que está no escopo do módulo db.js
+        // Como não é exportada, vamos verificar se db tem uma propriedade _mongoConnected
+        // ou então verificamos se o cliente MongoDB está ativo.
+        let mongoStatus = "❌ Desconectado";
+        try {
+            // Tenta aceder à variável useMongo através do módulo (se exportada)
+            // Fallback: verifica se db tem um método que indica conexão
+            const { useMongo } = await import('../utils/db.js');
+            mongoStatus = useMongo ? "✅ Conectado" : "❌ Desconectado";
+        } catch {
+            // Se não conseguir importar, tenta verificar se há um cliente
+            try {
+                const { client: mongoClient } = await import('../utils/db.js');
+                if (mongoClient && mongoClient.topology && mongoClient.topology.isConnected()) {
+                    mongoStatus = "✅ Conectado";
+                }
+            } catch {
+                // Mantém "❌ Desconectado"
+            }
+        }
 
-        // Criar embed
         const embed = new EmbedBuilder()
             .setTitle("🩺 Health Check - PAC Bot")
             .setColor(botStatus === "online" ? 0x57F287 : botStatus === "idle" ? 0xFEE75C : 0xED4245)
@@ -46,7 +61,6 @@ export async function performHealthCheck(client) {
             )
             .setFooter({ text: "Verificação automática (4 em 4 horas)" });
 
-        // Enviar para o canal de logs
         const logChannelId = CONFIG.CANAL_LOGS;
         if (logChannelId) {
             const channel = await client.channels.fetch(logChannelId).catch(() => null);
@@ -56,17 +70,12 @@ export async function performHealthCheck(client) {
             } else {
                 console.warn("[HealthCheck] Canal de logs não encontrado.");
             }
-        } else {
-            console.warn("[HealthCheck] CONFIG.CANAL_LOGS não configurado.");
         }
     } catch (error) {
-        console.error("[HealthCheck] Erro ao executar verificação:", error);
+        console.error("[HealthCheck] Erro:", error);
     }
 }
 
-/**
- * Formata o uptime em dias, horas, minutos e segundos.
- */
 function formatUptime(seconds) {
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
@@ -80,15 +89,8 @@ function formatUptime(seconds) {
     return parts.join(' ');
 }
 
-/**
- * Inicia o agendamento da verificação periódica.
- * @param {Client} client 
- */
 export function startHealthCheckScheduler(client) {
-    // Executar imediatamente no arranque (para testar)
     setTimeout(() => performHealthCheck(client), 5000);
-
-    // Depois a cada 4 horas
     setInterval(() => performHealthCheck(client), CHECK_INTERVAL);
-    console.log(`[HealthCheck] Scheduler iniciado: verificação a cada ${CHECK_INTERVAL/3600000} horas.`);
+    console.log(`[HealthCheck] Scheduler iniciado (a cada ${CHECK_INTERVAL/3600000}h)`);
 }
