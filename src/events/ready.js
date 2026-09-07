@@ -15,6 +15,8 @@ import {
 import { db, saveDB } from "../utils/db.js";
 import { startTruckyCron } from "./ready/truckyCron.js";
 import { MessageAnalyzer } from "../assistant/analyzer.js";
+// ===== NOVO IMPORT PARA HEALTH CHECK =====
+import { startHealthCheckScheduler } from "../services/healthCheck.js";
 
 // ============================================================
 // CONSTANTES
@@ -172,6 +174,11 @@ export async function handleReady(client) {
 
     mostrarEstatisticas(client);
 
+    // ============================================================
+    // 🆕 INICIAR HEALTH CHECK (4 em 4 horas)
+    // ============================================================
+    startHealthCheckScheduler(client);
+
     // --------------------------------------------------------
     // CONCLUSÃO
     // --------------------------------------------------------
@@ -229,6 +236,9 @@ async function inicializarAnalyzer(client) {
 // ============================================================
 
 function configurarPresenca(client) {
+  // Estado anterior para evitar logs repetidos
+  let lastLoggedStatus = null;
+
   // Função que calcula o status com base na hora atual (Lisboa)
   const obterStatusPorHora = () => {
     const agora = new Date();
@@ -251,10 +261,13 @@ function configurarPresenca(client) {
   // Função para atualizar a presença no Discord
   const atualizarPresenca = () => {
     const status = obterStatusPorHora();
-    // (Opcional) para depuração no console
-    const agora = new Date();
-    const horaAtual = agora.toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon', hour: '2-digit', minute: '2-digit' });
-    console.log(`[Presence] ${horaAtual} → Status: ${status}`);
+    // Só logar se o status mudou (para reduzir ruído)
+    if (status !== lastLoggedStatus) {
+      const agora = new Date();
+      const horaAtual = agora.toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon', hour: '2-digit', minute: '2-digit' });
+      console.log(`[Presence] ${horaAtual} → Status: ${status}`);
+      lastLoggedStatus = status;
+    }
 
     client.user.setPresence({
       activities: [
