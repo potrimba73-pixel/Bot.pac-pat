@@ -46,7 +46,12 @@ import {
 } from "../services/calls.js";
 import { gerarTranscript } from "../utils/transcript.js";
 import { salvarTranscriptSupabase } from "../utils/supabase.js";
-import { formatDuration, getDurationEmoji } from "../utils/dateUtils.js";
+import {
+  formatDuration,
+  getDurationEmoji,
+  formatDurationApprox,
+  getClockEmoji,
+} from "../utils/dateUtils.js";
 
 // ============================================================
 // CONSTANTES E CONFIGURAÇÕES
@@ -707,11 +712,43 @@ async function handleSelectMenu(interaction, client) {
     if (!labels[value]) {
       return safeReply(interaction, "❌ Categoria de ticket inválida.");
     }
+
+    // ✅ Desativar o dropdown antes de criar o ticket
+    try {
+      await interaction.message.edit({
+        components: [
+          new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+              .setCustomId("ticket_geral_disabled")
+              .setPlaceholder("✅ Ticket em criação...")
+              .setDisabled(true)
+              .addOptions([{ label: "—", value: "disabled" }])
+          ),
+        ],
+      });
+    } catch {}
+
     return createTicket(interaction, value, labels[value], client);
   }
 
   if (interaction.customId === "ticket_recruitamento") {
     const value = interaction.values[0];
+
+    // ✅ Desativar o dropdown antes de prosseguir
+    try {
+      await interaction.message.edit({
+        components: [
+          new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+              .setCustomId("ticket_recruitamento_disabled")
+              .setPlaceholder("✅ Opção selecionada...")
+              .setDisabled(true)
+              .addOptions([{ label: "—", value: "disabled" }])
+          ),
+        ],
+      });
+    } catch {}
+
     if (value === "recrutamento") {
       return createTicket(interaction, "recrutamento", "📝 Recrutamento PAT", client);
     }
@@ -759,11 +796,35 @@ async function handleButton(interaction, client) {
     return handleAceitarRegras(interaction);
   }
 
+  // ✅ Aceitar regras de recrutamento (com bloqueio de botões)
   if (customId.startsWith("aceitar_regras_rec_")) {
     const userId = customId.split("_")[3];
     if (interaction.user.id !== userId) {
       return safeReply(interaction, "⚠️ Este botão não está disponível para ti.");
     }
+
+    // Desativar botões da mensagem original
+    interaction.message?.edit({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle("✅ Regras Aceites")
+          .setDescription(
+            "Aceitaste as regras com sucesso! O teu ticket está a ser criado..."
+          )
+          .setColor(0x57f287)
+          .setTimestamp(),
+      ],
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`regras_ok_${userId}`)
+            .setLabel("✅ Regras Aceites com Sucesso")
+            .setStyle(ButtonStyle.Success)
+            .setDisabled(true)
+        ),
+      ],
+    }).catch(() => {});
+
     return criarTicketRecrutamento(interaction, client, null);
   }
 
@@ -820,6 +881,53 @@ async function handleButton(interaction, client) {
     }
     const ticketId = customId.substring("recrutado_nao_".length);
     return fecharTicket(interaction, ticketId, client, false);
+  }
+
+  // ✅ Novos handlers para o fluxo sem modal
+  if (customId.startsWith("foto_nome_manual_")) {
+    const ticketId = customId.substring("foto_nome_manual_".length);
+    const modal = new ModalBuilder()
+      .setCustomId(`modal_foto_trucky_${ticketId}`)
+      .setTitle("🎉 Nome da Foto do Trucky");
+
+    const input = new TextInputBuilder()
+      .setCustomId("foto_nome")
+      .setLabel("Nome da tua foto de perfil do Trucky")
+      .setPlaceholder("Ex: Diego")
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setMaxLength(100);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(input));
+    return interaction.showModal(modal);
+  }
+
+  if (customId.startsWith("foto_nome_skip_")) {
+    const ticketId = customId.substring("foto_nome_skip_".length);
+
+    // Criar um "fake interaction" para reaproveitar handleFotoTruckyModal
+    const fakeInteraction = {
+      customId: `modal_foto_trucky_${ticketId}`,
+      fields: {
+        getTextInputValue: () => "Não informado",
+      },
+      member: interaction.member,
+      user: interaction.user,
+      guild: interaction.guild,
+      channel: interaction.channel,
+      client: interaction.client,
+      deferred: true,
+      replied: false,
+      editReply: (d) => interaction.editReply(d),
+      reply: (d) => interaction.reply(d),
+      followUp: (d) => interaction.followUp(d),
+    };
+
+    try {
+      await interaction.deferUpdate();
+    } catch {}
+
+    return handleFotoTruckyModal(fakeInteraction, client);
   }
 
   if (customId.startsWith("fechar_definitivo_")) {
@@ -890,34 +998,103 @@ async function handleButton(interaction, client) {
 // HANDLERS ESPECÍFICOS
 // ============================================================
 
-async function handleAceitarRegras(interaction) {
+  async function handleAceitarRegras(interaction) {
   if (!(await safeDefer(interaction))) return;
 
   const member = interaction.member;
-  try {
-    const cargos = [
-      CONFIG.CARGO_MEMBRO,
-      CONFIG.CARGO_REGRAS_EXTRA_1,
-      CONFIG.CARGO_REGRAS_EXTRA_2,
-      "1534970663344017479",
-    ].filter(Boolean);
 
-    for (const roleId of cargos) {
-      const role = interaction.guild.roles.cache.get(roleId);
-      if (role && !member.roles.cache.has(role.id)) {
-        await member.roles.add(role).catch(() => {});
+  // ✅ Verificar se já aceitou antes
+  const jaAceitou = Array.isArray(db.acceptedRules) && db.acceptedRules.includes(member.id);
+
+  try {
+    // Atribuir cargos apenas se ainda não aceitou
+    if (!jaAceitou) {
+      const cargos = [
+        CONFIG.CARGO_MEMBRO,
+        CONFIG.CARGO_REGRAS_EXTRA_1,
+        CONFIG.CARGO_REGRAS_EXTRA_2,
+        "1534970663344017479",
+      ].filter(Boolean);
+
+      for (const roleId of cargos) {
+        const role = interaction.guild.roles.cache.get(roleId);
+        if (role && !member.roles.cache.has(role.id)) {
+          await member.roles.add(role).catch(() => {});
+        }
       }
+
+      // Guardar registo
+      if (!db.acceptedRules) db.acceptedRules = [];
+      if (!db.acceptedRules.includes(member.id)) db.acceptedRules.push(member.id);
+      if (!db.acceptedRulesAt) db.acceptedRulesAt = {};
+      db.acceptedRulesAt[member.id] = new Date().toISOString();
+
+      await persistDB();
     }
 
-    if (!db.acceptedRules) db.acceptedRules = [];
-    if (!db.acceptedRules.includes(member.id)) db.acceptedRules.push(member.id);
-    if (!db.acceptedRulesAt) db.acceptedRulesAt = {};
-    db.acceptedRulesAt[member.id] = new Date().toISOString();
+    // ============================================================
+    // MENSAGEM — Já aceitou antes
+    // ============================================================
+    if (jaAceitou) {
+      const dataISO = db.acceptedRulesAt?.[member.id];
 
-    await persistDB();
+      // Converter para unix timestamp
+      let timestampRelativo = "";
+      if (dataISO) {
+        const unixTs = Math.floor(new Date(dataISO).getTime() / 1000);
+        timestampRelativo = `<t:${unixTs}:R>`;
+      } else {
+        timestampRelativo = "anteriormente";
+      }
+
+      const mensagemJaAceitou = [
+        `Olá! 👋 Já aceitaste as regras **${timestampRelativo}**.`,
+        "",
+        `Se precisares de abrir um ticket, podes fazê-lo:`,
+        "",
+        `👥 Para entrar na **Empresa Virtual**: <#1326963454397124649>`,
+        "",
+        `🐛 **Bugs**`,
+        `🚨 **Denúncia**`,
+        `🛠️ **Suporte**`,
+        `🎥 **Criador de Conteúdo**`,
+        "",
+        `Para estas opções, abre aqui: <#1465865626286428355>`,
+        "",
+        `🇵🇹 Obrigado por fazeres parte da **Portugal Alfa Community**! 🚛`,
+      ].join("\n");
+
+      return safeEdit(interaction, {
+        content: mensagemJaAceitou,
+      });
+    }
+
+    // ============================================================
+    // MENSAGEM — Primeira vez
+    // ============================================================
+    const mensagemPrimeiraVez = [
+      `✅ **Regras aceites com sucesso!**`,
+      `Boas-vindas à **Portugal Alfa Community** 🎉`,
+      "",
+      `Esperamos que te divirtas por cá! 👋`,
+      `Segue as regras, respeita os restantes membros e a Staff — **caso contrário, já sabes. 😉**`,
+      "",
+      `E caso queiras fazer parte da nossa equipa e entrar na **Empresa Virtual**, abre um ticket aqui: <#1326963454397124649>`,
+      "",
+      `Ou, se precisares de abrir um ticket para alguma destas opções:`,
+      `🐛 **Bugs**`,
+      `🚨 **Denúncia**`,
+      `🛠️ **Suporte**`,
+      `🎥 **Criador de Conteúdo**`,
+      "",
+      `Podes simplesmente abrir aqui: <#1465865626286428355>`,
+      "",
+      `Esperamos que gostes da nossa comunidade e ficamos felizes por teres decidido fazer parte dela! ❤️`,
+      `Desejamos-te um **bom convívio** por cá! 🚛🇵🇹`,
+    ].join("\n");
 
     return safeEdit(interaction, {
-      content: "✅ Regras aceites com sucesso! Bem-vind@ à **Portugal Alfa Community** 🎉",
+      content: mensagemPrimeiraVez,
     });
   } catch (error) {
     console.error("[Regras] Erro:", error);
@@ -926,7 +1103,7 @@ async function handleAceitarRegras(interaction) {
 }
 
 // ============================================================
-// ASSUMIR TICKET (com log modificado)
+// ASSUMIR TICKET
 // ============================================================
 
 async function handleAssumirTicket(interaction, client) {
@@ -970,7 +1147,6 @@ async function handleAssumirTicket(interaction, client) {
       `🎉 **Ticket assumido com sucesso!**\n\n👮 <@${interaction.user.id}> assumiu este ticket.\nSe precisares de chamar outro membro da staff, usa o **Painel Membro**.`
     );
 
-    // ===== LOG MODIFICADO =====
     try {
       const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
       if (logChannel) {
@@ -1025,7 +1201,7 @@ async function handleAssumirTicket(interaction, client) {
 }
 
 // ============================================================
-// SAIR TICKET (com avisos)
+// SAIR TICKET
 // ============================================================
 
 async function handleSairTicket(interaction, client) {
@@ -1047,8 +1223,6 @@ async function handleSairTicket(interaction, client) {
 
   try {
     await channel.permissionOverwrites.delete(interaction.user.id);
-
-    // ===== AVISOS =====
     await channel.send(`🚪 ${interaction.user} saiu do ticket.`);
 
     const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
@@ -1083,7 +1257,6 @@ async function handleFecharTicket(interaction, client) {
     return safeEdit(interaction, { content: "⏳ Este ticket já está aguardando confirmação de fecho." });
   }
 
-  // Fluxo de recrutamento (mantido)
   if (ticket.type === "recrutamento") {
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -1102,7 +1275,6 @@ async function handleFecharTicket(interaction, client) {
     return safeEdit(interaction, { content: "❓ **O candidato foi recrutado?**", components: [row] });
   }
 
-  // --- FLUXO NORMAL COM CONFIRMAÇÃO ---
   await withTicketLock(ticket.id, async () => {
     const current = db.tickets[String(ticket.id)];
     if (!current || current.closed) throw new Error("TICKET_NOT_FOUND");
@@ -1240,11 +1412,12 @@ async function handleCancelarFecho(interaction, client) {
 }
 
 // ============================================================
-// RECRUTADO SIM
+// RECRUTADO SIM (sem modal — evita timeout)
 // ============================================================
 
 async function handleRecrutadoSim(interaction, client) {
   const ticketId = interaction.customId.substring("recrutado_sim_".length);
+
   if (!isStaff(interaction.member)) {
     return safeReply(interaction, "❌ Apenas staff pode confirmar o recrutamento.");
   }
@@ -1254,25 +1427,22 @@ async function handleRecrutadoSim(interaction, client) {
     return safeReply(interaction, "⚠️ Ticket não encontrado ou já fechado.");
   }
 
-  const modal = new ModalBuilder()
-    .setCustomId(`modal_foto_trucky_${ticket.id}`)
-    .setTitle("🎉 Nome da Foto do Trucky");
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`foto_nome_manual_${ticket.id}`)
+      .setLabel("✏️ Definir Nome da Foto")
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(`foto_nome_skip_${ticket.id}`)
+      .setLabel("⏭️ Saltar (Não informado)")
+      .setStyle(ButtonStyle.Secondary)
+  );
 
-  const input = new TextInputBuilder()
-    .setCustomId("foto_nome")
-    .setLabel("Nome da tua foto de perfil do Trucky")
-    .setPlaceholder("Ex: Diego")
-    .setStyle(TextInputStyle.Short)
-    .setRequired(true)
-    .setMaxLength(100);
-
-  modal.addComponents(new ActionRowBuilder().addComponents(input));
-
-  try {
-    return await interaction.showModal(modal);
-  } catch {
-    return safeReply(interaction, "❌ Não foi possível abrir o modal.");
-  }
+  return safeReply(interaction, {
+    content: "📸 **Indica o nome que queres usar na foto do Trucky:**",
+    components: [row],
+    ephemeral: true,
+  });
 }
 
 // ============================================================
@@ -1336,7 +1506,6 @@ async function handleAvaliacaoModal(interaction, client) {
   ticket.ratingComment = comentario;
   await persistDB();
 
-  // Buscar quem atendeu o ticket (staff que assumiu ou fechou)
   const staffAtendeu = ticket.claimedByName || ticket.closedByName || "Staff";
   const staffId = ticket.claimedBy || ticket.closedBy;
 
@@ -1344,7 +1513,7 @@ async function handleAvaliacaoModal(interaction, client) {
     const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
     if (logChannel) {
       const stars = "⭐".repeat(estrelas) + "☆".repeat(5 - estrelas);
-      
+
       const agora = new Date();
       const dataHora = agora.toLocaleString('pt-PT', {
         timeZone: 'Europe/Lisbon',
@@ -1540,11 +1709,11 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
 
     // Embed de fecho no canal do ticket
     const duracao = formatDuration(ticket.openedAt, new Date());
-    const duracaoEmoji = getDurationEmoji(ticket.openedAt, new Date());
+    const duracaoAprox = formatDurationApprox(ticket.openedAt, new Date());
 
     let desc = `🔴 **Ticket Fechado**\n\nEste ticket foi encerrado por <@${interaction.user.id}>.\n\n`;
     desc += `📁 **Informações:**\n• **Aberto por:** <@${ticket.userId}>\n• **Motivo:** ${ticket.label}\n\n`;
-    desc += `${duracaoEmoji} **Duração:** ${duracao}\n\n⏳ Este canal será eliminado automaticamente em **5 segundos**...`;
+    desc += `⌛ **Duração:** ${duracao} *(${duracaoAprox})*\n\n⏳ Este canal será eliminado automaticamente em **5 segundos**...`;
 
     const embedFecho = new EmbedBuilder().setDescription(desc).setColor(0xFF0000).setTimestamp();
     await channel.send({ embeds: [embedFecho] }).catch(() => {});
@@ -1569,24 +1738,15 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
       transcriptResult = await gerarTranscript(channel, ticket.id, additionalInfo);
 
       if (transcriptResult) {
-        // Enviar para logs
+        // ✅ Enviar para logs SÓ os ficheiros (sem embed de cabeçalho)
         const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
         if (logChannel) {
-          const embedLog = new EmbedBuilder()
-            .setTitle(`📋 Transcript do Ticket #${ticket.id}`)
-            .setDescription(
-              `**Ticket:** #${ticket.id}\n**Tipo:** ${ticket.label}\n**Aberto por:** <@${ticket.userId}>\n` +
-              `**Fechado por:** ${interaction.user.tag}\n**Mensagens:** ${transcriptResult.messageCount}\n**Ficheiros:** 2 anexo(s)`
-            )
-            .setColor(0x0099ff)
-            .setTimestamp();
-
           const files = [
             transcriptResult.attachment,
             transcriptResult.txtAttachment,
-          ];
+          ].filter(Boolean);
 
-          await logChannel.send({ embeds: [embedLog], files }).catch(() => {});
+          await logChannel.send({ files }).catch(() => {});
         }
 
         // Guardar no Supabase
@@ -1654,7 +1814,6 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
       console.log(`[Avaliação] DM NÃO enviada para ${ticket.userId}: ${error.message}`);
     }
 
-    // Guardar no DB se a avaliação foi enviada
     if (evaluationSent !== undefined) {
       try {
         db.tickets[String(ticket.id)].evaluationSent = evaluationSent;
@@ -1691,20 +1850,33 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
             })
           : '—';
 
+        // ✅ Nome Trucky correto (truckyNome primeiro, fotoNome fallback)
+        const nomeTrucky = ticket.truckyNome || ticket.fotoNome || 'Não informado';
+        const linkTrucky = (ticket.truckyLink && /^https?:\/\//i.test(ticket.truckyLink))
+          ? ticket.truckyLink
+          : (nomeTrucky !== 'Não informado'
+              ? `https://hub.truckyapp.com/search?q=${encodeURIComponent(nomeTrucky)}`
+              : null);
+
         let descUnificada = '';
         descUnificada += `👤 **Aberto por:** <@${ticket.userId}> | \`${ticket.username}\`\n`;
-        descUnificada += `🚛 **Trucky:** ${ticket.fotoNome || 'Não informado'}\n`;
+
+        if (ticket.type === 'recrutamento') {
+          if (linkTrucky && nomeTrucky !== 'Não informado') {
+            descUnificada += `🚛 **Trucky:** [${nomeTrucky}](${linkTrucky})\n`;
+          } else {
+            descUnificada += `🚛 **Trucky:** \`${nomeTrucky}\`\n`;
+          }
+        }
+
         descUnificada += `📝 **Tipo:** ${ticket.label}\n\n`;
         descUnificada += `⚒️ **Assumido por:** ${ticket.claimedByName ? `<@${ticket.claimedBy}>` : 'Ninguém'}\n`;
         descUnificada += `👮 **Fechado por:** <@${interaction.user.id}>\n\n`;
-        descUnificada += `📅 **Horário:** ${dataFecho}\n\n`;
         descUnificada += `↕ **Informações Adicionais**\n`;
         descUnificada += `🕑 **Horários:**\n`;
-        descUnificada += `• 🕛 Abertura: ${dataAbertura}\n`;
-        descUnificada += `• 🕛 Fechamento: ${dataFecho}\n`;
-        descUnificada += `• 🕛 Duração: ${duracao}\n\n`;
-        descUnificada += `🚛 **Nome no Trucky:**\n`;
-        descUnificada += `• ${ticket.fotoNome || 'Não informado'}\n\n`;
+        descUnificada += `• ${getClockEmoji(new Date(ticket.openedAt))} **Abertura:** ${dataAbertura}\n`;
+        descUnificada += `• ${getClockEmoji(new Date(ticket.closedAt || Date.now()))} **Fechamento:** ${dataFecho}\n`;
+        descUnificada += `• ⌛ **Duração:** ${duracao} *(${duracaoAprox})*\n\n`;
         descUnificada += `💼 **Recrutado:**\n`;
         descUnificada += `• ${ticket.type === 'recrutamento' ? (recrutado ? '✅ Sim' : '❌ Não') : 'N/A'}\n\n`;
         descUnificada += `📨 **Avaliação Enviada:**\n`;
@@ -1777,7 +1949,7 @@ async function handleSmartSearch(interaction) {
 }
 
 // ============================================================
-// TRANSCRIPT COMMAND
+// TRANSCRIPT COMMAND (só anexos)
 // ============================================================
 
 async function handleTranscriptCommand(interaction, ticket, client) {
@@ -1798,9 +1970,9 @@ async function handleTranscriptCommand(interaction, ticket, client) {
 
     const result = await gerarTranscript(interaction.channel, ticket.id, additionalInfo);
     if (result) {
+      // ✅ Só anexar os ficheiros, sem mensagem de cabeçalho
       await interaction.editReply({
-        content: `📋 Transcript do Ticket #${ticket.id} — ${result.messageCount} mensagens`,
-        files: [result.attachment, result.txtAttachment],
+        files: [result.attachment, result.txtAttachment].filter(Boolean),
       });
 
       const transcriptData = {
