@@ -273,8 +273,9 @@ export async function handleHelpCommand(interaction) {
 await interaction.reply({
   embeds: [embed],
   components: [rowSelect, navRow],
-  ephemeral: true,
+  flags: 64,
 });
+}
 
 // ============================================================
 // MANIPULADORES DE INTERAÇÕES (exportados)
