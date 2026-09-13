@@ -145,7 +145,7 @@ export async function sendLog(ticketId, type, client) {
         }
       }
 
-      description += `\n📝 **Tipo:** ${ticket.label || ticket.type || "N/A"}`;
+      description += `\n📝 **Tipo:** \`${ticket.label || ticket.type || "N/A"}\``;
       description += `\n\n${clockEmoji} **Abertura:** ${formatDateFull(openedAt)}`;
       description += `\n\n🎫 **Aceda ao ticket ao pressionar o botão abaixo**`;
 
@@ -219,11 +219,25 @@ export async function sendLog(ticketId, type, client) {
         ticket.closedBy ? `<@${ticket.closedBy}>` : "Não informado"
       }`;
 
-      description += `\n\n↕ **Informações Adicionais:**`;
-      description += `\n🕑 **Horários:**`;
-      description += `\n• ${clockEmojiAbertura} **Abertura:** ${formatDateFull(openedAt)}`;
-      description += `\n• ${clockEmojiFecho} **Fechamento:** ${formatDateFull(closedAt)}`;
-      description += `\n• ⌛ **Duração:** ${duracao} *(${duracaoAprox})*`;
+      const diaSemanaAbertura = new Intl.DateTimeFormat('pt-PT', {
+  timeZone: 'Europe/Lisbon',
+  weekday: 'long',
+}).format(openedAt);
+const unixAbertura = Math.floor(openedAt.getTime() / 1000);
+const dataAberturaFmt = `${diaSemanaAbertura}, <t:${unixAbertura}:S>`;
+      
+const diaSemanaFecho = new Intl.DateTimeFormat('pt-PT', {
+  timeZone: 'Europe/Lisbon',
+  weekday: 'long',
+}).format(closedAt);
+const unixFecho = Math.floor(closedAt.getTime() / 1000);
+const dataFechoFmt = `${diaSemanaFecho}, <t:${unixFecho}:S>`;
+      
+description += `\n\n↕ **Informações Adicionais:**`;
+description += `\n🕑 **Horários:**`;
+description += `\n• ${clockEmojiAbertura} **Abertura:** ${dataAberturaFmt}`;
+description += `\n• ${clockEmojiFecho} **Fechamento:** ${dataFechoFmt}`;
+description += `\n• ⌛ **Duração:** ${duracao} *(${duracaoAprox})*`;
 
       /**
        * Recrutamento — só a linha "Recrutado"
