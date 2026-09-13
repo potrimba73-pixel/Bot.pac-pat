@@ -290,7 +290,7 @@ async function enviarPainelMembro(interaction) {
 async function responderPainelMembro(interaction, deferred = false) {
   const ticket = getTicketForInteraction(null, interaction.channelId);
   if (!ticket || ticket.closed) {
-    const content = "⚠️ Ticket não encontrado ou já fechado.";
+    const content = "⚠️ Olá o ticket não foi encontrado ou já fechado.";
     return deferred ? interaction.editReply({ content }) : interaction.reply({ content, flags: 64 });
   }
 
@@ -301,7 +301,7 @@ async function responderPainelMembro(interaction, deferred = false) {
 
   const staffList = await buildStaffList(interaction.channel, ticket);
   if (staffList.length === 0) {
-    const content = "⚠️ Nenhum membro da staff disponível para ser chamado.";
+    const content = "⚠️ Desculpe atualmente não há nenhum membro da staff disponível para ser chamado.";
     return deferred ? interaction.editReply({ content }) : interaction.reply({ content, flags: 64 });
   }
 
@@ -341,17 +341,9 @@ async function responderPainelMembro(interaction, deferred = false) {
     );
 
   const row = new ActionRowBuilder().addComponents(selectMenu);
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`add_membro_${ticket.id}`)
-      .setLabel('➕ Adicionar Membro')
-      .setStyle(ButtonStyle.Primary)
-  );
 
-  const rows = [row, row2];
-
-  if (deferred) return await interaction.editReply({ embeds: [embed], components: rows });
-  return await interaction.reply({ embeds: [embed], components: rows, flags: 64 });
+  if (deferred) return await interaction.editReply({ embeds: [embed], components: [row] });
+  return await interaction.reply({ embeds: [embed], components: [row], flags: 64 });
 }
 
 async function enviarPainelStaff(interaction, client) {
@@ -375,7 +367,7 @@ async function enviarPainelStaff(interaction, client) {
 async function handleAddMembro(interaction, client) {
   const ticketId = interaction.customId.split('_')[2];
   const ticket = getTicketForInteraction(ticketId, interaction.channelId);
-  if (!ticket || ticket.closed) return safeReply(interaction, '⚠️ Ticket não encontrado ou já fechado.');
+  if (!ticket || ticket.closed) return safeReply(interaction, '⚠️ Olá o ticket não foi encontrado ou já fechado');
 
   const isStaffUser = interaction.member.permissions.has(PermissionFlagsBits.ManageMessages) ||
                       interaction.member.roles.cache.has(CONFIG.CARGO_STAFF);
@@ -409,7 +401,7 @@ async function handleModalAddMembro(interaction, client) {
 
   const ticketId = interaction.customId.split('_')[3];
   const ticket = getTicketForInteraction(ticketId, interaction.channelId);
-  if (!ticket || ticket.closed) return interaction.editReply('⚠️ Ticket não encontrado ou já fechado.');
+  if (!ticket || ticket.closed) return interaction.editReply('⚠️ Olá o ticket não foi encontrado ou já fechado');
 
   const userIdInput = interaction.fields.getTextInputValue('membro_id');
   let userId = userIdInput.replace(/[<@!>]/g, '');
@@ -483,7 +475,7 @@ async function handleSlashCommand(interaction, client) {
       return handleAjudaCommand(interaction, client);
 
     case "transcript": {
-      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
+      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Olá apenas staff pode usar este comando.");
       const ticket = getTicketForInteraction(null, interaction.channelId);
       if (!ticket) return safeReply(interaction, "⚠️ Nenhum ticket ativo encontrado neste canal.");
       return handleTranscriptCommand(interaction, ticket, client);
@@ -493,11 +485,11 @@ async function handleSlashCommand(interaction, client) {
       return enviarPainelMembro(interaction);
 
     case "painelstaff":
-      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
+      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Olá apenas staff pode usar este comando.");
       return enviarPainelStaff(interaction, client);
 
     case "limpar": {
-      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
+      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Olá apenas staff pode usar este comando.");
       const { execute: limparExec } = await import("../commands/limpar.js");
       return limparExec(interaction, client);
     }
@@ -508,13 +500,13 @@ async function handleSlashCommand(interaction, client) {
     }
 
     case "passar": {
-      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
+      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Olá apenas staff pode usar este comando.");
       const { execute: passarExec } = await import("../commands/passar.js");
       return passarExec(interaction, client);
     }
 
     case "pedirassumo": {
-      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
+      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Olá apenas staff pode usar este comando.");
       const { execute: pedirAssumoExec } = await import("../commands/pedirassumo.js");
       return pedirAssumoExec(interaction, client);
     }
@@ -527,7 +519,7 @@ async function handleSlashCommand(interaction, client) {
     case "mapa": {
       const staffCommands = ["verificar-inatividade", "atualizar-patentes", "limpeza"];
       if (staffCommands.includes(command) && !isStaff(interaction.member)) {
-        return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
+        return safeReply(interaction, "❌ Olá apenas staff pode usar este comando.");
       }
       const { handleTruckyCommand } = await import("../commands/truckyCommands.js");
       return handleTruckyCommand(interaction, client);
@@ -538,34 +530,34 @@ async function handleSlashCommand(interaction, client) {
     case "gerar-patente":
     case "verificar-templates": {
       if (command === "gerar-patente" && !isStaff(interaction.member)) {
-        return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
+        return safeReply(interaction, "❌ Olá apenas staff pode usar este comando.");
       }
       const { handleTruckyImageCommand } = await import("../commands/truckyImageCommands.js");
       return handleTruckyImageCommand(interaction);
     }
 
     case "mapa-canal": {
-      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
+      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Olá apenas staff pode usar este comando.");
       const { handleMapaCanalCommand } = await import("../commands/truckyMapaCanal.js");
       return handleMapaCanalCommand(interaction, client);
     }
 
     case "apagar": {
       if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-        return safeReply(interaction, "❌ Apenas administradores podem usar este comando.");
+        return safeReply(interaction, "❌ Olá apenas administradores podem usar este comando.");
       }
       const { execute: apagarExec } = await import("../commands/apagar.js");
       return apagarExec(interaction, client);
     }
 
     case "transcript-full": {
-      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
+      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Olá apenas staff pode usar este comando.");
       const { handleTranscriptCommand: handleFullTranscript } = await import("../commands/transcript.js");
       return handleFullTranscript(interaction, client);
     }
 
     case "apgrmsgbot": {
-      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
+      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Olá apenas staff pode usar este comando.");
       const { execute: apgrmsgbotExec } = await import("../commands/apgrmsgbot.js");
       return apgrmsgbotExec(interaction, client);
     }
@@ -720,46 +712,24 @@ async function handleButton(interaction, client) {
   }
 
   // ✅ ACEITAR REGRAS DE RECRUTAMENTO — COM AWAIT + BOTÕES DESATIVADOS
-  if (customId.startsWith("aceitar_regras_rec_")) {
-    const userId = customId.split("_")[3];
-    if (interaction.user.id !== userId) {
-      return safeReply(interaction, "⚠️ Este botão não está disponível para ti.");
-    }
-
-    // ✅ Editar mensagem PRIMEIRO (com await)
-    try {
-      await interaction.message.edit({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle("✅ Regras aceites com sucesso!")
-            .setDescription(
-              "**Já aceitaste as regras.**\nO teu ticket está a ser criado..."
-            )
-            .setColor(0x57f287)
-            .setTimestamp(),
-        ],
-        components: [
-          new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId(`regras_ok_${userId}`)
-              .setLabel("✅ Regras Aceites")
-              .setStyle(ButtonStyle.Success)
-              .setDisabled(true),
-            new ButtonBuilder()
-              .setCustomId(`regras_ja_ok_${userId}`)
-              .setLabel("🔒 Já aceitaste")
-              .setStyle(ButtonStyle.Secondary)
-              .setDisabled(true),
-          ),
-        ],
-      });
-    } catch (err) {
-      console.error("[Regras Rec] Erro ao editar mensagem:", err.message);
-    }
-
-    return criarTicketRecrutamento(interaction, client, null);
+if (customId.startsWith("aceitar_regras_rec_")) {
+  const userId = customId.split("_")[3];
+  if (interaction.user.id !== userId) {
+    return safeReply(interaction, "⚠️ Este botão não está disponível para ti.");
   }
 
+  // ✅ deferUpdate() → vamos editar a MESMA mensagem
+  try {
+    await interaction.deferUpdate();
+  } catch (err) {
+    console.error("[Regras Rec] Erro no deferUpdate:", err.message);
+    return;
+  }
+
+  // Passa `jaDeferred = true` → o criarTicketRecrutamento vai usar editReply
+  return criarTicketRecrutamento(interaction, client, null, true);
+}
+  
   if (customId.startsWith("recusar_regras_rec_")) {
     const userId = customId.split("_")[3];
     if (interaction.user.id !== userId) return safeReply(interaction, "⚠️ Este botão não é para ti.");
@@ -923,21 +893,28 @@ async function handleAceitarRegras(interaction) {
       }
 
       const mensagemJaAceitou = [
-        `Olá! 👋 Já aceitaste as regras **${timestampRelativo}**.`,
-        "",
-        `Se precisares de abrir um ticket, podes fazê-lo:`,
-        "",
-        `👥 Para entrar na **Empresa Virtual**: <#1326963454397124649>`,
-        "",
-        `🐛 **Bugs**`,
-        `🚨 **Denúncia**`,
-        `🛠️ **Suporte**`,
-        `🎥 **Criador de Conteúdo**`,
-        "",
-        `Para estas opções, abre aqui: <#1465865626286428355>`,
-        "",
-        `🇵🇹 Obrigado por fazeres parte da **Portugal Alfa Community**! 🚛`,
-      ].join("\n");
+  `Olá! 👋 Já aceitaste as regras **${timestampRelativo} atrás**.`,
+  ``,
+  `Se precisares de abrir um ticket, podes fazê-lo:`,
+  ``,
+  `👥 Para entrar na **Empresa Virtual**: <#1326963454397124649>`,
+  `──────────────────────────────`,
+  `🐛 \`Bugs\``,
+  `🚨 \`Denúncia\``,
+  `🔧 \`Suporte\``,
+  `🎥 \`Criador de Conteúdo\``,
+  `Para estas opções, abre aqui: <#1465865626286428355>`,
+  `──────────────────────────────`,
+  ``,
+  `Para esclarecer dúvidas sobre o **Euro Truck Simulator 2** (e temas relacionados):`,
+  `Usa este comando \`/ajuda\``,
+  `*(versão beta, ainda pode cometer erros)*`,
+  `Usa este comando aqui <#1146441023401238658>`,
+  ``,
+  `Caso as respostas estejam erradas, pergunta ao <#1115836042843529236> ou <#1146442453361107054>`,
+  ``,
+  `🇵🇹 Obrigado por fazeres parte da **Portugal Alfa Community**! 🚛`,
+].join("\n");
 
       return safeEdit(interaction, { content: mensagemJaAceitou });
     }
