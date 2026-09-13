@@ -716,7 +716,7 @@ async function mostrarRegrasRecrutamento(interaction, client, nomeTrucky, linkTr
 // CRIAR TICKET DE RECRUTAMENTO
 // ============================================================
 
-export async function criarTicketRecrutamento(interaction, client, nomeTrucky = null) {
+export async function criarTicketRecrutamento(interaction, client, nomeTrucky = null, jaDeferred = false) {
   const user = interaction.user;
 
   if (hasProcessedInteraction(interaction)) {
@@ -724,19 +724,20 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky = 
     return null;
   }
 
-  if (!interaction.deferred && !interaction.replied) {
-    try {
-      await interaction.deferReply({ flags: 64 });
-    } catch {
-      return null;
+  // Se NÃO fizemos deferUpdate, fazemos deferReply normal
+  if (!jaDeferred) {
+    if (!interaction.deferred && !interaction.replied) {
+      try {
+        await interaction.deferReply({ flags: 64 });
+      } catch {
+        return null;
+      }
     }
   }
 
   if (recruitmentLocks.has(user.id)) {
-    await interaction.editReply({
-      content: "⏳ Já estou a processar o teu recrutamento.",
-      flags: 64,
-    });
+    const msg = "⏳ Já estou a processar o teu recrutamento.";
+    await interaction.editReply({ content: msg, embeds: [], components: [] }).catch(() => {});
     return null;
   }
 
@@ -745,6 +746,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky = 
   try {
     ensureTicketsDB();
 
+    // Verificar se já tem ticket aberto
     const active = getActiveTicketsByUser(user.id);
     if (active.length > 0) {
       const existing = active[0];
@@ -754,8 +756,9 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky = 
       if (channel) {
         await interaction.editReply({
           content: `⚠️ Já tens um ticket aberto: <#${existing.channelId}>`,
-          flags: 64,
-        });
+          embeds: [],
+          components: [],
+        }).catch(() => {});
         return existing;
       }
       existing.closed = true;
@@ -771,8 +774,9 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky = 
     if (!guild) {
       await interaction.editReply({
         content: "❌ Não consegui encontrar o servidor.",
-        flags: 64,
-      });
+        embeds: [],
+        components: [],
+      }).catch(() => {});
       return null;
     }
 
@@ -844,7 +848,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky = 
       callActive: false,
       callChannelId: null,
       panelMessageId: null,
-      dmMessageId: null, // ✅ NOVO
+      dmMessageId: null,
     };
 
     db.tickets[ticketId] = ticket;
@@ -854,7 +858,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky = 
     const row = buildTicketButtons(ticketId);
 
     const panelMessage = await channel.send({
-      content: `||<@&1390770675567956018>||`,
+      content: `||<@&1390770675567956011>||`,
       embeds: [embed],
       components: [row],
     });
@@ -863,23 +867,35 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky = 
 
     await sendLog(ticketId, "open", client).catch(() => {});
 
-    const clockEmoji = getClockEmoji(openedAt);
+    // ✅ Embed final: regras aceites + ticket criado
+    const embedFinal = new EmbedBuilder()
+      .setColor(0x57f287)
+      .setDescription(
+        [
+          `**✅ Aceitaste as regras com sucesso**`,
+          ``,
+          `🎉 **Ticket de recrutamento criado com sucesso!**`,
+          ``,
+          `**Informações do teu ticket:**`,
+          `🎫 Nome do ticket: \`${channel.name}\``,
+          `🆔 ID do ticket: \`${ticketId}\``,
+          `🕒 Abertura: ${formatDateSimple(openedAt)}`,
+        ].join("\n")
+      )
+      .setTimestamp();
+
     const rowIrTicket = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setLabel(`${CONFIG.EMOJI_TICKET || "🎫"} Ir para o Ticket`)
+        .setLabel("🎫 Ir para o Ticket")
         .setStyle(ButtonStyle.Link)
         .setURL(`https://discord.com/channels/${guild.id}/${channel.id}`)
     );
 
+    // Editar a MESMA mensagem (das regras)
     await interaction.editReply({
-      content: [
-        `🎉 **Ticket de recrutamento criado com sucesso!**`,
-        `🎫 <#${channel.id}>`,
-        `🆔 ID: \`${ticketId}\``,
-        `${clockEmoji} **Abertura:** ${formatDateSimple(openedAt)}`,
-      ].join("\n"),
+      content: null,
+      embeds: [embedFinal],
       components: [rowIrTicket],
-      flags: 64,
     });
 
     return ticket;
@@ -887,9 +903,8 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky = 
     console.error("[Recruitment] Erro:", error);
     await interaction.editReply({
       content: "❌ Erro ao criar o ticket. Contacta a staff.",
-      components: [],
       embeds: [],
-      flags: 64,
+      components: [],
     }).catch(() => {});
     return null;
   } finally {
