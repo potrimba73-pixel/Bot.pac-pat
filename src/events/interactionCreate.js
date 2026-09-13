@@ -54,7 +54,7 @@ import {
 } from "../utils/dateUtils.js";
 
 // ============================================================
-// CONSTANTES E CONFIGURAÇÕES
+// CONSTANTES
 // ============================================================
 
 const COOLDOWN_CHAMAR = 5 * 60 * 1000;
@@ -96,10 +96,7 @@ export async function safeReply(interaction, content, ephemeral = true) {
 
 export async function safeDefer(interaction) {
   try {
-    if (!interaction.isRepliable()) {
-      console.warn("[safeDefer] Interação não é repliable.");
-      return false;
-    }
+    if (!interaction.isRepliable()) return false;
     if (!interaction.deferred && !interaction.replied) {
       await interaction.deferReply({ flags: 64 });
       return true;
@@ -132,7 +129,6 @@ export async function persistDB() {
 }
 
 function getTicketForInteraction(ticketId, channelId) {
-  console.log(`[getTicket] ticketId=${ticketId}, channelId=${channelId}`);
   if (ticketId) {
     const ticket = db.tickets?.[String(ticketId)];
     if (ticket && !ticket.closed && ticket.status !== 'closed') return ticket;
@@ -162,7 +158,7 @@ function setClosing(ticketId) { closingTickets.add(String(ticketId)); }
 function clearClosing(ticketId) { closingTickets.delete(String(ticketId)); }
 
 // ============================================================
-// FUNÇÕES DE STAFF E CHAMADA
+// STAFF E CHAMADAS
 // ============================================================
 
 async function buildStaffList(channel, ticket) {
@@ -199,9 +195,9 @@ async function buildStaffList(channel, ticket) {
     const lowerRole = roleName.toLowerCase();
     if (lowerRole.includes("fundador")) roleEmoji = "👑";
     else if (lowerRole.includes("administrador") || lowerRole.includes("admin")) roleEmoji = "🛡️";
-    else if (lowerRole.includes("suporte") || lowerRole.includes("support")) roleEmoji = "🎫";
-    else if (lowerRole.includes("moderador") || lowerRole.includes("mod")) roleEmoji = "🛠️";
-    else if (lowerRole.includes("desenvolvedor") || lowerRole.includes("dev")) roleEmoji = "💻";
+    else if (lowerRole.includes("suporte")) roleEmoji = "🎫";
+    else if (lowerRole.includes("moderador")) roleEmoji = "🛠️";
+    else if (lowerRole.includes("desenvolvedor")) roleEmoji = "💻";
 
     staffList.push({
       member,
@@ -227,9 +223,7 @@ async function chamarStaff(interaction, ticket, staffId) {
   try {
     const guild = interaction.guild;
     const staffMember = await guild.members.fetch(staffId).catch(() => null);
-    if (!staffMember) {
-      return safeReply(interaction, "❌ Staff não encontrado.");
-    }
+    if (!staffMember) return safeReply(interaction, "❌ Staff não encontrado.");
 
     cooldownChamadas.set(interaction.user.id, Date.now());
 
@@ -274,7 +268,6 @@ async function chamarStaff(interaction, ticket, staffId) {
       content: `✅ Staff <@${staffId}> foi notificado (se tiver DMs abertas). Aguarde resposta.`,
       ephemeral: true,
     });
-
   } catch (error) {
     console.error("[ChamarStaff] Erro:", error);
     return safeReply(interaction, {
@@ -285,15 +278,12 @@ async function chamarStaff(interaction, ticket, staffId) {
 }
 
 // ============================================================
-// PAINÉIS (Membro / Staff)
+// PAINÉIS
 // ============================================================
 
 async function enviarPainelMembro(interaction) {
   const deferred = await safeDefer(interaction);
-  if (!deferred && !interaction.isRepliable()) {
-    console.warn("[enviarPainelMembro] Interação não respondida.");
-    return null;
-  }
+  if (!deferred && !interaction.isRepliable()) return null;
   return responderPainelMembro(interaction, deferred || interaction.deferred || interaction.replied);
 }
 
@@ -351,7 +341,6 @@ async function responderPainelMembro(interaction, deferred = false) {
     );
 
   const row = new ActionRowBuilder().addComponents(selectMenu);
-
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`add_membro_${ticket.id}`)
@@ -361,20 +350,15 @@ async function responderPainelMembro(interaction, deferred = false) {
 
   const rows = [row, row2];
 
-  if (deferred) {
-    return await interaction.editReply({ embeds: [embed], components: rows });
-  } else {
-    return await interaction.reply({ embeds: [embed], components: rows, flags: 64 });
-  }
+  if (deferred) return await interaction.editReply({ embeds: [embed], components: rows });
+  return await interaction.reply({ embeds: [embed], components: rows, flags: 64 });
 }
 
 async function enviarPainelStaff(interaction, client) {
   if (!(await safeDefer(interaction))) return;
 
   const ticket = getTicketForInteraction(null, interaction.channelId);
-  if (!ticket) {
-    return safeEdit(interaction, { content: "⚠️ Nenhum ticket ativo encontrado neste canal." });
-  }
+  if (!ticket) return safeEdit(interaction, { content: "⚠️ Nenhum ticket ativo encontrado neste canal." });
 
   try {
     return await sendPainelChamada(interaction.channel, ticket.id, interaction);
@@ -385,19 +369,17 @@ async function enviarPainelStaff(interaction, client) {
 }
 
 // ============================================================
-// HANDLERS DE ADICIONAR MEMBRO
+// ADICIONAR MEMBRO
 // ============================================================
 
 async function handleAddMembro(interaction, client) {
   const ticketId = interaction.customId.split('_')[2];
   const ticket = getTicketForInteraction(ticketId, interaction.channelId);
-  if (!ticket || ticket.closed) {
-    return safeReply(interaction, '⚠️ Ticket não encontrado ou já fechado.');
-  }
+  if (!ticket || ticket.closed) return safeReply(interaction, '⚠️ Ticket não encontrado ou já fechado.');
 
-  const isStaff = interaction.member.permissions.has(PermissionFlagsBits.ManageMessages) ||
-                  interaction.member.roles.cache.has(CONFIG.CARGO_STAFF);
-  if (!isStaff && interaction.user.id !== ticket.userId) {
+  const isStaffUser = interaction.member.permissions.has(PermissionFlagsBits.ManageMessages) ||
+                      interaction.member.roles.cache.has(CONFIG.CARGO_STAFF);
+  if (!isStaffUser && interaction.user.id !== ticket.userId) {
     return safeReply(interaction, '❌ Apenas o dono do ticket ou staff pode adicionar membros.');
   }
 
@@ -412,8 +394,7 @@ async function handleAddMembro(interaction, client) {
     .setPlaceholder('Ex: @utilizador ou 123456789')
     .setRequired(true);
 
-  const row = new ActionRowBuilder().addComponents(input);
-  modal.addComponents(row);
+  modal.addComponents(new ActionRowBuilder().addComponents(input));
 
   try {
     await interaction.showModal(modal);
@@ -428,9 +409,7 @@ async function handleModalAddMembro(interaction, client) {
 
   const ticketId = interaction.customId.split('_')[3];
   const ticket = getTicketForInteraction(ticketId, interaction.channelId);
-  if (!ticket || ticket.closed) {
-    return interaction.editReply('⚠️ Ticket não encontrado ou já fechado.');
-  }
+  if (!ticket || ticket.closed) return interaction.editReply('⚠️ Ticket não encontrado ou já fechado.');
 
   const userIdInput = interaction.fields.getTextInputValue('membro_id');
   let userId = userIdInput.replace(/[<@!>]/g, '');
@@ -439,14 +418,10 @@ async function handleModalAddMembro(interaction, client) {
   }
 
   const member = await interaction.guild.members.fetch(userId).catch(() => null);
-  if (!member) {
-    return interaction.editReply('❌ Utilizador não encontrado no servidor.');
-  }
+  if (!member) return interaction.editReply('❌ Utilizador não encontrado no servidor.');
 
   const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
-  if (!channel) {
-    return interaction.editReply('❌ Canal do ticket não encontrado.');
-  }
+  if (!channel) return interaction.editReply('❌ Canal do ticket não encontrado.');
 
   const perms = channel.permissionsFor(member);
   if (perms && perms.has('ViewChannel')) {
@@ -463,9 +438,7 @@ async function handleModalAddMembro(interaction, client) {
   await channel.send(`👤 ${member} foi adicionado ao ticket por ${interaction.user}.`);
 
   const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
-  if (logChannel) {
-    await logChannel.send(`📥 [${channel.name}] ${interaction.user} adicionou ${member} ao ticket.`);
-  }
+  if (logChannel) await logChannel.send(`📥 [${channel.name}] ${interaction.user} adicionou ${member} ao ticket.`);
 
   await interaction.editReply(`✅ ${member} adicionado ao ticket com sucesso.`);
 }
@@ -476,18 +449,10 @@ async function handleModalAddMembro(interaction, client) {
 
 export async function handleInteractionCreate(interaction, client) {
   try {
-    if (interaction.isChatInputCommand()) {
-      return await handleSlashCommand(interaction, client);
-    }
-    if (interaction.isModalSubmit()) {
-      return await handleModalSubmit(interaction, client);
-    }
-    if (interaction.isStringSelectMenu()) {
-      return await handleSelectMenu(interaction, client);
-    }
-    if (interaction.isButton()) {
-      return await handleButton(interaction, client);
-    }
+    if (interaction.isChatInputCommand()) return await handleSlashCommand(interaction, client);
+    if (interaction.isModalSubmit()) return await handleModalSubmit(interaction, client);
+    if (interaction.isStringSelectMenu()) return await handleSelectMenu(interaction, client);
+    if (interaction.isButton()) return await handleButton(interaction, client);
   } catch (error) {
     console.error("[InteractionCreate] Erro não tratado:", error);
     try {
@@ -517,100 +482,93 @@ async function handleSlashCommand(interaction, client) {
     case "ajuda":
       return handleAjudaCommand(interaction, client);
 
-    case "transcript":
-      if (!isStaff(interaction.member)) {
-        return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
-      }
+    case "transcript": {
+      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
       const ticket = getTicketForInteraction(null, interaction.channelId);
-      if (!ticket) {
-        return safeReply(interaction, "⚠️ Nenhum ticket ativo encontrado neste canal.");
-      }
+      if (!ticket) return safeReply(interaction, "⚠️ Nenhum ticket ativo encontrado neste canal.");
       return handleTranscriptCommand(interaction, ticket, client);
+    }
 
     case "painelmembro":
       return enviarPainelMembro(interaction);
 
     case "painelstaff":
-      if (!isStaff(interaction.member)) {
-        return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
-      }
+      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
       return enviarPainelStaff(interaction, client);
 
-    case "limpar":
-      if (!isStaff(interaction.member)) {
-        return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
-      }
+    case "limpar": {
+      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
       const { execute: limparExec } = await import("../commands/limpar.js");
       return limparExec(interaction, client);
+    }
 
-    case "status":
+    case "status": {
       const { execute: statusExec } = await import("../commands/status.js");
       return statusExec(interaction, client);
+    }
 
-    case "passar":
-      if (!isStaff(interaction.member)) {
-        return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
-      }
+    case "passar": {
+      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
       const { execute: passarExec } = await import("../commands/passar.js");
       return passarExec(interaction, client);
+    }
 
-    case "pedirassumo":
-      if (!isStaff(interaction.member)) {
-        return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
-      }
+    case "pedirassumo": {
+      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
       const { execute: pedirAssumoExec } = await import("../commands/pedirassumo.js");
       return pedirAssumoExec(interaction, client);
+    }
 
     case "verificar-inatividade":
     case "minhas-cargas":
     case "estatisticas-vtc":
     case "atualizar-patentes":
     case "limpeza":
-    case "mapa":
+    case "mapa": {
       const staffCommands = ["verificar-inatividade", "atualizar-patentes", "limpeza"];
       if (staffCommands.includes(command) && !isStaff(interaction.member)) {
         return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
       }
       const { handleTruckyCommand } = await import("../commands/truckyCommands.js");
       return handleTruckyCommand(interaction, client);
+    }
 
     case "gerar-foto":
     case "minha-foto":
     case "gerar-patente":
-    case "verificar-templates":
+    case "verificar-templates": {
       if (command === "gerar-patente" && !isStaff(interaction.member)) {
         return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
       }
       const { handleTruckyImageCommand } = await import("../commands/truckyImageCommands.js");
       return handleTruckyImageCommand(interaction);
+    }
 
-    case "mapa-canal":
-      if (!isStaff(interaction.member)) {
-        return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
-      }
+    case "mapa-canal": {
+      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
       const { handleMapaCanalCommand } = await import("../commands/truckyMapaCanal.js");
       return handleMapaCanalCommand(interaction, client);
+    }
 
-    case "apagar":
+    case "apagar": {
       if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
         return safeReply(interaction, "❌ Apenas administradores podem usar este comando.");
       }
       const { execute: apagarExec } = await import("../commands/apagar.js");
       return apagarExec(interaction, client);
+    }
 
-    case "transcript-full":
-      if (!isStaff(interaction.member)) {
-        return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
-      }
+    case "transcript-full": {
+      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
       const { handleTranscriptCommand: handleFullTranscript } = await import("../commands/transcript.js");
       return handleFullTranscript(interaction, client);
+    }
 
-    case "apgrmsgbot":
-      if (!isStaff(interaction.member)) {
-        return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
-      }
+    case "apgrmsgbot": {
+      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode usar este comando.");
       const { execute: apgrmsgbotExec } = await import("../commands/apgrmsgbot.js");
       return apgrmsgbotExec(interaction, client);
+    }
 
     default:
       return safeReply(interaction, "⚠️ Comando não reconhecido.");
@@ -624,7 +582,6 @@ async function handleSlashCommand(interaction, client) {
 async function handleModalSubmit(interaction, client) {
   const customId = interaction.customId;
 
-  // ---------- AJUDA MODAL ----------
   if (customId === 'help_search_modal' || customId === 'help_ia_modal') {
     return handleAjudaFeedback(interaction);
   }
@@ -672,7 +629,6 @@ async function handleModalSubmit(interaction, client) {
 // ============================================================
 
 async function handleSelectMenu(interaction, client) {
-  // ---------- AJUDA CATEGORY SELECT ----------
   if (interaction.customId === 'help_category_select') {
     return handleAjudaFeedback(interaction);
   }
@@ -682,12 +638,8 @@ async function handleSelectMenu(interaction, client) {
     const staffId = interaction.values[0];
 
     const ticket = getTicketForInteraction(ticketId, interaction.channelId);
-    if (!ticket || ticket.closed) {
-      return safeReply(interaction, "⚠️ Ticket não encontrado ou já fechado.");
-    }
-    if (interaction.user.id !== ticket.userId) {
-      return safeReply(interaction, "❌ Apenas o dono do ticket pode chamar staff.");
-    }
+    if (!ticket || ticket.closed) return safeReply(interaction, "⚠️ Ticket não encontrado ou já fechado.");
+    if (interaction.user.id !== ticket.userId) return safeReply(interaction, "❌ Apenas o dono do ticket pode chamar staff.");
 
     const now = Date.now();
     const lastCall = cooldownChamadas.get(interaction.user.id);
@@ -709,11 +661,8 @@ async function handleSelectMenu(interaction, client) {
       suporte: "🔧 Suporte",
       criador: "🎥 Criador De Conteudo",
     };
-    if (!labels[value]) {
-      return safeReply(interaction, "❌ Categoria de ticket inválida.");
-    }
+    if (!labels[value]) return safeReply(interaction, "❌ Categoria de ticket inválida.");
 
-    // ✅ Desativar o dropdown antes de criar o ticket
     try {
       await interaction.message.edit({
         components: [
@@ -734,7 +683,6 @@ async function handleSelectMenu(interaction, client) {
   if (interaction.customId === "ticket_recruitamento") {
     const value = interaction.values[0];
 
-    // ✅ Desativar o dropdown antes de prosseguir
     try {
       await interaction.message.edit({
         components: [
@@ -787,7 +735,6 @@ async function handleButton(interaction, client) {
   const customId = interaction.customId;
   console.log(`[Button] CustomId: ${customId}`);
 
-  // ---------- AJUDA BUTTONS ----------
   if (customId === 'help_home' || customId === 'help_back' || customId === 'help_search') {
     return handleAjudaFeedback(interaction);
   }
@@ -796,43 +743,50 @@ async function handleButton(interaction, client) {
     return handleAceitarRegras(interaction);
   }
 
-  // ✅ Aceitar regras de recrutamento (com bloqueio de botões)
+  // ✅ ACEITAR REGRAS DE RECRUTAMENTO — COM AWAIT + BOTÕES DESATIVADOS
   if (customId.startsWith("aceitar_regras_rec_")) {
     const userId = customId.split("_")[3];
     if (interaction.user.id !== userId) {
       return safeReply(interaction, "⚠️ Este botão não está disponível para ti.");
     }
 
-    // Desativar botões da mensagem original
-    interaction.message?.edit({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle("✅ Regras Aceites")
-          .setDescription(
-            "Aceitaste as regras com sucesso! O teu ticket está a ser criado..."
-          )
-          .setColor(0x57f287)
-          .setTimestamp(),
-      ],
-      components: [
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`regras_ok_${userId}`)
-            .setLabel("✅ Regras Aceites com Sucesso")
-            .setStyle(ButtonStyle.Success)
-            .setDisabled(true)
-        ),
-      ],
-    }).catch(() => {});
+    // ✅ Editar mensagem PRIMEIRO (com await)
+    try {
+      await interaction.message.edit({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("✅ Regras aceites com sucesso!")
+            .setDescription(
+              "**Já aceitaste as regras.**\nO teu ticket está a ser criado..."
+            )
+            .setColor(0x57f287)
+            .setTimestamp(),
+        ],
+        components: [
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`regras_ok_${userId}`)
+              .setLabel("✅ Regras Aceites")
+              .setStyle(ButtonStyle.Success)
+              .setDisabled(true),
+            new ButtonBuilder()
+              .setCustomId(`regras_ja_ok_${userId}`)
+              .setLabel("🔒 Já aceitaste")
+              .setStyle(ButtonStyle.Secondary)
+              .setDisabled(true),
+          ),
+        ],
+      });
+    } catch (err) {
+      console.error("[Regras Rec] Erro ao editar mensagem:", err.message);
+    }
 
     return criarTicketRecrutamento(interaction, client, null);
   }
 
   if (customId.startsWith("recusar_regras_rec_")) {
     const userId = customId.split("_")[3];
-    if (interaction.user.id !== userId) {
-      return safeReply(interaction, "⚠️ Este botão não é para ti.");
-    }
+    if (interaction.user.id !== userId) return safeReply(interaction, "⚠️ Este botão não é para ti.");
     try {
       return await interaction.update({
         content: "❌ Recrutamento cancelado. Se mudares de ideias, podes voltar a candidatar-te mais tarde.",
@@ -844,46 +798,21 @@ async function handleButton(interaction, client) {
     }
   }
 
-  if (customId.startsWith("assumir_")) {
-    return handleAssumirTicket(interaction, client);
-  }
+  if (customId.startsWith("assumir_")) return handleAssumirTicket(interaction, client);
+  if (customId.startsWith("painel_membro_")) return enviarPainelMembro(interaction);
+  if (customId.startsWith("sair_")) return handleSairTicket(interaction, client);
+  if (customId.startsWith("deletar_")) return handleFecharTicket(interaction, client);
+  if (customId.startsWith("add_membro_")) return handleAddMembro(interaction, client);
+  if (customId.startsWith("confirmar_fecho_")) return handleConfirmarFecho(interaction, client);
+  if (customId.startsWith("cancelar_fecho_")) return handleCancelarFecho(interaction, client);
+  if (customId.startsWith("recrutado_sim_")) return handleRecrutadoSim(interaction, client);
 
-  if (customId.startsWith("painel_membro_")) {
-    return enviarPainelMembro(interaction);
-  }
-
-  if (customId.startsWith("sair_")) {
-    return handleSairTicket(interaction, client);
-  }
-
-  if (customId.startsWith("deletar_")) {
-    return handleFecharTicket(interaction, client);
-  }
-
-  if (customId.startsWith("add_membro_")) {
-    return handleAddMembro(interaction, client);
-  }
-
-  if (customId.startsWith("confirmar_fecho_")) {
-    return handleConfirmarFecho(interaction, client);
-  }
-
-  if (customId.startsWith("cancelar_fecho_")) {
-    return handleCancelarFecho(interaction, client);
-  }
-
-  if (customId.startsWith("recrutado_sim_")) {
-    return handleRecrutadoSim(interaction, client);
-  }
   if (customId.startsWith("recrutado_nao_")) {
-    if (!isStaff(interaction.member)) {
-      return safeReply(interaction, "❌ Apenas staff pode marcar como não recrutado.");
-    }
+    if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode marcar como não recrutado.");
     const ticketId = customId.substring("recrutado_nao_".length);
     return fecharTicket(interaction, ticketId, client, false);
   }
 
-  // ✅ Novos handlers para o fluxo sem modal
   if (customId.startsWith("foto_nome_manual_")) {
     const ticketId = customId.substring("foto_nome_manual_".length);
     const modal = new ModalBuilder()
@@ -905,12 +834,9 @@ async function handleButton(interaction, client) {
   if (customId.startsWith("foto_nome_skip_")) {
     const ticketId = customId.substring("foto_nome_skip_".length);
 
-    // Criar um "fake interaction" para reaproveitar handleFotoTruckyModal
     const fakeInteraction = {
       customId: `modal_foto_trucky_${ticketId}`,
-      fields: {
-        getTextInputValue: () => "Não informado",
-      },
+      fields: { getTextInputValue: () => "Não informado" },
       member: interaction.member,
       user: interaction.user,
       guild: interaction.guild,
@@ -923,28 +849,19 @@ async function handleButton(interaction, client) {
       followUp: (d) => interaction.followUp(d),
     };
 
-    try {
-      await interaction.deferUpdate();
-    } catch {}
-
+    try { await interaction.deferUpdate(); } catch {}
     return handleFotoTruckyModal(fakeInteraction, client);
   }
 
   if (customId.startsWith("fechar_definitivo_")) {
-    if (!isStaff(interaction.member)) {
-      return safeReply(interaction, "❌ Apenas staff pode fechar este ticket.");
-    }
+    if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode fechar este ticket.");
     const ticketId = customId.substring("fechar_definitivo_".length);
     return fecharTicket(interaction, ticketId, client, false);
   }
 
-  if (customId.startsWith("avaliar_")) {
-    return handleAvaliacaoButton(interaction);
-  }
+  if (customId.startsWith("avaliar_")) return handleAvaliacaoButton(interaction);
 
-  if (customId === "ajuda_procurar") {
-    return handleAjudaFeedback(interaction);
-  }
+  if (customId === "ajuda_procurar") return handleAjudaFeedback(interaction);
   if (
     customId === "ajuda_ticket" ||
     customId.startsWith("ajuda_ticket_direct_") ||
@@ -958,56 +875,46 @@ async function handleButton(interaction, client) {
 
   if (customId.startsWith("criar_call_")) {
     if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode criar calls.");
-    const ticketId = customId.substring("criar_call_".length);
-    return criarCall(interaction, ticketId, client);
+    return criarCall(interaction, customId.substring("criar_call_".length), client);
   }
   if (customId.startsWith("apagar_call_")) {
     if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode apagar calls.");
-    const ticketId = customId.substring("apagar_call_".length);
-    return apagarCall(interaction, ticketId, client);
+    return apagarCall(interaction, customId.substring("apagar_call_".length), client);
   }
   if (customId.startsWith("chamar_membro_")) {
     if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode chamar membros.");
-    const ticketId = customId.substring("chamar_membro_".length);
-    return chamarMembro(interaction, ticketId, client);
+    return chamarMembro(interaction, customId.substring("chamar_membro_".length), client);
   }
   if (customId.startsWith("add_user_")) {
     if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode adicionar utilizadores.");
-    const ticketId = customId.substring("add_user_".length);
-    return addUserToCall?.(interaction, ticketId, client) || safeReply(interaction, "⏳ Funcionalidade em desenvolvimento.");
+    return addUserToCall?.(interaction, customId.substring("add_user_".length), client) || safeReply(interaction, "⏳ Funcionalidade em desenvolvimento.");
   }
   if (customId.startsWith("remove_user_")) {
     if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode remover utilizadores.");
-    const ticketId = customId.substring("remove_user_".length);
-    return removeUserFromCall?.(interaction, ticketId, client) || safeReply(interaction, "⏳ Funcionalidade em desenvolvimento.");
+    return removeUserFromCall?.(interaction, customId.substring("remove_user_".length), client) || safeReply(interaction, "⏳ Funcionalidade em desenvolvimento.");
   }
 
   if (customId.startsWith("smart_search_") || customId.startsWith("smart_do_search_")) {
     return handleSmartSearch(interaction);
   }
 
-  if (customId === "smart_cancel") {
-    return safeReply(interaction, "👍 Pesquisa cancelada.");
-  }
+  if (customId === "smart_cancel") return safeReply(interaction, "👍 Pesquisa cancelada.");
 
   console.warn(`[Button] CustomId não tratado: ${customId}`);
   return safeReply(interaction, "⚠️ Ação desconhecida.");
 }
 
 // ============================================================
-// HANDLERS ESPECÍFICOS
+// ACEITAR REGRAS
 // ============================================================
 
-  async function handleAceitarRegras(interaction) {
+async function handleAceitarRegras(interaction) {
   if (!(await safeDefer(interaction))) return;
 
   const member = interaction.member;
-
-  // ✅ Verificar se já aceitou antes
   const jaAceitou = Array.isArray(db.acceptedRules) && db.acceptedRules.includes(member.id);
 
   try {
-    // Atribuir cargos apenas se ainda não aceitou
     if (!jaAceitou) {
       const cargos = [
         CONFIG.CARGO_MEMBRO,
@@ -1023,7 +930,6 @@ async function handleButton(interaction, client) {
         }
       }
 
-      // Guardar registo
       if (!db.acceptedRules) db.acceptedRules = [];
       if (!db.acceptedRules.includes(member.id)) db.acceptedRules.push(member.id);
       if (!db.acceptedRulesAt) db.acceptedRulesAt = {};
@@ -1032,19 +938,12 @@ async function handleButton(interaction, client) {
       await persistDB();
     }
 
-    // ============================================================
-    // MENSAGEM — Já aceitou antes
-    // ============================================================
     if (jaAceitou) {
       const dataISO = db.acceptedRulesAt?.[member.id];
-
-      // Converter para unix timestamp
-      let timestampRelativo = "";
+      let timestampRelativo = "anteriormente";
       if (dataISO) {
         const unixTs = Math.floor(new Date(dataISO).getTime() / 1000);
         timestampRelativo = `<t:${unixTs}:R>`;
-      } else {
-        timestampRelativo = "anteriormente";
       }
 
       const mensagemJaAceitou = [
@@ -1064,14 +963,9 @@ async function handleButton(interaction, client) {
         `🇵🇹 Obrigado por fazeres parte da **Portugal Alfa Community**! 🚛`,
       ].join("\n");
 
-      return safeEdit(interaction, {
-        content: mensagemJaAceitou,
-      });
+      return safeEdit(interaction, { content: mensagemJaAceitou });
     }
 
-    // ============================================================
-    // MENSAGEM — Primeira vez
-    // ============================================================
     const mensagemPrimeiraVez = [
       `✅ **Regras aceites com sucesso!**`,
       `Boas-vindas à **Portugal Alfa Community** 🎉`,
@@ -1093,9 +987,7 @@ async function handleButton(interaction, client) {
       `Desejamos-te um **bom convívio** por cá! 🚛🇵🇹`,
     ].join("\n");
 
-    return safeEdit(interaction, {
-      content: mensagemPrimeiraVez,
-    });
+    return safeEdit(interaction, { content: mensagemPrimeiraVez });
   } catch (error) {
     console.error("[Regras] Erro:", error);
     return safeEdit(interaction, { content: "❌ Erro ao processar. Tenta novamente." });
@@ -1109,22 +1001,14 @@ async function handleButton(interaction, client) {
 async function handleAssumirTicket(interaction, client) {
   const ticketId = interaction.customId.substring("assumir_".length);
   if (!(await safeDefer(interaction))) return;
-  if (!isStaff(interaction.member)) {
-    return safeEdit(interaction, { content: "❌ Apenas staff pode assumir tickets." });
-  }
-  if (isClaiming(ticketId)) {
-    return safeEdit(interaction, { content: "⏳ Outro membro da staff está a assumir este ticket." });
-  }
+  if (!isStaff(interaction.member)) return safeEdit(interaction, { content: "❌ Apenas staff pode assumir tickets." });
+  if (isClaiming(ticketId)) return safeEdit(interaction, { content: "⏳ Outro membro da staff está a assumir este ticket." });
 
   setClaiming(ticketId, interaction.user.id);
   try {
     const ticket = getTicketForInteraction(ticketId, interaction.channelId);
-    if (!ticket || ticket.closed) {
-      return safeEdit(interaction, { content: "⚠️ Ticket não encontrado ou já fechado." });
-    }
-    if (ticket.claimedBy) {
-      return safeEdit(interaction, { content: `⚠️ Este ticket já foi assumido por <@${ticket.claimedBy}>.` });
-    }
+    if (!ticket || ticket.closed) return safeEdit(interaction, { content: "⚠️ Ticket não encontrado ou já fechado." });
+    if (ticket.claimedBy) return safeEdit(interaction, { content: `⚠️ Este ticket já foi assumido por <@${ticket.claimedBy}>.` });
 
     await withTicketLock(ticket.id, async () => {
       const current = db.tickets[String(ticket.id)];
@@ -1138,14 +1022,10 @@ async function handleAssumirTicket(interaction, client) {
     });
 
     const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
-    if (!channel) {
-      return safeEdit(interaction, { content: "❌ O canal deste ticket já não existe." });
-    }
+    if (!channel) return safeEdit(interaction, { content: "❌ O canal deste ticket já não existe." });
 
     await updateTicketEmbed(channel, ticket.id);
-    await channel.send(
-      `🎉 **Ticket assumido com sucesso!**\n\n👮 <@${interaction.user.id}> assumiu este ticket.\nSe precisares de chamar outro membro da staff, usa o **Painel Membro**.`
-    );
+    await channel.send(`🎉 **Ticket assumido com sucesso!**\n\n👮 <@${interaction.user.id}> assumiu este ticket.\nSe precisares de chamar outro membro da staff, usa o **Painel Membro**.`);
 
     try {
       const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
@@ -1209,26 +1089,18 @@ async function handleSairTicket(interaction, client) {
   if (!(await safeDefer(interaction))) return;
 
   const ticket = getTicketForInteraction(ticketId, interaction.channelId);
-  if (!ticket || ticket.closed) {
-    return safeEdit(interaction, { content: "⚠️ Ticket não encontrado ou já fechado." });
-  }
-  if (ticket.userId !== interaction.user.id) {
-    return safeEdit(interaction, { content: "⚠️ Só quem abriu o ticket pode sair." });
-  }
+  if (!ticket || ticket.closed) return safeEdit(interaction, { content: "⚠️ Ticket não encontrado ou já fechado." });
+  if (ticket.userId !== interaction.user.id) return safeEdit(interaction, { content: "⚠️ Só quem abriu o ticket pode sair." });
 
   const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
-  if (!channel) {
-    return safeEdit(interaction, { content: "❌ O canal do ticket já não existe." });
-  }
+  if (!channel) return safeEdit(interaction, { content: "❌ O canal do ticket já não existe." });
 
   try {
     await channel.permissionOverwrites.delete(interaction.user.id);
     await channel.send(`🚪 ${interaction.user} saiu do ticket.`);
 
     const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
-    if (logChannel) {
-      await logChannel.send(`🚪 [${channel.name}] ${interaction.user} saiu do ticket.`);
-    }
+    if (logChannel) await logChannel.send(`🚪 [${channel.name}] ${interaction.user} saiu do ticket.`);
 
     return safeEdit(interaction, { content: "✅ Saíste do ticket com sucesso." });
   } catch {
@@ -1237,25 +1109,17 @@ async function handleSairTicket(interaction, client) {
 }
 
 // ============================================================
-// FECHAR TICKET (com confirmação)
+// FECHAR TICKET
 // ============================================================
 
 async function handleFecharTicket(interaction, client) {
   const ticketId = interaction.customId.substring("deletar_".length);
   if (!(await safeDefer(interaction))) return;
-
-  if (!isStaff(interaction.member)) {
-    return safeEdit(interaction, { content: "❌ Apenas staff pode fechar tickets." });
-  }
+  if (!isStaff(interaction.member)) return safeEdit(interaction, { content: "❌ Apenas staff pode fechar tickets." });
 
   const ticket = getTicketForInteraction(ticketId, interaction.channelId);
-  if (!ticket || ticket.closed) {
-    return safeEdit(interaction, { content: "⚠️ Ticket não encontrado ou já fechado." });
-  }
-
-  if (ticket.status === 'pending_close') {
-    return safeEdit(interaction, { content: "⏳ Este ticket já está aguardando confirmação de fecho." });
-  }
+  if (!ticket || ticket.closed) return safeEdit(interaction, { content: "⚠️ Ticket não encontrado ou já fechado." });
+  if (ticket.status === 'pending_close') return safeEdit(interaction, { content: "⏳ Este ticket já está aguardando confirmação de fecho." });
 
   if (ticket.type === "recrutamento") {
     const row = new ActionRowBuilder().addComponents(
@@ -1341,46 +1205,32 @@ async function handleFecharTicket(interaction, client) {
 
 async function handleConfirmarFecho(interaction, client) {
   if (!(await safeDefer(interaction))) return;
-  if (!isStaff(interaction.member)) {
-    return safeEdit(interaction, { content: "❌ Apenas staff pode confirmar o fecho." });
-  }
+  if (!isStaff(interaction.member)) return safeEdit(interaction, { content: "❌ Apenas staff pode confirmar o fecho." });
 
   const ticketId = interaction.customId.split('_')[2];
   const ticket = getTicketForInteraction(ticketId, interaction.channelId);
-  if (!ticket || ticket.closed) {
-    return safeEdit(interaction, { content: "⚠️ Ticket não encontrado ou já fechado." });
-  }
-  if (ticket.status !== 'pending_close') {
-    return safeEdit(interaction, { content: "ℹ️ Este ticket não está aguardando fecho." });
-  }
+  if (!ticket || ticket.closed) return safeEdit(interaction, { content: "⚠️ Ticket não encontrado ou já fechado." });
+  if (ticket.status !== 'pending_close') return safeEdit(interaction, { content: "ℹ️ Este ticket não está aguardando fecho." });
 
   try {
     const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS);
     if (logChannel) {
       const msg = await logChannel.messages.fetch(ticket.pendingCloseMessageId).catch(() => null);
-      if (msg) {
-        await msg.edit({ components: [] });
-      }
+      if (msg) await msg.edit({ components: [] });
     }
-  } catch (e) { /* ignorar */ }
+  } catch {}
 
   return fecharTicket(interaction, ticketId, client, false);
 }
 
 async function handleCancelarFecho(interaction, client) {
   if (!(await safeDefer(interaction))) return;
-  if (!isStaff(interaction.member)) {
-    return safeEdit(interaction, { content: "❌ Apenas staff pode cancelar o fecho." });
-  }
+  if (!isStaff(interaction.member)) return safeEdit(interaction, { content: "❌ Apenas staff pode cancelar o fecho." });
 
   const ticketId = interaction.customId.split('_')[2];
   const ticket = getTicketForInteraction(ticketId, interaction.channelId);
-  if (!ticket || ticket.closed) {
-    return safeEdit(interaction, { content: "⚠️ Ticket não encontrado ou já fechado." });
-  }
-  if (ticket.status !== 'pending_close') {
-    return safeEdit(interaction, { content: "ℹ️ Este ticket não está aguardando fecho." });
-  }
+  if (!ticket || ticket.closed) return safeEdit(interaction, { content: "⚠️ Ticket não encontrado ou já fechado." });
+  if (ticket.status !== 'pending_close') return safeEdit(interaction, { content: "ℹ️ Este ticket não está aguardando fecho." });
 
   await withTicketLock(ticket.id, async () => {
     const current = db.tickets[String(ticket.id)];
@@ -1397,35 +1247,27 @@ async function handleCancelarFecho(interaction, client) {
     const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS);
     if (logChannel) {
       const msg = await logChannel.messages.fetch(ticket.pendingCloseMessageId).catch(() => null);
-      if (msg) {
-        await msg.edit({ components: [] });
-      }
+      if (msg) await msg.edit({ components: [] });
     }
-  } catch (e) { /* ignorar */ }
+  } catch {}
 
   const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
-  if (channel) {
-    await channel.send('🔓 O pedido de fecho foi cancelado. O ticket continua aberto.');
-  }
+  if (channel) await channel.send('🔓 O pedido de fecho foi cancelado. O ticket continua aberto.');
 
   await safeEdit(interaction, { content: "❌ Fecho cancelado." });
 }
 
 // ============================================================
-// RECRUTADO SIM (sem modal — evita timeout)
+// RECRUTADO SIM
 // ============================================================
 
 async function handleRecrutadoSim(interaction, client) {
   const ticketId = interaction.customId.substring("recrutado_sim_".length);
 
-  if (!isStaff(interaction.member)) {
-    return safeReply(interaction, "❌ Apenas staff pode confirmar o recrutamento.");
-  }
+  if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff pode confirmar o recrutamento.");
 
   const ticket = getTicketForInteraction(ticketId, interaction.channelId);
-  if (!ticket || ticket.closed) {
-    return safeReply(interaction, "⚠️ Ticket não encontrado ou já fechado.");
-  }
+  if (!ticket || ticket.closed) return safeReply(interaction, "⚠️ Ticket não encontrado ou já fechado.");
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -1446,7 +1288,7 @@ async function handleRecrutadoSim(interaction, client) {
 }
 
 // ============================================================
-// AVALIAÇÃO
+// AVALIAÇÃO — BOTÃO (abre modal)
 // ============================================================
 
 async function handleAvaliacaoButton(interaction) {
@@ -1455,12 +1297,8 @@ async function handleAvaliacaoButton(interaction) {
   const estrelas = Number(parts[2]);
 
   const ticket = db.tickets?.[String(ticketId)];
-  if (!ticket) {
-    return safeReply(interaction, "⚠️ Ticket não encontrado.");
-  }
-  if (!Number.isInteger(estrelas) || estrelas < 1 || estrelas > 5) {
-    return safeReply(interaction, "⚠️ Avaliação inválida.");
-  }
+  if (!ticket) return safeReply(interaction, "⚠️ Ticket não encontrado.");
+  if (!Number.isInteger(estrelas) || estrelas < 1 || estrelas > 5) return safeReply(interaction, "⚠️ Avaliação inválida.");
   if (ticket.rating !== null && ticket.rating !== undefined) {
     return safeReply(interaction, `⚠️ Já avaliaste este ticket com ${"⭐".repeat(ticket.rating)} (${ticket.rating}/5).`);
   }
@@ -1487,6 +1325,11 @@ async function handleAvaliacaoButton(interaction) {
   }
 }
 
+// ============================================================
+// AVALIAÇÃO — MODAL SUBMIT
+// ✅ Edita a DM original em vez de enviar nova mensagem
+// ============================================================
+
 async function handleAvaliacaoModal(interaction, client) {
   const parts = interaction.customId.split("_");
   const ticketId = parts[2];
@@ -1495,25 +1338,22 @@ async function handleAvaliacaoModal(interaction, client) {
   const comentario = interaction.fields.getTextInputValue("avaliacao_comentario")?.trim() || "Sem comentário";
 
   const ticket = db.tickets?.[String(ticketId)];
-  if (!ticket) {
-    return safeReply(interaction, "⚠️ Ticket não encontrado.");
-  }
+  if (!ticket) return safeReply(interaction, "⚠️ Ticket não encontrado.");
   if (ticket.rating !== null && ticket.rating !== undefined) {
     return safeReply(interaction, `⚠️ Já avaliaste este ticket com ${"⭐".repeat(ticket.rating)} (${ticket.rating}/5).`);
   }
 
+  // Guardar avaliação
   ticket.rating = estrelas;
   ticket.ratingComment = comentario;
   await persistDB();
 
-  const staffAtendeu = ticket.claimedByName || ticket.closedByName || "Staff";
+  // Enviar log
   const staffId = ticket.claimedBy || ticket.closedBy;
-
   try {
     const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
     if (logChannel) {
       const stars = "⭐".repeat(estrelas) + "☆".repeat(5 - estrelas);
-
       const agora = new Date();
       const dataHora = agora.toLocaleString('pt-PT', {
         timeZone: 'Europe/Lisbon',
@@ -1555,7 +1395,8 @@ async function handleAvaliacaoModal(interaction, client) {
     minute: '2-digit',
   });
 
-  const staffName = ticket.closedByName || interaction.user.username;
+  const staffName = ticket.closedByName || ticket.claimedByName || "Staff";
+
   const mensagemFinal =
     `✅ **Obrigado pela tua avaliação!**\n\n` +
     `Avaliação: ${stars} (${estrelas}/5)\n\n` +
@@ -1567,32 +1408,48 @@ async function handleAvaliacaoModal(interaction, client) {
     `🕚 **Fechado em:** ${dataHora}\n\n` +
     `🎫 Caso seja necessário, não hesite em abrir um novo ticket!`;
 
+  // ✅ Tentar EDITAR a DM original (evita duplicação)
+  let edited = false;
+  if (ticket.dmMessageId) {
+    try {
+      const dmChannel = await client.users.createDM(ticket.userId);
+      const originalDM = await dmChannel.messages.fetch(ticket.dmMessageId).catch(() => null);
+      if (originalDM) {
+        await originalDM.edit({
+          content: mensagemFinal,
+          embeds: [],
+          components: [],
+        });
+        edited = true;
+        console.log(`[Avaliação] DM original editada para ${ticket.userId}`);
+      }
+    } catch (e) {
+      console.error("[Avaliação] Não foi possível editar DM original:", e.message);
+    }
+  }
+
+  // Responder ao modal
   try {
-    await interaction.update({
-      content: mensagemFinal,
-      components: [],
+    await interaction.reply({
+      content: edited
+        ? "✅ **Avaliação registada!** A tua DM foi atualizada com o agradecimento."
+        : mensagemFinal,
+      flags: 64,
     });
-  } catch {
-    await safeReply(interaction, {
-      content: mensagemFinal,
-      ephemeral: true,
-    });
+  } catch (e) {
+    console.error("[Avaliação] Erro ao responder ao modal:", e.message);
   }
 }
 
 // ============================================================
-// FOTO TRUCKY (recrutamento concluído)
+// FOTO TRUCKY
 // ============================================================
 
 async function handleFotoTruckyModal(interaction, client) {
-  if (!isStaff(interaction.member)) {
-    return safeEdit(interaction, { content: "❌ Apenas staff pode completar o recrutamento." });
-  }
+  if (!isStaff(interaction.member)) return safeEdit(interaction, { content: "❌ Apenas staff pode completar o recrutamento." });
 
   const ticketId = interaction.customId.replace("modal_foto_trucky_", "");
-  if (isClosing(ticketId)) {
-    return safeEdit(interaction, { content: "⏳ Este ticket já está a ser fechado." });
-  }
+  if (isClosing(ticketId)) return safeEdit(interaction, { content: "⏳ Este ticket já está a ser fechado." });
 
   setClosing(ticketId);
   try {
@@ -1604,6 +1461,13 @@ async function handleFotoTruckyModal(interaction, client) {
     let fotoNome = interaction.fields.getTextInputValue("foto_nome")?.trim() || "Não informado";
     fotoNome = fotoNome.replace(/\.[^/.]+$/, "");
 
+    // ✅ Obter displayName do staff
+    let staffDisplayName = interaction.user.username;
+    try {
+      const staffMember = await interaction.guild.members.fetch(interaction.user.id);
+      staffDisplayName = staffMember.displayName || interaction.user.username;
+    } catch {}
+
     await withTicketLock(ticket.id, async () => {
       const current = db.tickets[String(ticket.id)];
       if (!current || current.closed || current.recrutado) throw new Error("INVALID_STATE");
@@ -1611,7 +1475,7 @@ async function handleFotoTruckyModal(interaction, client) {
       current.recrutado = true;
       current.closed = true;
       current.closedBy = interaction.user.id;
-      current.closedByName = interaction.user.username;
+      current.closedByName = staffDisplayName;
       current.closedAt = new Date().toISOString();
       const saved = await persistDB();
       if (!saved) throw new Error("DB_SAVE_FAILED");
@@ -1647,7 +1511,7 @@ async function handleFotoTruckyModal(interaction, client) {
           new EmbedBuilder()
             .setTitle("🎉 Recrutamento concluído")
             .setDescription(
-              `✅ <@${ticket.userId}> foi recrutado com sucesso!\n\n📸 Foto do Trucky: **${fotoNome}**\n\n👮 Processado por: ${interaction.user.username}`
+              `✅ <@${ticket.userId}> foi recrutado com sucesso!\n\n📸 Foto do Trucky: **${fotoNome}**\n\n👮 Processado por: ${staffDisplayName}`
             )
             .setColor(0x00ff00),
         ],
@@ -1671,9 +1535,7 @@ async function handleFotoTruckyModal(interaction, client) {
 // ============================================================
 
 async function fecharTicket(interaction, ticketId, client, recrutado = false) {
-  if (isClosing(ticketId)) {
-    return safeReply(interaction, "⏳ Este ticket já está a ser fechado.");
-  }
+  if (isClosing(ticketId)) return safeReply(interaction, "⏳ Este ticket já está a ser fechado.");
 
   setClosing(ticketId);
 
@@ -1687,6 +1549,13 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
       return safeReply(interaction, "⚠️ Ticket não encontrado ou já fechado.");
     }
 
+    // ✅ Obter displayName do staff (para aparecer "Artemios" e não "arte_10")
+    let staffDisplayName = interaction.user.username;
+    try {
+      const staffMember = await interaction.guild.members.fetch(interaction.user.id);
+      staffDisplayName = staffMember.displayName || interaction.user.username;
+    } catch {}
+
     await withTicketLock(ticket.id, async () => {
       const current = db.tickets[String(ticket.id)];
       if (!current || current.closed || current.status === 'closed') throw new Error("ALREADY_CLOSED");
@@ -1694,7 +1563,7 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
       current.status = 'closed';
       current.recrutado = recrutado;
       current.closedBy = interaction.user.id;
-      current.closedByName = interaction.user.username;
+      current.closedByName = staffDisplayName;
       current.closedAt = new Date().toISOString();
       const saved = await persistDB();
       if (!saved) throw new Error("DB_SAVE_FAILED");
@@ -1703,11 +1572,8 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
     await sendLog(ticket.id, "close", client).catch(() => {});
 
     const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
-    if (!channel) {
-      return safeReply(interaction, "❌ O canal do ticket já não existe.");
-    }
+    if (!channel) return safeReply(interaction, "❌ O canal do ticket já não existe.");
 
-    // Embed de fecho no canal do ticket
     const duracao = formatDuration(ticket.openedAt, new Date());
     const duracaoAprox = formatDurationApprox(ticket.openedAt, new Date());
 
@@ -1718,12 +1584,12 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
     const embedFecho = new EmbedBuilder().setDescription(desc).setColor(0xFF0000).setTimestamp();
     await channel.send({ embeds: [embedFecho] }).catch(() => {});
 
-    // --- GERAR TRANSCRIPT ---
+    // Transcript
     try {
       const additionalInfo = {
         openedBy: ticket.username,
         openedAt: ticket.openedAt ? new Date(ticket.openedAt).toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" }) : "—",
-        closedBy: interaction.user.username,
+        closedBy: staffDisplayName,
         closedAt: new Date().toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" }),
         claimedBy: ticket.claimedByName || null,
         ticketLabel: ticket.label,
@@ -1738,18 +1604,12 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
       transcriptResult = await gerarTranscript(channel, ticket.id, additionalInfo);
 
       if (transcriptResult) {
-        // ✅ Enviar para logs SÓ os ficheiros (sem embed de cabeçalho)
         const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
         if (logChannel) {
-          const files = [
-            transcriptResult.attachment,
-            transcriptResult.txtAttachment,
-          ].filter(Boolean);
-
+          const files = [transcriptResult.attachment, transcriptResult.txtAttachment].filter(Boolean);
           await logChannel.send({ files }).catch(() => {});
         }
 
-        // Guardar no Supabase
         const transcriptData = {
           id: transcriptResult.ticketId,
           canalId: channel.id,
@@ -1769,7 +1629,7 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
       console.error("[Transcript Auto] Erro geral:", error.message);
     }
 
-    // --- DM DE AVALIAÇÃO ---
+    // DM de avaliação
     try {
       const user = await client.users.fetch(ticket.userId);
       if (user) {
@@ -1779,12 +1639,6 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
           day: '2-digit', month: '2-digit', year: 'numeric',
           hour: '2-digit', minute: '2-digit', second: '2-digit'
         });
-
-        let staffDisplayName = interaction.user.username;
-        try {
-          const guildMember = await interaction.guild.members.fetch(interaction.user.id);
-          staffDisplayName = guildMember.displayName || interaction.user.username;
-        } catch {}
 
         const embedDM = new EmbedBuilder()
           .setTitle('🎫 Ticket Fechado')
@@ -1805,25 +1659,32 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
           new ButtonBuilder().setCustomId(`avaliar_${ticket.id}_5`).setLabel("5 ⭐⭐⭐⭐⭐").setStyle(ButtonStyle.Secondary)
         );
 
-        await user.send({ embeds: [embedDM], components: [row] });
+        const sentDM = await user.send({ embeds: [embedDM], components: [row] });
         evaluationSent = true;
-        console.log(`[Avaliação] DM enviada com sucesso para ${ticket.userId}`);
+
+        // ✅ Guardar ID da DM para editar mais tarde
+        try {
+          db.tickets[String(ticket.id)].dmMessageId = sentDM.id;
+          await persistDB();
+        } catch (e) {
+          console.error("[Avaliação] Erro ao guardar dmMessageId:", e.message);
+        }
+
+        console.log(`[Avaliação] DM enviada para ${ticket.userId} (ID: ${sentDM.id})`);
       }
     } catch (error) {
       evaluationSent = false;
       console.log(`[Avaliação] DM NÃO enviada para ${ticket.userId}: ${error.message}`);
     }
 
-    if (evaluationSent !== undefined) {
-      try {
-        db.tickets[String(ticket.id)].evaluationSent = evaluationSent;
-        await persistDB();
-      } catch (e) {
-        console.error("[DB] Erro ao guardar evaluationSent:", e.message);
-      }
+    try {
+      db.tickets[String(ticket.id)].evaluationSent = evaluationSent;
+      await persistDB();
+    } catch (e) {
+      console.error("[DB] Erro ao guardar evaluationSent:", e.message);
     }
 
-    // --- LOG DE FECHO MELHORADO ---
+    // Log de fecho
     try {
       const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
       if (logChannel && ticket) {
@@ -1850,7 +1711,6 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
             })
           : '—';
 
-        // ✅ Nome Trucky correto (truckyNome primeiro, fotoNome fallback)
         const nomeTrucky = ticket.truckyNome || ticket.fotoNome || 'Não informado';
         const linkTrucky = (ticket.truckyLink && /^https?:\/\//i.test(ticket.truckyLink))
           ? ticket.truckyLink
@@ -1894,16 +1754,12 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
       console.error("[FecharTicket] Erro ao enviar log de fecho:", e.message);
     }
 
-    // Apagar canal após 10 segundos
     setTimeout(() => channel.delete().catch(() => {}), 10000);
 
     return safeReply(interaction, "✅ Ticket fechado com sucesso.");
-
   } catch (error) {
     console.error("[FecharTicket] Erro:", error);
-    if (error.message === "ALREADY_CLOSED") {
-      return safeReply(interaction, "⚠️ Este ticket já foi fechado.");
-    }
+    if (error.message === "ALREADY_CLOSED") return safeReply(interaction, "⚠️ Este ticket já foi fechado.");
     return safeReply(interaction, "❌ Ocorreu um erro ao fechar o ticket.");
   } finally {
     clearClosing(ticketId);
@@ -1918,9 +1774,7 @@ async function handleSmartSearch(interaction) {
   const parts = interaction.customId.split("_");
   const messageId = parts[2];
   const pending = assistantMemory.pendingSearches?.get(messageId);
-  if (!pending) {
-    return safeReply(interaction, "❓ Não encontrei a pergunta associada. Tenta novamente.");
-  }
+  if (!pending) return safeReply(interaction, "❓ Não encontrei a pergunta associada. Tenta novamente.");
 
   const question = pending.question;
   await safeDefer(interaction);
@@ -1949,7 +1803,7 @@ async function handleSmartSearch(interaction) {
 }
 
 // ============================================================
-// TRANSCRIPT COMMAND (só anexos)
+// TRANSCRIPT COMMAND
 // ============================================================
 
 async function handleTranscriptCommand(interaction, ticket, client) {
@@ -1970,7 +1824,6 @@ async function handleTranscriptCommand(interaction, ticket, client) {
 
     const result = await gerarTranscript(interaction.channel, ticket.id, additionalInfo);
     if (result) {
-      // ✅ Só anexar os ficheiros, sem mensagem de cabeçalho
       await interaction.editReply({
         files: [result.attachment, result.txtAttachment].filter(Boolean),
       });
