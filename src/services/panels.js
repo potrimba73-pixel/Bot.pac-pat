@@ -88,7 +88,7 @@ export async function sendPainelRecrutamento(channel) {
 
 export async function sendPainelRegras(channel) {
   const embed = new EmbedBuilder()
-    .setTitle(`📋 Regras Gerais e Sistemas | Portugal Alfa Community <:Portugal_Alfa_Community:1507459426112503898>`)
+    .setTitle(`📋 Regras Gerais e Sistemas | Portugal Alfa Community`)
     .setDescription([
       `**1. Respeito e Convivência**`,
       `• 1.1 Respeita todos os membros e a equipa de administração (Staff). Ofensas, insultos ou toxicidade não serão tolerados.`,
