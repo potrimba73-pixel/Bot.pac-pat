@@ -184,7 +184,7 @@ function buildTicketButtons(ticketId) {
 }
 
 // ============================================================
-// BUILD TICKET EMBED (com link Trucky e "Regras aceites")
+// BUILD TICKET EMBED
 // ============================================================
 
 function buildTicketEmbed(ticket, user) {
@@ -196,9 +196,8 @@ function buildTicketEmbed(ticket, user) {
   const isRecruitment = ticket.type === "recrutamento";
 
   let description = `ℹ️ **Motivo:** ${ticket.label}`;
-  
+
   if (isRecruitment) {
-    // Trucky como link (se disponível)
     if (ticket.truckyNome) {
       if (ticket.truckyLink && /^https?:\/\//i.test(ticket.truckyLink)) {
         description += `\n🚛 **Trucky:** [${ticket.truckyNome}](${ticket.truckyLink})`;
@@ -206,21 +205,19 @@ function buildTicketEmbed(ticket, user) {
         description += `\n🚛 **Trucky:** \`${ticket.truckyNome}\``;
       }
     }
-    // Regras aceites (sempre presente, mesmo antes de assumir)
     description += `\n📋 **Regras aceites:** ${ticket.regrasAceites ? 'Sim' : 'Não'}`;
   }
-  
+
   description += `\n\n👮 **Responsável:** ${claimedText}`;
   description += `\n👤 **Utilizador:** <@${user.id}> | \`${user.username}\``;
   description += `\n\n${clockEmoji} **Abertura:** ${formatDateSimple(openedAt)}`;
   description += `\n\n👤 Olá <@${user.id}>, aguarde até ser atendido por alguém da staff.`;
   description += `\n\n⚠️ Lembra-te: qualquer incumprimento das regras levará ao encerramento do ticket sem aviso prévio!`;
-  
+
   if (ticket.especificacoes) {
     description += `\n\nℹ️ **Especificações:** ${ticket.especificacoes}`;
   }
 
-  // Título dinâmico
   const title = isRecruitment
     ? "🎫 Sistema de Ticket | Portugal Alfa Truckers"
     : "🎫 Sistema de Ticket | Portugal Alfa Community";
@@ -287,7 +284,6 @@ export async function updateTicketEmbed(channel, ticketId) {
       return true;
     }
 
-    // Fallback: enviar nova mensagem (não deveria acontecer)
     const newMessage = await channel.send({
       content: `||<@&1390770675567956018>||`,
       embeds: [embed],
@@ -303,8 +299,9 @@ export async function updateTicketEmbed(channel, ticketId) {
 }
 
 // ============================================================
-// CREATE TICKET (para tickets normais)
+// CREATE TICKET (tickets normais)
 // ============================================================
+
 export async function createTicket(interaction, type, label, client) {
   const user = interaction.user;
 
@@ -392,18 +389,12 @@ export async function createTicket(interaction, type, label, client) {
     }
     const categoria = await getCategory(guild, categoriaId);
     const staffRoleId = await getStaffRoleId(guild);
-    if (!staffRoleId) {
-      console.warn("[Tickets] CONFIG.CARGO_STAFF não configurado.");
-    }
 
     const channelData = {
       name: makeChannelName(type, user),
       type: ChannelType.GuildText,
       permissionOverwrites: [
-        {
-          id: guild.id,
-          deny: [PermissionFlagsBits.ViewChannel],
-        },
+        { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
         {
           id: user.id,
           allow: [
@@ -428,9 +419,7 @@ export async function createTicket(interaction, type, label, client) {
           : []),
       ],
     };
-    if (categoria) {
-      channelData.parent = categoria.id;
-    }
+    if (categoria) channelData.parent = categoria.id;
 
     let channel;
     try {
@@ -470,7 +459,7 @@ export async function createTicket(interaction, type, label, client) {
       callChannelId: null,
       panelMessageId: null,
       especificacoes: interaction._ajudaEspecificacoes || null,
-      guildId: guild.id,
+      dmMessageId: null, // ✅ NOVO
     };
 
     db.tickets[ticketId] = ticket;
@@ -479,7 +468,6 @@ export async function createTicket(interaction, type, label, client) {
     const embed = buildTicketEmbed(ticket, user);
     const row = buildTicketButtons(ticketId);
 
-    // Mensagem inicial com menção ao cargo dentro de spoiler
     const panelMessage = await channel.send({
       content: `||<@&1390770675567956018>||`,
       embeds: [embed],
@@ -513,7 +501,6 @@ export async function createTicket(interaction, type, label, client) {
 
     console.log(`[Tickets] Ticket criado: ${ticketId} | User: ${user.id} | Channel: ${channel.id}`);
     return ticket;
-
   } catch (error) {
     console.error("[Tickets] Erro geral ao criar ticket:", error);
     await interaction.editReply({
@@ -527,16 +514,15 @@ export async function createTicket(interaction, type, label, client) {
 }
 
 // ============================================================
-// RECRUTAMENTO - Modal
+// RECRUTAMENTO — Modal
 // ============================================================
 
 async function iniciarFluxoRecrutamento(interaction, client, guild) {
   const user = interaction.user;
 
-  const existingRecruitment =
-    getActiveTicketsByUser(user.id).find(
-      (ticket) => ticket.type === "recrutamento"
-    );
+  const existingRecruitment = getActiveTicketsByUser(user.id).find(
+    (ticket) => ticket.type === "recrutamento"
+  );
 
   if (existingRecruitment) {
     const channel = await client.channels
@@ -652,10 +638,7 @@ export async function handleTruckyVerification(interaction, client) {
           .setURL("https://hub.truckyapp.com/")
       );
 
-      await interaction.editReply({
-        embeds: [embed],
-        components: [row],
-      });
+      await interaction.editReply({ embeds: [embed], components: [row] });
       return;
     }
 
@@ -663,7 +646,6 @@ export async function handleTruckyVerification(interaction, client) {
       client._tempRecrutamento = {};
     }
 
-    // Normalizar link (adicionar https:// se faltar)
     let linkNormalizado = linkTrucky;
     if (linkNormalizado && !/^https?:\/\//i.test(linkNormalizado)) {
       linkNormalizado = 'https://' + linkNormalizado;
@@ -685,13 +667,9 @@ export async function handleTruckyVerification(interaction, client) {
 }
 
 async function mostrarRegrasRecrutamento(interaction, client, nomeTrucky, linkTrucky) {
-  const regrasTexto =
-    REGRAS_RECRUTAMENTO
-      .map(
-        (regra, index) =>
-          `${CONFIG.EMOJI_CHECK || "✅"} ${index + 1}. ${regra}`
-      )
-      .join("\n");
+  const regrasTexto = REGRAS_RECRUTAMENTO.map(
+    (regra, index) => `${CONFIG.EMOJI_CHECK || "✅"} ${index + 1}. ${regra}`
+  ).join("\n");
 
   const embed = new EmbedBuilder()
     .setTitle(`${CONFIG.EMOJI_RECRUTAMENTO || "📝"} Regras da Portugal Alfa Truckers`)
@@ -735,7 +713,7 @@ async function mostrarRegrasRecrutamento(interaction, client, nomeTrucky, linkTr
 }
 
 // ============================================================
-// CRIAR TICKET DE RECRUTAMENTO (com link Trucky e Regras aceites)
+// CRIAR TICKET DE RECRUTAMENTO
 // ============================================================
 
 export async function criarTicketRecrutamento(interaction, client, nomeTrucky = null) {
@@ -788,8 +766,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky = 
     const guild =
       (await client.guilds.fetch(
         CONFIG.GUILD_ID_RECRUTAMENTO || CONFIG.GUILD_ID
-      ).catch(() => null)) ||
-      interaction.guild;
+      ).catch(() => null)) || interaction.guild;
 
     if (!guild) {
       await interaction.editReply({
@@ -811,10 +788,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky = 
       name: makeChannelName("recrutamento", user),
       type: ChannelType.GuildText,
       permissionOverwrites: [
-        {
-          id: guild.id,
-          deny: [PermissionFlagsBits.ViewChannel],
-        },
+        { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
         {
           id: user.id,
           allow: [
@@ -839,9 +813,7 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky = 
           : []),
       ],
     };
-    if (category) {
-      channelData.parent = category.id;
-    }
+    if (category) channelData.parent = category.id;
 
     const channel = await guild.channels.create(channelData);
     const ticketId = generateTicketId();
@@ -872,12 +844,12 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky = 
       callActive: false,
       callChannelId: null,
       panelMessageId: null,
+      dmMessageId: null, // ✅ NOVO
     };
 
     db.tickets[ticketId] = ticket;
     await saveDB();
 
-    // Usar buildTicketEmbed para consistência
     const embed = buildTicketEmbed(ticket, user);
     const row = buildTicketButtons(ticketId);
 
