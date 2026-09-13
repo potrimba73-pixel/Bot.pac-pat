@@ -31,7 +31,7 @@ export async function sendPainelGeral(channel) {
   const row = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId("ticket_geral")
-      .setPlaceholder(`🎫 Selecione uma função`)
+      .setPlaceholder(`🎫 Selecione uma opção`)
       .addOptions(
         new StringSelectMenuOptionBuilder().setLabel(`🐛 Bugs`).setDescription("Clica aqui para abrir ticket de Bugs!").setValue("bugs").setEmoji("🐛"),
         new StringSelectMenuOptionBuilder().setLabel(`🚨 Denúncia`).setDescription("Clica aqui para abrir ticket de Denúncias!").setValue("denuncia").setEmoji("🚨"),
@@ -78,7 +78,7 @@ export async function sendPainelRecrutamento(channel) {
       .setPlaceholder(`🎫 Selecione uma opção`)
       .addOptions(
         new StringSelectMenuOptionBuilder().setLabel(`📝 Recrutamento PAT`).setDescription("Clique aqui para abrir ticket de Recrutamento!").setValue("recrutamento").setEmoji("📝"),
-        new StringSelectMenuOptionBuilder().setLabel(`❓ Pedir ajuda`).setDescription("Clique aqui para abrir ticket de ajuda use se não entender algo do recrutamento ou no Trucky").setValue("ajuda").setEmoji("❓"),
+        new StringSelectMenuOptionBuilder().setLabel(`❓ Pedir ajuda`).setDescription("Clique aqui para abrir ticket de ajuda use se não entender algo do recrutamento ou no Trucky <:trucky:1507457477652906214>").setValue("ajuda").setEmoji("❓"),
       ),
   );
 
@@ -88,7 +88,7 @@ export async function sendPainelRecrutamento(channel) {
 
 export async function sendPainelRegras(channel) {
   const embed = new EmbedBuilder()
-    .setTitle(`📋 Regras Gerais e Sistemas | Portugal Alfa Community`)
+    .setTitle(`📋 Regras Gerais e Sistemas | Portugal Alfa Community <:Portugal_Alfa_Community:1507459426112503898>`)
     .setDescription([
       `**1. Respeito e Convivência**`,
       `• 1.1 Respeita todos os membros e a equipa de administração (Staff). Ofensas, insultos ou toxicidade não serão tolerados.`,
