@@ -62,7 +62,7 @@ export const CONFIG = {
 
   // === IMAGENS (jsDelivr CDN - permanentes) ===
   IMAGEM_GERAL: "https://i.ibb.co/6Rd4k1hR/Tickets-da-Portugal-Alfa-Community.webp",
-  IMAGEM_RECRUTAMENTO: "https://i.ibb.co/6Rd4k1hR/Tickets-da-Portugal-Alfa-Community.webp",
+  IMAGEM_RECRUTAMENTO: "https://i.ibb.co/C3vh9cBV/Tickets-de-Recrutamento-da-Portugal-Alfa-Truckers.webp",
   IMAGEM_REGRAS: "https://i.ibb.co/KcS85SY4/Regras-da-Portugal-Alfa-Community.webp",
 
   // === CORES ===
