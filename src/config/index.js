@@ -61,9 +61,9 @@ export const CONFIG = {
   TRUCKY_COMPANY_ID: process.env.TRUCKY_COMPANY_ID,
 
   // === IMAGENS (jsDelivr CDN - permanentes) ===
-  IMAGEM_GERAL: "https://i.postimg.cc/ZnYw1TNh/Tickets-da-Portugal-Alfa-Community.webp",
-  IMAGEM_RECRUTAMENTO: "https://i.postimg.cc/mrMp9pRk/Tickets-de-Recrutamento-da-Portugal-Alfa-Truckers.webp",
-  IMAGEM_REGRAS: "https://i.postimg.cc/L66WWVk1/Regras-da-Portugal-Alfa-Community.webp",
+  IMAGEM_GERAL: "https://ibb.co/rGWZVcPG",
+  IMAGEM_RECRUTAMENTO: "https://ibb.co/XrpS5QXF",
+  IMAGEM_REGRAS: "https://ibb.co/spzXgzhx",
 
   // === CORES ===
   COR_PRINCIPAL: 0x262af1,
