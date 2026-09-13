@@ -880,67 +880,156 @@ async function handleAceitarRegras(interaction) {
       if (!db.acceptedRules.includes(member.id)) db.acceptedRules.push(member.id);
       if (!db.acceptedRulesAt) db.acceptedRulesAt = {};
       db.acceptedRulesAt[member.id] = new Date().toISOString();
+async function handleAceitarRegras(interaction) {
+  if (!(await safeDefer(interaction))) return;
 
-      await persistDB();
-    }
+  const member = interaction.member;
 
-    if (jaAceitou) {
-      const dataISO = db.acceptedRulesAt?.[member.id];
-      let timestampRelativo = "anteriormente";
-      if (dataISO) {
-        const unixTs = Math.floor(new Date(dataISO).getTime() / 1000);
-        timestampRelativo = `<t:${unixTs}:R>`;
+  // ============================================================
+  // 1. VERIFICAR SE JÁ ACEITOU ANTES (na DB)
+  // ============================================================
+  const jaAceitou =
+    Array.isArray(db.acceptedRules) && db.acceptedRules.includes(member.id);
+
+  // ============================================================
+  // 2. VERIFICAR SE AINDA TEM OS CARGOS
+  //    (se saiu e voltou, o Discord removeu-lhe os cargos)
+  // ============================================================
+  const cargos = [
+    CONFIG.CARGO_MEMBRO,
+    CONFIG.CARGO_REGRAS_EXTRA_1,
+    CONFIG.CARGO_REGRAS_EXTRA_2,
+    "1534970663344017479",
+  ].filter(Boolean);
+
+  const temAlgumCargo = cargos.some((roleId) =>
+    member.roles.cache.has(roleId)
+  );
+
+  // Precisa reatribuir se já aceitou antes MAS perdeu os cargos
+  const precisaReatribuir = jaAceitou && !temAlgumCargo;
+
+  try {
+    // ============================================================
+    // 3. ATRIBUIR CARGOS (primeira vez OU reatribuição)
+    // ============================================================
+    if (!jaAceitou || precisaReatribuir) {
+      const cargosAtribuidos = [];
+
+      for (const roleId of cargos) {
+        const role = interaction.guild.roles.cache.get(roleId);
+        if (role && !member.roles.cache.has(role.id)) {
+          await member.roles.add(role).catch(() => {});
+          cargosAtribuidos.push(role.name);
+        }
       }
 
-      const mensagemJaAceitou = [
-  `Olá! 👋 Já aceitaste as regras **${timestampRelativo} atrás**.`,
-  ``,
-  `Se precisares de abrir um ticket, podes fazê-lo:`,
-  ``,
-  `👥 Para entrar na **Empresa Virtual**: <#1326963454397124649>`,
-  `──────────────────────────────`,
-  `🐛 \`Bugs\``,
-  `🚨 \`Denúncia\``,
-  `🔧 \`Suporte\``,
-  `🎥 \`Criador de Conteúdo\``,
-  `Para estas opções, abre aqui: <#1465865626286428355>`,
-  `──────────────────────────────`,
-  ``,
-  `Para esclarecer dúvidas sobre o **Euro Truck Simulator 2** (e temas relacionados):`,
-  `Usa este comando \`/ajuda\``,
-  `*(versão beta, ainda pode cometer erros)*`,
-  `Usa este comando aqui <#1146441023401238658>`,
-  ``,
-  `Caso as respostas estejam erradas, pergunta ao <#1115836042843529236> ou <#1146442453361107054>`,
-  ``,
-  `🇵🇹 Obrigado por fazeres parte da **Portugal Alfa Community**! 🚛`,
-].join("\n");
+      if (!db.acceptedRules) db.acceptedRules = [];
+      if (!db.acceptedRules.includes(member.id)) {
+        db.acceptedRules.push(member.id);
+      }
+      if (!db.acceptedRulesAt) db.acceptedRulesAt = {};
 
-      return safeEdit(interaction, { content: mensagemJaAceitou });
+      // Só atualiza o timestamp se for a PRIMEIRA vez
+      // (em caso de reatribuição, mantém o original)
+      if (!jaAceitou) {
+        db.acceptedRulesAt[member.id] = new Date().toISOString();
+      }
+
+      await persistDB();
+
+      // ============================================================
+      // 4. MENSAGEM: REATRIBUIÇÃO (voltou ao servidor)
+      // ============================================================
+      if (precisaReatribuir) {
+        const cargosTexto =
+          cargosAtribuidos.length > 0
+            ? cargosAtribuidos.map((c) => `• \`${c}\``).join("\n")
+            : `• *(nenhum cargo novo — já tinhas todos)*`;
+
+        const mensagemReatribuicao = [
+          `Verificámos que já tinhas aceite as regras anteriormente. Como os teus cargos foram removidos quando saíste da comunidade, foram agora **reatribuídos automaticamente**.`,
+          ``,
+          `🔁 **Cargos reatribuídos:**`,
+          cargosTexto,
+          ``,
+          `🔓 O teu acesso aos canais foi restaurado e já podes voltar a participar normalmente na comunidade.`,
+          ``,
+          `🇵🇹 **Bom regresso à Portugal Alfa Community!**<:Portugal_Alfa_Community:1507459426112503898> 🚛`,
+          `Ficamos felizes por voltares a estar connosco! ❤️`,
+        ]
+          .join("\n");
+
+        return safeEdit(interaction, { content: mensagemReatribuicao });
+      }
+
+      // ============================================================
+      // 5. MENSAGEM: PRIMEIRA VEZ
+      // ============================================================
+      const mensagemPrimeiraVez = [
+        `✅ **Regras aceites com sucesso!**`,
+        `Boas-vindas à **Portugal Alfa Community**<:Portugal_Alfa_Community:1507459426112503898> 🎉`,
+        ``,
+        `Esperamos que te divirtas por cá! 👋`,
+        `Segue as regras, respeita os restantes membros e a Staff — **caso contrário, já sabes. 😉**`,
+        ``,
+        `E caso queiras fazer parte da nossa equipa e entrar na **Empresa Virtual**, abre um ticket aqui: <#1326963454397124649> <:trucky:1507457477652906214>,
+        ``,
+        `🐛 \`Bugs\``,
+        `🚨 \`Denúncia\``,
+        `🛠️ \`Suporte\``,
+        `🎥 \`Criador de Conteúdo\``,
+        `Para estas opções, abre um ticket aqui: <#1465865626286428355>`,
+        ``,
+        `❓ **Tens dúvidas sobre o Euro Truck Simulator 2 ou assuntos relacionados?**`,
+        ``,
+        `Usa o comando \`/ajuda\``,
+        `*(versão beta, ainda pode cometer erros)*`,
+        ``,
+        `Caso recebas uma resposta incorreta ou tenhas uma dúvida que não seja/foi esclarecida, podes perguntar aos seguintes chats: <#1115836042843529236> ou <#1146442453361107054>.`,
+        ``,
+        `🇵🇹 **Obrigado por fazeres parte da Portugal Alfa Community!**<:Portugal_Alfa_Community:1507459426112503898>`,
+        `Boas estradas e bom convívio! 🚛❤️`,
+      ].join("\n");
+
+      return safeEdit(interaction, { content: mensagemPrimeiraVez });
     }
 
-    const mensagemPrimeiraVez = [
-      `✅ **Regras aceites com sucesso!**`,
-      `Boas-vindas à **Portugal Alfa Community** 🎉`,
-      "",
-      `Esperamos que te divirtas por cá! 👋`,
-      `Segue as regras, respeita os restantes membros e a Staff — **caso contrário, já sabes. 😉**`,
-      "",
-      `E caso queiras fazer parte da nossa equipa e entrar na **Empresa Virtual**, abre um ticket aqui: <#1326963454397124649>`,
-      "",
-      `Ou, se precisares de abrir um ticket para alguma destas opções:`,
-      `🐛 **Bugs**`,
-      `🚨 **Denúncia**`,
-      `🛠️ **Suporte**`,
-      `🎥 **Criador de Conteúdo**`,
-      "",
-      `Podes simplesmente abrir aqui: <#1465865626286428355>`,
-      "",
-      `Esperamos que gostes da nossa comunidade e ficamos felizes por teres decidido fazer parte dela! ❤️`,
-      `Desejamos-te um **bom convívio** por cá! 🚛🇵🇹`,
+    // ============================================================
+    // 6. JÁ ACEITOU E AINDA TEM OS CARGOS → só informar
+    // ============================================================
+    const dataISO = db.acceptedRulesAt?.[member.id];
+    let timestampRelativo = "anteriormente";
+    if (dataISO) {
+      const unixTs = Math.floor(new Date(dataISO).getTime() / 1000);
+      timestampRelativo = `<t:${unixTs}:R>`;
+    }
+
+    const mensagemJaAceitou = [
+      `Olá! 👋 Já aceitaste as regras **${timestampRelativo} atrás**.`,
+      ``,
+      `Se precisares de abrir um ticket, podes fazê-lo:`,
+      ``,
+      `👥 Para entrar na **Empresa Virtual**: <#1326963454397124649> <:trucky:1507457477652906214>`,
+      `──────────────────────────────`,
+      `🐛 \`Bugs\``,
+      `🚨 \`Denúncia\``,
+      `🛠️ \`Suporte\``,
+      `🎥 \`Criador de Conteúdo\``,
+      `Para estas opções, abre aqui: <#1465865626286428355>`,
+      `──────────────────────────────`,
+      ``,
+      `Para esclarecer dúvidas sobre o **Euro Truck Simulator 2** (e temas relacionados):`,
+      `Usa este comando \`/ajuda\``,
+      `*(versão beta, ainda pode cometer erros)*`,
+      `Usa este comando aqui <#1146441023401238658>`,
+      ``,
+      `Caso as respostas estejam erradas, pergunta ao <#1115836042843529236> ou <#1146442453361107054>`,
+      ``,
+      `🇵🇹 Obrigado por fazeres parte da **Portugal Alfa Community**!<:Portugal_Alfa_Community:1507459426112503898> 🚛`,
     ].join("\n");
 
-    return safeEdit(interaction, { content: mensagemPrimeiraVez });
+    return safeEdit(interaction, { content: mensagemJaAceitou });
   } catch (error) {
     console.error("[Regras] Erro:", error);
     return safeEdit(interaction, { content: "❌ Erro ao processar. Tenta novamente." });
