@@ -1182,27 +1182,16 @@ const txtAttachment = new AttachmentBuilder(Buffer.from(txt, "utf-8"), {
      */
 
     return {
-      attachment:
-        htmlAttachment,
-
-      fileName:
-        `transcript-${ticketId}.html`,
-
-      txtAttachment,
-
-      txtFileName:
-        `transcript-${ticketId}.txt`,
-
-      ticketId,
-
-      messageCount:
-        messages.length,
-
-      html,
-
-      txt,
-    };
-
+  attachment: htmlAttachment,
+  fileName: `${safeChannelName}.html`,
+  txtAttachment,
+  txtFileName: `${safeChannelName}.txt`,
+  ticketId,
+  messageCount: messages.length,
+  html,
+  txt,
+};
+    
   } catch (error) {
     console.error(
       `[Transcript] Erro no ticket #${ticketId}:`,
