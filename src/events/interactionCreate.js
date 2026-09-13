@@ -653,76 +653,52 @@ async function handleSelectMenu(interaction, client) {
     return chamarStaff(interaction, ticket, staffId);
   }
 
-  if (interaction.customId === "ticket_geral") {
-    const value = interaction.values[0];
-    const labels = {
-      bugs: "🐛 Bugs",
-      denuncia: "🚨 Denuncia",
-      suporte: "🔧 Suporte",
-      criador: "🎥 Criador De Conteudo",
-    };
-    if (!labels[value]) return safeReply(interaction, "❌ Categoria de ticket inválida.");
-
-    try {
-      await interaction.message.edit({
-        components: [
-          new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder()
-              .setCustomId("ticket_geral_disabled")
-              .setPlaceholder("✅ Ticket em criação...")
-              .setDisabled(true)
-              .addOptions([{ label: "—", value: "disabled" }])
-          ),
-        ],
-      });
-    } catch {}
-
-    return createTicket(interaction, value, labels[value], client);
+if (interaction.customId === "ticket_geral") {
+  const value = interaction.values[0];
+  const labels = {
+    bugs: "🐛 Bugs",
+    denuncia: "🚨 Denuncia",
+    suporte: "🔧 Suporte",
+    criador: "🎥 Criador De Conteudo",
+  };
+  if (!labels[value]) {
+    return safeReply(interaction, "❌ Categoria de ticket inválida.");
   }
 
-  if (interaction.customId === "ticket_recruitamento") {
-    const value = interaction.values[0];
+  // ✅ NÃO desativar o painel — outros utilizadores precisam dele
+  return createTicket(interaction, value, labels[value], client);
+}
+
+if (interaction.customId === "ticket_recruitamento") {
+  const value = interaction.values[0];
+
+  // ✅ NÃO desativar o painel — outros utilizadores precisam dele
+  if (value === "recrutamento") {
+    return createTicket(interaction, "recrutamento", "📝 Recrutamento PAT", client);
+  }
+  if (value === "ajuda") {
+    const modal = new ModalBuilder()
+      .setCustomId(`modal_ajuda_${interaction.user.id}_${Date.now()}`)
+      .setTitle("❓ Especificações do Problema");
+
+    const input = new TextInputBuilder()
+      .setCustomId("ajuda_especificacoes")
+      .setLabel("Descreve o teu problema ou dúvida")
+      .setPlaceholder("Ex: Não consigo instalar o Trucky App...")
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true)
+      .setMaxLength(1000);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(input));
 
     try {
-      await interaction.message.edit({
-        components: [
-          new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder()
-              .setCustomId("ticket_recruitamento_disabled")
-              .setPlaceholder("✅ Opção selecionada...")
-              .setDisabled(true)
-              .addOptions([{ label: "—", value: "disabled" }])
-          ),
-        ],
-      });
-    } catch {}
-
-    if (value === "recrutamento") {
-      return createTicket(interaction, "recrutamento", "📝 Recrutamento PAT", client);
-    }
-    if (value === "ajuda") {
-      const modal = new ModalBuilder()
-        .setCustomId(`modal_ajuda_${interaction.user.id}_${Date.now()}`)
-        .setTitle("❓ Especificações do Problema");
-
-      const input = new TextInputBuilder()
-        .setCustomId("ajuda_especificacoes")
-        .setLabel("Descreve o teu problema ou dúvida")
-        .setPlaceholder("Ex: Não consigo instalar o Trucky App...")
-        .setStyle(TextInputStyle.Paragraph)
-        .setRequired(true)
-        .setMaxLength(1000);
-
-      modal.addComponents(new ActionRowBuilder().addComponents(input));
-
-      try {
-        return await interaction.showModal(modal);
-      } catch (error) {
-        console.error("[Modal Ajuda] Erro:", error);
-        return safeReply(interaction, "❌ Não foi possível abrir o formulário.");
-      }
+      return await interaction.showModal(modal);
+    } catch (error) {
+      console.error("[Modal Ajuda] Erro:", error);
+      return safeReply(interaction, "❌ Não foi possível abrir o formulário.");
     }
   }
+}
 
   console.warn(`[SelectMenu] CustomId não reconhecido: ${interaction.customId}`);
 }
