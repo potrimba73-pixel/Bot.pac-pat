@@ -8,7 +8,7 @@ export async function sendPainelGeral(channel) {
   const embed = new EmbedBuilder()
     .setTitle(`🎫 Sistema de Tickets | Portugal Alfa Community`)
     .setDescription([
-      `ℹ️ Olá! Seja bem-vindo ao sistema oficial de tickets da Portugal Alfa Community.`,
+      `ℹ️ Olá! Seja bem-vindo ao sistema oficial de tickets da Portugal Alfa Community. <:Portugal_Alfa_Community:1507459426112503898>`,
       ``,
       `ℹ️ Através deste sistema poderás contactar a nossa equipa para solicitar suporte, reportar problemas, apresentar denúncias ou esclarecer qualquer dúvida relacionada com a comunidade.`,
       ``,
@@ -56,12 +56,12 @@ export async function sendPainelRecrutamento(channel) {
       ``,
       `⚠️ Requisitos de Adesão`,
       ``,
-      `➜ Velocidade: Respeitar o limite máximo de 100 km/h, privilegiando uma condução realista.`,
-      `➜ Conduta: Manter uma atitude respeitosa para com todos os membros e restantes jogadores.`,
-      `➜ Comboios: Participar nos comboios com disciplina, pontualidade e espírito de equipa.`,
-      `➜ Quilometragem: Cumprir a meta mínima de 15.000 km por mês (≈ 500 km/dia).`,
-      `➜ Ranking: Contribuir para o desempenho da empresa no ranking nacional, respeitando sempre o limite de velocidade.`,
-      `➜ Trucky: Utilização obrigatória para o registo e acompanhamento da atividade da empresa.`,
+      `➜ 🛣️ Velocidade: Respeitar o limite máximo de 100 km/h, privilegiando uma condução realista.`,
+      `➜ 🤝 Conduta: Manter uma atitude respeitosa para com todos os membros e restantes jogadores.`,
+      `➜ 🚛 Comboios: Participar nos comboios com disciplina, pontualidade e espírito de equipa.`,
+      `➜ 📈 Quilometragem: Cumprir a meta mínima de 15.000 km por mês (≈ 500 km/dia).`,
+      `➜ 🏆 Ranking: Contribuir para o desempenho da empresa no ranking nacional, respeitando sempre o limite de velocidade.`,
+      `➜ <:trucky:1507457477652906214> Trucky: Utilização obrigatória para o registo e acompanhamento da atividade da empresa.`,
       ``,
       `⚠️ Aviso Importante`,
       ``,
@@ -78,7 +78,7 @@ export async function sendPainelRecrutamento(channel) {
       .setPlaceholder(`🎫 Selecione uma opção`)
       .addOptions(
         new StringSelectMenuOptionBuilder().setLabel(`📝 Recrutamento PAT`).setDescription("Clique aqui para abrir ticket de Recrutamento!").setValue("recrutamento").setEmoji("📝"),
-        new StringSelectMenuOptionBuilder().setLabel(`❓ Pedir ajuda`).setDescription("Clique aqui para abrir ticket de ajuda use se não entender algo do recrutamento ou no Trucky <:trucky:1507457477652906214>").setValue("ajuda").setEmoji("❓"),
+        new StringSelectMenuOptionBuilder().setLabel(`❓ Pedir ajuda`).setDescription("Clique aqui para abrir ticket de ajuda use se não entender algo do recrutamento ou no Trucky").setValue("ajuda").setEmoji("❓"),
       ),
   );
 
