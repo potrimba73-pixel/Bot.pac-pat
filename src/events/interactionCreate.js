@@ -43,6 +43,10 @@ import {
   removeUserFromCall,
   handleAddUserModal,
   handleRemoveUserModal,
+  abrirPassarAssumo,
+  enviarPedidoAssumo,
+  aceitarPedidoAssumo,
+  recusarPedidoAssumo,
 } from "../services/calls.js";
 import { gerarTranscript } from "../utils/transcript.js";
 import { salvarTranscriptSupabase } from "../utils/supabase.js";
@@ -499,17 +503,7 @@ async function handleSlashCommand(interaction, client) {
       return statusExec(interaction, client);
     }
 
-    case "passar": {
-      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Olá apenas staff pode usar este comando.");
-      const { execute: passarExec } = await import("../commands/passar.js");
-      return passarExec(interaction, client);
-    }
-
-    case "pedirassumo": {
-      if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Olá apenas staff pode usar este comando.");
-      const { execute: pedirAssumoExec } = await import("../commands/pedirassumo.js");
-      return pedirAssumoExec(interaction, client);
-    }
+    // ⚠️ /passar e /pedirassumo REMOVIDOS — agora são botões do painel de staff
 
     case "verificar-inatividade":
     case "minhas-cargas":
@@ -625,6 +619,14 @@ async function handleSelectMenu(interaction, client) {
     return handleAjudaFeedback(interaction);
   }
 
+  // ─────────── PAINEL STAFF — Passar Assumo (select menu) ───────────
+  if (interaction.customId.startsWith("passar_select_")) {
+    if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff.");
+    const ticketId = interaction.customId.substring("passar_select_".length);
+    const novoStaffId = interaction.values[0];
+    return aplicarPassarAssumo(interaction, ticketId, novoStaffId, client);
+  }
+
   if (interaction.customId.startsWith("chamar_staff_")) {
     const ticketId = interaction.customId.replace("chamar_staff_", "");
     const staffId = interaction.values[0];
@@ -645,52 +647,50 @@ async function handleSelectMenu(interaction, client) {
     return chamarStaff(interaction, ticket, staffId);
   }
 
-if (interaction.customId === "ticket_geral") {
-  const value = interaction.values[0];
-  const labels = {
-    bugs: "🐛 Bugs",
-    denuncia: "🚨 Denuncia",
-    suporte: "🔧 Suporte",
-    criador: "🎥 Criador De Conteudo",
-  };
-  if (!labels[value]) {
-    return safeReply(interaction, "❌ Categoria de ticket inválida.");
+  if (interaction.customId === "ticket_geral") {
+    const value = interaction.values[0];
+    const labels = {
+      bugs: "🐛 Bugs",
+      denuncia: "🚨 Denuncia",
+      suporte: "🔧 Suporte",
+      criador: "🎥 Criador De Conteudo",
+    };
+    if (!labels[value]) {
+      return safeReply(interaction, "❌ Categoria de ticket inválida.");
+    }
+
+    return createTicket(interaction, value, labels[value], client);
   }
 
-  // ✅ NÃO desativar o painel — outros utilizadores precisam dele
-  return createTicket(interaction, value, labels[value], client);
-}
+  if (interaction.customId === "ticket_recruitamento") {
+    const value = interaction.values[0];
 
-if (interaction.customId === "ticket_recruitamento") {
-  const value = interaction.values[0];
+    if (value === "recrutamento") {
+      return createTicket(interaction, "recrutamento", "📝 Recrutamento PAT", client);
+    }
+    if (value === "ajuda") {
+      const modal = new ModalBuilder()
+        .setCustomId(`modal_ajuda_${interaction.user.id}_${Date.now()}`)
+        .setTitle("❓ Especificações do Problema");
 
-  // ✅ NÃO desativar o painel — outros utilizadores precisam dele
-  if (value === "recrutamento") {
-    return createTicket(interaction, "recrutamento", "📝 Recrutamento PAT", client);
-  }
-  if (value === "ajuda") {
-    const modal = new ModalBuilder()
-      .setCustomId(`modal_ajuda_${interaction.user.id}_${Date.now()}`)
-      .setTitle("❓ Especificações do Problema");
+      const input = new TextInputBuilder()
+        .setCustomId("ajuda_especificacoes")
+        .setLabel("Descreve o teu problema ou dúvida")
+        .setPlaceholder("Ex: Não consigo instalar o Trucky App...")
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true)
+        .setMaxLength(1000);
 
-    const input = new TextInputBuilder()
-      .setCustomId("ajuda_especificacoes")
-      .setLabel("Descreve o teu problema ou dúvida")
-      .setPlaceholder("Ex: Não consigo instalar o Trucky App...")
-      .setStyle(TextInputStyle.Paragraph)
-      .setRequired(true)
-      .setMaxLength(1000);
+      modal.addComponents(new ActionRowBuilder().addComponents(input));
 
-    modal.addComponents(new ActionRowBuilder().addComponents(input));
-
-    try {
-      return await interaction.showModal(modal);
-    } catch (error) {
-      console.error("[Modal Ajuda] Erro:", error);
-      return safeReply(interaction, "❌ Não foi possível abrir o formulário.");
+      try {
+        return await interaction.showModal(modal);
+      } catch (error) {
+        console.error("[Modal Ajuda] Erro:", error);
+        return safeReply(interaction, "❌ Não foi possível abrir o formulário.");
+      }
     }
   }
-}
 
   console.warn(`[SelectMenu] CustomId não reconhecido: ${interaction.customId}`);
 }
@@ -703,6 +703,44 @@ async function handleButton(interaction, client) {
   const customId = interaction.customId;
   console.log(`[Button] CustomId: ${customId}`);
 
+  // ─────────────────────────────────────────────
+  // PAINEL STAFF — Passar / Pedir / Aceitar / Recusar
+  // ─────────────────────────────────────────────
+
+  if (customId.startsWith("passar_") && !customId.startsWith("passar_select_")) {
+    if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff.");
+    const ticketId = customId.substring("passar_".length);
+    const ticket = getTicketForInteraction(ticketId, interaction.channelId);
+    if (!ticket || ticket.closed) return safeReply(interaction, "⚠️ Ticket não encontrado.");
+
+    const staffList = await buildStaffList(interaction.channel, ticket);
+    return abrirPassarAssumo(interaction, ticket.id, staffList);
+  }
+
+  if (customId.startsWith("pedirassumo_")) {
+    if (!isStaff(interaction.member)) return safeReply(interaction, "❌ Apenas staff.");
+    const ticketId = customId.substring("pedirassumo_".length);
+    return enviarPedidoAssumo(interaction, ticketId, client);
+  }
+
+  if (customId.startsWith("aceitar_pedido_")) {
+    const parts = customId.split("_");
+    const ticketId = parts[2];
+    const pedinteId = parts[3];
+    return aceitarPedidoAssumo(interaction, ticketId, pedinteId, client);
+  }
+
+  if (customId.startsWith("recusar_pedido_")) {
+    const parts = customId.split("_");
+    const ticketId = parts[2];
+    const pedinteId = parts[3];
+    return recusarPedidoAssumo(interaction, ticketId, pedinteId, client);
+  }
+
+  // ─────────────────────────────────────────────
+  // RESTO DOS BOTÕES
+  // ─────────────────────────────────────────────
+
   if (customId === 'help_home' || customId === 'help_back' || customId === 'help_search') {
     return handleAjudaFeedback(interaction);
   }
@@ -712,24 +750,22 @@ async function handleButton(interaction, client) {
   }
 
   // ✅ ACEITAR REGRAS DE RECRUTAMENTO — COM AWAIT + BOTÕES DESATIVADOS
-if (customId.startsWith("aceitar_regras_rec_")) {
-  const userId = customId.split("_")[3];
-  if (interaction.user.id !== userId) {
-    return safeReply(interaction, "⚠️ Este botão não está disponível para ti.");
+  if (customId.startsWith("aceitar_regras_rec_")) {
+    const userId = customId.split("_")[3];
+    if (interaction.user.id !== userId) {
+      return safeReply(interaction, "⚠️ Este botão não está disponível para ti.");
+    }
+
+    try {
+      await interaction.deferUpdate();
+    } catch (err) {
+      console.error("[Regras Rec] Erro no deferUpdate:", err.message);
+      return;
+    }
+
+    return criarTicketRecrutamento(interaction, client, null, true);
   }
 
-  // ✅ deferUpdate() → vamos editar a MESMA mensagem
-  try {
-    await interaction.deferUpdate();
-  } catch (err) {
-    console.error("[Regras Rec] Erro no deferUpdate:", err.message);
-    return;
-  }
-
-  // Passa `jaDeferred = true` → o criarTicketRecrutamento vai usar editReply
-  return criarTicketRecrutamento(interaction, client, null, true);
-}
-  
   if (customId.startsWith("recusar_regras_rec_")) {
     const userId = customId.split("_")[3];
     if (interaction.user.id !== userId) return safeReply(interaction, "⚠️ Este botão não é para ti.");
@@ -859,15 +895,9 @@ async function handleAceitarRegras(interaction) {
 
   const member = interaction.member;
 
-  // ============================================================
-  // 1. VERIFICAR SE JÁ ACEITOU ANTES (na DB)
-  // ============================================================
   const jaAceitou =
     Array.isArray(db.acceptedRules) && db.acceptedRules.includes(member.id);
 
-  // ============================================================
-  // 2. VERIFICAR SE AINDA TEM OS CARGOS
-  // ============================================================
   const cargos = [
     CONFIG.CARGO_MEMBRO,
     CONFIG.CARGO_REGRAS_EXTRA_1,
@@ -882,9 +912,6 @@ async function handleAceitarRegras(interaction) {
   const precisaReatribuir = jaAceitou && !temAlgumCargo;
 
   try {
-    // ============================================================
-    // 3. ATRIBUIR CARGOS (primeira vez OU reatribuição)
-    // ============================================================
     if (!jaAceitou || precisaReatribuir) {
       const cargosAtribuidos = [];
 
@@ -908,9 +935,6 @@ async function handleAceitarRegras(interaction) {
 
       await persistDB();
 
-      // ============================================================
-      // 4. MENSAGEM: REATRIBUIÇÃO
-      // ============================================================
       if (precisaReatribuir) {
         const cargosTexto =
           cargosAtribuidos.length > 0
@@ -932,9 +956,6 @@ async function handleAceitarRegras(interaction) {
         return safeEdit(interaction, { content: mensagemReatribuicao });
       }
 
-      // ============================================================
-      // 5. MENSAGEM: PRIMEIRA VEZ
-      // ============================================================
       const mensagemPrimeiraVez = [
         `\u2705 **Regras aceites com sucesso!**`,
         `Boas-vindas \u00E0 **Portugal Alfa Community**<:Portugal_Alfa_Community:1507459426112503898> \u{1F389}`,
@@ -964,9 +985,6 @@ async function handleAceitarRegras(interaction) {
       return safeEdit(interaction, { content: mensagemPrimeiraVez });
     }
 
-    // ============================================================
-    // 6. JÁ ACEITOU E AINDA TEM OS CARGOS
-    // ============================================================
     const dataISO = db.acceptedRulesAt?.[member.id];
     let timestampRelativo = "anteriormente";
     if (dataISO) {
@@ -1338,7 +1356,6 @@ async function handleAvaliacaoButton(interaction) {
 
 // ============================================================
 // AVALIAÇÃO — MODAL SUBMIT
-// ✅ Edita a DM original em vez de enviar nova mensagem
 // ============================================================
 
 async function handleAvaliacaoModal(interaction, client) {
@@ -1354,12 +1371,10 @@ async function handleAvaliacaoModal(interaction, client) {
     return safeReply(interaction, `⚠️ Já avaliaste este ticket com ${"⭐".repeat(ticket.rating)} (${ticket.rating}/5).`);
   }
 
-  // Guardar avaliação
   ticket.rating = estrelas;
   ticket.ratingComment = comentario;
   await persistDB();
 
-  // Enviar log
   const staffId = ticket.claimedBy || ticket.closedBy;
   try {
     const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
@@ -1406,63 +1421,55 @@ async function handleAvaliacaoModal(interaction, client) {
     minute: '2-digit',
   });
 
-const staffName = ticket.closedByName || ticket.claimedByName || "Staff";
+  const staffName = ticket.closedByName || ticket.claimedByName || "Staff";
 
-// ============================================================
-// EMBED 1 — Agradecimento da avaliação (VERDE #22C55E)
-// ============================================================
-const embedAvaliacao = new EmbedBuilder()
+  const embedAvaliacao = new EmbedBuilder()
     .setColor(0x22C55E)
     .setDescription(
-        `✅ **Obrigado pela tua avaliação!**\n\n` +
-        `Avaliação: ${stars} (${estrelas}/5)`
+      `✅ **Obrigado pela tua avaliação!**\n\n` +
+      `Avaliação: ${stars} (${estrelas}/5)`
     );
 
-// ============================================================
-// EMBED 2 — Ticket fechado (VERMELHO #FF0000)
-// ============================================================
-const embedFechado = new EmbedBuilder()
+  const embedFechado = new EmbedBuilder()
     .setColor(0xFF0000)
     .setDescription(
-        `🎫 **Ticket Fechado**\n` +
-        `ℹ️ O seu ticket foi fechado com sucesso!\n\n` +
-        `🎫 **Ticket:** #${ticket.id}\n` +
-        `📝 **Tipo:** ${ticket.label}\n\n` +
-        `⚒️ **Fechado por:** ${staffName}\n` +
-        `🕚 **Fechado em:** ${dataHora}\n\n` +
-        `🎫 Caso seja necessário, não hesite em abrir um novo ticket!`
+      `🎫 **Ticket Fechado**\n` +
+      `ℹ️ O seu ticket foi fechado com sucesso!\n\n` +
+      `🎫 **Ticket:** #${ticket.id}\n` +
+      `📝 **Tipo:** ${ticket.label}\n\n` +
+      `⚒️ **Fechado por:** ${staffName}\n` +
+      `🕚 **Fechado em:** ${dataHora}\n\n` +
+      `🎫 Caso seja necessário, não hesite em abrir um novo ticket!`
     );
 
-// ✅ Tentar EDITAR a DM original (evita duplicação)
-let edited = false;
-if (ticket.dmMessageId) {
+  let edited = false;
+  if (ticket.dmMessageId) {
     try {
-        const dmChannel = await client.users.createDM(ticket.userId);
-        const originalDM = await dmChannel.messages.fetch(ticket.dmMessageId).catch(() => null);
-        if (originalDM) {
-            await originalDM.edit({
-                content: null, // sem texto simples
-                embeds: [embedAvaliacao, embedFechado], // dois embeds na mesma mensagem
-                components: [],
-            });
-            edited = true;
-            console.log(`[Avaliação] DM original editada para ${ticket.userId}`);
-        }
+      const dmChannel = await client.users.createDM(ticket.userId);
+      const originalDM = await dmChannel.messages.fetch(ticket.dmMessageId).catch(() => null);
+      if (originalDM) {
+        await originalDM.edit({
+          content: null,
+          embeds: [embedAvaliacao, embedFechado],
+          components: [],
+        });
+        edited = true;
+        console.log(`[Avaliação] DM original editada para ${ticket.userId}`);
+      }
     } catch (e) {
-        console.error("[Avaliação] Não foi possível editar DM original:", e.message);
+      console.error("[Avaliação] Não foi possível editar DM original:", e.message);
     }
-}
+  }
 
-// Responder ao modal (só visível para quem avaliou, ephemeral)
-try {
+  try {
     await interaction.reply({
-        content: "\u2705 **Avalia\u00E7\u00E3o registada!** A tua DM foi atualizada com o agradecimento.",
-        flags: 64,
+      content: "\u2705 **Avalia\u00E7\u00E3o registada!** A tua DM foi atualizada com o agradecimento.",
+      flags: 64,
     });
-} catch (e) {
+  } catch (e) {
     console.error("[Avalia\u00E7\u00E3o] Erro ao responder ao modal:", e.message);
+  }
 }
-}   // <-- ✅ fecha handleAvaliacaoModal
 
 // ============================================================
 // FOTO TRUCKY
@@ -1484,7 +1491,6 @@ async function handleFotoTruckyModal(interaction, client) {
     let fotoNome = interaction.fields.getTextInputValue("foto_nome")?.trim() || "Não informado";
     fotoNome = fotoNome.replace(/\.[^/.]+$/, "");
 
-    // ✅ Obter displayName do staff
     let staffDisplayName = interaction.user.username;
     try {
       const staffMember = await interaction.guild.members.fetch(interaction.user.id);
@@ -1572,7 +1578,6 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
       return safeReply(interaction, "⚠️ Ticket não encontrado ou já fechado.");
     }
 
-    // ✅ Obter displayName do staff (para aparecer "Artemios" e não "arte_10")
     let staffDisplayName = interaction.user.username;
     try {
       const staffMember = await interaction.guild.members.fetch(interaction.user.id);
@@ -1607,7 +1612,6 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
     const embedFecho = new EmbedBuilder().setDescription(desc).setColor(0xFF0000).setTimestamp();
     await channel.send({ embeds: [embedFecho] }).catch(() => {});
 
-    // Transcript
     try {
       const additionalInfo = {
         openedBy: ticket.username,
@@ -1652,7 +1656,6 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
       console.error("[Transcript Auto] Erro geral:", error.message);
     }
 
-    // DM de avaliação
     try {
       const user = await client.users.fetch(ticket.userId);
       if (user) {
@@ -1685,7 +1688,6 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
         const sentDM = await user.send({ embeds: [embedDM], components: [row] });
         evaluationSent = true;
 
-        // ✅ Guardar ID da DM para editar mais tarde
         try {
           db.tickets[String(ticket.id)].dmMessageId = sentDM.id;
           await persistDB();
@@ -1707,7 +1709,6 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
       console.error("[DB] Erro ao guardar evaluationSent:", e.message);
     }
 
-    // Log de fecho
     try {
       const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
       if (logChannel && ticket) {
