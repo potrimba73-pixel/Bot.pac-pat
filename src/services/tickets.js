@@ -867,23 +867,32 @@ export async function criarTicketRecrutamento(interaction, client, nomeTrucky = 
 
     await sendLog(ticketId, "open", client).catch(() => {});
 
-    // ✅ Embed final: regras aceites + ticket criado
-    const embedFinal = new EmbedBuilder()
-      .setColor(0x57f287)
-      .setDescription(
-        [
-          `**✅ Aceitaste as regras com sucesso**`,
-          ``,
-          `🎉 **Ticket de recrutamento criado com sucesso!**`,
-          ``,
-          `**Informações do teu ticket:**`,
-          `🎫 Nome do ticket: \`${channel.name}\``,
-          `🆔 ID do ticket: \`${ticketId}\``,
-          `🕒 Abertura: ${formatDateSimple(openedAt)}`,
-        ].join("\n")
-      )
-      .setTimestamp();
+// ✅ Embed final: regras + confirmação + ticket criado
+const regrasTexto = REGRAS_RECRUTAMENTO
+  .map((regra, i) => `✅ ${i + 1}. ${regra}`)
+  .join("\n");
 
+const embedFinal = new EmbedBuilder()
+  .setTitle(`${CONFIG.EMOJI_RECRUTAMENTO || "📝"} Regras da Portugal Alfa Truckers`)
+  .setColor(0x57f287)
+  .setDescription(
+    [
+      `ℹ️ Antes de prosseguires, lê atentamente as regras:`,
+      ``,
+      regrasTexto,
+      ``,
+      `❓ Aceitas cumprir todas as regras acima?`,
+      ``,
+      `**Aceitaste as regras com sucesso**`,
+      ``,
+      `🎉 **Ticket de recrutamento criado com sucesso!**`,
+      `**Informações do teu ticket:**`,
+      `🎫 Nome do ticket: \`${channel.name}\``,
+      `🆔 ID do ticket: \`${ticketId}\``,
+      `🕒 Abertura: ${formatDateSimple(openedAt)}`,
+    ].join("\n")
+  )
+  .setTimestamp();
     const rowIrTicket = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setLabel("🎫 Ir para o Ticket")
