@@ -1713,27 +1713,33 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
       const logChannel = await client.channels.fetch(CONFIG.CANAL_LOGS).catch(() => null);
       if (logChannel && ticket) {
         const agora = new Date();
-        const dataFecho = agora.toLocaleString('pt-PT', {
-          timeZone: 'Europe/Lisbon',
-          weekday: 'long',
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        });
+        // ✅ Dia da semana + timestamp Discord <t:unix:S>
+const agora = new Date();
 
-        const dataAbertura = ticket.openedAt
-          ? new Date(ticket.openedAt).toLocaleString('pt-PT', {
-              timeZone: 'Europe/Lisbon',
-              weekday: 'long',
-              day: '2-digit',
-              month: '2-digit',
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-            })
-          : '—';
+const diaSemanaFecho = new Intl.DateTimeFormat('pt-PT', {
+  timeZone: 'Europe/Lisbon',
+  weekday: 'long',
+}).format(agora);
+
+const unixFecho = Math.floor(agora.getTime() / 1000);
+const dataFecho = `${diaSemanaFecho} <t:${unixFecho}:S>`;
+
+const openedDate = ticket.openedAt ? new Date(ticket.openedAt) : null;
+
+const diaSemanaAbertura = openedDate
+  ? new Intl.DateTimeFormat('pt-PT', {
+      timeZone: 'Europe/Lisbon',
+      weekday: 'long',
+    }).format(openedDate)
+  : '—';
+
+const unixAbertura = openedDate
+  ? Math.floor(openedDate.getTime() / 1000)
+  : null;
+
+const dataAbertura = unixAbertura
+  ? `${diaSemanaAbertura} <t:${unixAbertura}:S>`
+  : '—';
 
         const nomeTrucky = ticket.truckyNome || ticket.fotoNome || 'Não informado';
         const linkTrucky = (ticket.truckyLink && /^https?:\/\//i.test(ticket.truckyLink))
@@ -1753,7 +1759,8 @@ async function fecharTicket(interaction, ticketId, client, recrutado = false) {
           }
         }
 
-        descUnificada += `📝 **Tipo:** ${ticket.label}\n\n`;
+        descUnificada += `📝 **Tipo:** \`${ticket.label}\`\n\n`;
+        descUnificada += `⚒️ **Assumido por:** ${ticket.claimedByName ? `<@${ticket.claimedBy}>` : 'Ninguém'}\n`;
         descUnificada += `⚒️ **Assumido por:** ${ticket.claimedByName ? `<@${ticket.claimedBy}>` : 'Ninguém'}\n`;
         descUnificada += `👮 **Fechado por:** <@${interaction.user.id}>\n\n`;
         descUnificada += `↕ **Informações Adicionais**\n`;
