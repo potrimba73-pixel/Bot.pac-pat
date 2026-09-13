@@ -227,7 +227,7 @@ export const CONFIG = {
   SERPER_API_KEY: process.env.SERPER_API_KEY,
 
   // === VERSÃO DOS PAINÉIS (para controlo de atualizações) ===
-  PANEL_VERSION: "2.4.0",
+  PANEL_VERSION: "2.5.0",
 };
 
 export const ASSISTANT_CONFIG = {
