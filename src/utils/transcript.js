@@ -1162,31 +1162,18 @@ ${getWrapperCss()}
      * --------------------------------------------------------
      */
 
-    const htmlAttachment =
-      new AttachmentBuilder(
-        Buffer.from(
-          html,
-          "utf-8"
-        ),
-        {
-          name:
-            `transcript-${ticketId}.html`,
-        }
-      );
+// ✅ Nome do ficheiro = nome do canal do ticket (ex: rec-arte10-6675.html)
+const safeChannelName = String(channel.name || `ticket-${ticketId}`)
+  .replace(/[^\w\-\.]/g, "_")
+  .substring(0, 80);
 
-    const txtAttachment =
-      config.includeTxt
-        ? new AttachmentBuilder(
-            Buffer.from(
-              txt,
-              "utf-8"
-            ),
-            {
-              name:
-                `transcript-${ticketId}.txt`,
-            }
-          )
-        : null;
+const htmlAttachment = new AttachmentBuilder(Buffer.from(html, "utf-8"), {
+  name: `${safeChannelName}.html`,
+});
+
+const txtAttachment = new AttachmentBuilder(Buffer.from(txt, "utf-8"), {
+  name: `${safeChannelName}.txt`,
+});
 
     /**
      * --------------------------------------------------------
