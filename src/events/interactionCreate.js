@@ -1437,50 +1437,61 @@ async function handleAvaliacaoModal(interaction, client) {
     minute: '2-digit',
   });
 
-  const staffName = ticket.closedByName || ticket.claimedByName || "Staff";
+const staffName = ticket.closedByName || ticket.claimedByName || "Staff";
 
-  const mensagemFinal =
-    `✅ **Obrigado pela tua avaliação!**\n\n` +
-    `Avaliação: ${stars} (${estrelas}/5)\n\n` +
-    `🎫 **Ticket Fechado**\n` +
-    `ℹ️ O seu ticket foi fechado com sucesso!\n\n` +
-    `🎫 **Ticket:** #${ticket.id}\n` +
-    `📝 **Tipo:** ${ticket.label}\n\n` +
-    `⚒️ **Fechado por:** ${staffName}\n` +
-    `🕚 **Fechado em:** ${dataHora}\n\n` +
-    `🎫 Caso seja necessário, não hesite em abrir um novo ticket!`;
+// ============================================================
+// EMBED 1 — Agradecimento da avaliação (VERDE #22C55E)
+// ============================================================
+const embedAvaliacao = new EmbedBuilder()
+    .setColor(0x22C55E)
+    .setDescription(
+        `✅ **Obrigado pela tua avaliação!**\n\n` +
+        `Avaliação: ${stars} (${estrelas}/5)`
+    );
 
-  // ✅ Tentar EDITAR a DM original (evita duplicação)
-  let edited = false;
-  if (ticket.dmMessageId) {
+// ============================================================
+// EMBED 2 — Ticket fechado (VERMELHO #FF0000)
+// ============================================================
+const embedFechado = new EmbedBuilder()
+    .setColor(0xFF0000)
+    .setDescription(
+        `🎫 **Ticket Fechado**\n` +
+        `ℹ️ O seu ticket foi fechado com sucesso!\n\n` +
+        `🎫 **Ticket:** #${ticket.id}\n` +
+        `📝 **Tipo:** ${ticket.label}\n\n` +
+        `⚒️ **Fechado por:** ${staffName}\n` +
+        `🕚 **Fechado em:** ${dataHora}\n\n` +
+        `🎫 Caso seja necessário, não hesite em abrir um novo ticket!`
+    );
+
+// ✅ Tentar EDITAR a DM original (evita duplicação)
+let edited = false;
+if (ticket.dmMessageId) {
     try {
-      const dmChannel = await client.users.createDM(ticket.userId);
-      const originalDM = await dmChannel.messages.fetch(ticket.dmMessageId).catch(() => null);
-      if (originalDM) {
-        await originalDM.edit({
-          content: mensagemFinal,
-          embeds: [],
-          components: [],
-        });
-        edited = true;
-        console.log(`[Avaliação] DM original editada para ${ticket.userId}`);
-      }
+        const dmChannel = await client.users.createDM(ticket.userId);
+        const originalDM = await dmChannel.messages.fetch(ticket.dmMessageId).catch(() => null);
+        if (originalDM) {
+            await originalDM.edit({
+                content: null, // sem texto simples
+                embeds: [embedAvaliacao, embedFechado], // dois embeds na mesma mensagem
+                components: [],
+            });
+            edited = true;
+            console.log(`[Avaliação] DM original editada para ${ticket.userId}`);
+        }
     } catch (e) {
-      console.error("[Avaliação] Não foi possível editar DM original:", e.message);
+        console.error("[Avaliação] Não foi possível editar DM original:", e.message);
     }
-  }
+}
 
-  // Responder ao modal
-  try {
+// Responder ao modal (só visível para quem avaliou, ephemeral)
+try {
     await interaction.reply({
-      content: edited
-        ? "✅ **Avaliação registada!** A tua DM foi atualizada com o agradecimento."
-        : mensagemFinal,
-      flags: 64,
+        content: "✅ **Avaliação registada!** A tua DM foi atualizada com o agradecimento.",
+        flags: 64,
     });
-  } catch (e) {
+} catch (e) {
     console.error("[Avaliação] Erro ao responder ao modal:", e.message);
-  }
 }
 
 // ============================================================
