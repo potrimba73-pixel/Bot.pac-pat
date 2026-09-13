@@ -1,13 +1,14 @@
 // src/utils/transcript.js
 import { AttachmentBuilder } from "discord.js";
-import discordTranscripts from "discord-html-transcripts"; // ← nome corrigido
+import discordTranscripts from "discord-html-transcripts";
+import axios from "axios";
 
 const DEFAULT_OPTIONS = {
   locale: "pt-PT",
   timeZone: "Europe/Lisbon",
   maxMessages: 10000,
   includeTxt: true,
-  saveImages: false,
+  saveImages: true, // ✅ CORRIGIDO: imagens embutidas em base64 → nunca expiram
 };
 
 /**
@@ -65,6 +66,91 @@ function formatFileSize(bytes) {
   }
 
   return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+/**
+ * ============================================================
+ * ✅ NOVO — INLINE DE IMAGENS EXTERNAS EM BASE64
+ * ============================================================
+ *
+ * O `saveImages: true` da biblioteca já trata dos anexos do Discord.
+ * Mas imagens de embeds externos (klipy, giphy, imgur, etc.) continuam
+ * a apontar para URLs que podem expirar.
+ *
+ * Esta função descarrega essas imagens e substitui os URLs por
+ * data URIs base64, deixando o HTML 100% auto-contido.
+ */
+async function inlineExternalImages(html) {
+  try {
+    const imgRegex = /<img[^>]+src="(https?:\/\/[^"]+)"[^>]*>/g;
+    const matches = [...html.matchAll(imgRegex)];
+
+    if (matches.length === 0) return html;
+
+    const uniqueUrls = [...new Set(matches.map((m) => m[1]))];
+    const replacements = new Map();
+
+    // Processar em lotes para não estourar a rede
+    const CONCURRENCY = 5;
+    for (let i = 0; i < uniqueUrls.length; i += CONCURRENCY) {
+      const chunk = uniqueUrls.slice(i, i + CONCURRENCY);
+
+      await Promise.all(
+        chunk.map(async (url) => {
+          // Ignorar data URIs (já são base64)
+          if (url.startsWith("data:")) return;
+
+          // Ignorar avatares do Discord (têm CDN estável com hash)
+          // Se quiseres forçar, remove este `if`.
+          if (url.includes("cdn.discordapp.com/avatars/")) return;
+          if (url.includes("cdn.discordapp.com/icons/")) return;
+          if (url.includes("cdn.discordapp.com/embed/avatars/")) return;
+
+          try {
+            const res = await axios.get(url, {
+              responseType: "arraybuffer",
+              timeout: 12000,
+              maxContentLength: 15 * 1024 * 1024, // 15 MB
+              headers: {
+                "User-Agent":
+                  "Mozilla/5.0 (compatible; PACBot-Transcript/1.0)",
+                Accept: "image/*,*/*;q=0.8",
+              },
+            });
+
+            const contentType =
+              res.headers["content-type"] || "image/png";
+
+            // Só converter se for realmente imagem
+            if (!contentType.startsWith("image/")) return;
+
+            const base64 = Buffer.from(res.data).toString("base64");
+            replacements.set(url, `data:${contentType};base64,${base64}`);
+          } catch (e) {
+            console.warn(
+              `[Transcript] Não foi possível embutir imagem ${url}: ${e.message}`
+            );
+            // Mantém o URL original — o HTML continua a funcionar até expirar
+          }
+        })
+      );
+    }
+
+    let result = html;
+    for (const [oldUrl, newUrl] of replacements) {
+      // split/join em vez de replaceAll para compatibilidade
+      result = result.split(oldUrl).join(newUrl);
+    }
+
+    console.log(
+      `[Transcript] ✅ ${replacements.size}/${uniqueUrls.length} imagens embutidas em base64.`
+    );
+
+    return result;
+  } catch (e) {
+    console.error("[Transcript] Erro no inlineExternalImages:", e.message);
+    return html;
+  }
 }
 
 /**
@@ -637,6 +723,10 @@ function generateTxt(
   txt += `Total: ${messages.length} mensagens\n`;
   txt += `Gerado em: ${generatedAt}\n`;
 
+  // ✅ NOVO — aviso sobre expiração de imagens no TXT
+  txt +=
+    "⚠️ Nota: URLs de imagens no TXT podem expirar após ~24h. Usa o HTML para ver as imagens permanentemente.\n";
+
   const info = additionalInfo || {};
 
   if (info.openedBy)
@@ -779,6 +869,13 @@ function generateTxt(
       if (embed.url)
         txt += `URL: ${embed.url}\n`;
 
+      // ✅ Guardar também URLs de imagens/thumbnails dos embeds
+      if (embed.image?.url)
+        txt += `Imagem: ${embed.image.url}\n`;
+
+      if (embed.thumbnail?.url)
+        txt += `Thumbnail: ${embed.thumbnail.url}\n`;
+
       for (
         const field
         of embed.fields || []
@@ -892,6 +989,9 @@ export async function gerarTranscript(
      *
      * Em vez de recriarmos o Discord com regex,
      * usamos o renderer especializado.
+     *
+     * ✅ saveImages: true → anexos do Discord convertidos
+     *    automaticamente em base64 dentro do HTML.
      */
 
     const discordHtml =
@@ -955,6 +1055,20 @@ export async function gerarTranscript(
           },
         }
       );
+
+    /**
+     * --------------------------------------------------------
+     * ✅ NOVO — EMBUTIR IMAGENS EXTERNAS EM BASE64
+     * --------------------------------------------------------
+     *
+     * O `saveImages` já tratou dos anexos do Discord.
+     * Aqui tratamos de imagens de embeds externos
+     * (klipy.com, giphy.com, imgur.com, etc.) que NÃO
+     * são convertidas automaticamente e que costumam
+     * expirar com o tempo.
+     */
+
+    const discordHtmlFinal = await inlineExternalImages(discordHtml);
 
     /**
      * --------------------------------------------------------
@@ -1122,7 +1236,7 @@ ${getWrapperCss()}
     aria-label="Mensagens do ticket"
   >
 
-    ${discordHtml}
+    ${discordHtmlFinal}
 
   </section>
 
@@ -1162,18 +1276,18 @@ ${getWrapperCss()}
      * --------------------------------------------------------
      */
 
-// ✅ Nome do ficheiro = nome do canal do ticket (ex: rec-arte10-6675.html)
-const safeChannelName = String(channel.name || `ticket-${ticketId}`)
-  .replace(/[^\w\-\.]/g, "_")
-  .substring(0, 80);
+    // ✅ Nome do ficheiro = nome do canal do ticket (ex: rec-arte10-6675.html)
+    const safeChannelName = String(channel.name || `ticket-${ticketId}`)
+      .replace(/[^\w\-\.]/g, "_")
+      .substring(0, 80);
 
-const htmlAttachment = new AttachmentBuilder(Buffer.from(html, "utf-8"), {
-  name: `${safeChannelName}.html`,
-});
+    const htmlAttachment = new AttachmentBuilder(Buffer.from(html, "utf-8"), {
+      name: `${safeChannelName}.html`,
+    });
 
-const txtAttachment = new AttachmentBuilder(Buffer.from(txt, "utf-8"), {
-  name: `${safeChannelName}.txt`,
-});
+    const txtAttachment = new AttachmentBuilder(Buffer.from(txt, "utf-8"), {
+      name: `${safeChannelName}.txt`,
+    });
 
     /**
      * --------------------------------------------------------
@@ -1182,16 +1296,16 @@ const txtAttachment = new AttachmentBuilder(Buffer.from(txt, "utf-8"), {
      */
 
     return {
-  attachment: htmlAttachment,
-  fileName: `${safeChannelName}.html`,
-  txtAttachment,
-  txtFileName: `${safeChannelName}.txt`,
-  ticketId,
-  messageCount: messages.length,
-  html,
-  txt,
-};
-    
+      attachment: htmlAttachment,
+      fileName: `${safeChannelName}.html`,
+      txtAttachment,
+      txtFileName: `${safeChannelName}.txt`,
+      ticketId,
+      messageCount: messages.length,
+      html,
+      txt,
+    };
+
   } catch (error) {
     console.error(
       `[Transcript] Erro no ticket #${ticketId}:`,
